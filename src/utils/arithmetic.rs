@@ -166,6 +166,58 @@ pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mu
     });
 }
 
+/// Batch inversion on independent chunks, preserving zero-to-zero semantics.
+pub(crate) fn batch_invert_parallel<F: Field>(values: &mut [F]) {
+    if values.len() < 1024 {
+        values.iter_mut().batch_invert();
+    } else {
+        parallelize(values, |chunk, _| {
+            chunk.iter_mut().batch_invert();
+        });
+    }
+}
+
+/// Replace factors with their exclusive prefix products, returning the total.
+/// Chunk-local scans and the scaling pass share the caller's Rayon pool.
+pub(crate) fn prefix_product<F: Field>(values: &mut [F], initial: F) -> F {
+    use rayon::prelude::*;
+
+    let chunk_size = values.len().div_ceil(rayon::current_num_threads()).max(1024);
+    if values.len() <= chunk_size {
+        let mut total = initial;
+        for value in values {
+            let factor = *value;
+            *value = total;
+            total *= factor;
+        }
+        return total;
+    }
+    let mut totals: Vec<_> = values
+        .par_chunks_mut(chunk_size)
+        .map(|chunk| {
+            let mut total = F::ONE;
+            for value in chunk {
+                let factor = *value;
+                *value = total;
+                total *= factor;
+            }
+            total
+        })
+        .collect();
+    let mut total = initial;
+    for chunk_total in &mut totals {
+        let factor = *chunk_total;
+        *chunk_total = total;
+        total *= factor;
+    }
+    values.par_chunks_mut(chunk_size).zip(totals).for_each(|(chunk, offset)| {
+        for value in chunk {
+            *value *= offset;
+        }
+    });
+    total
+}
+
 /// Returns coefficients of an n - 1 degree polynomial given a set of n points
 /// and their evaluations. This function will panic if two values in `points`
 /// are the same.
@@ -366,6 +418,52 @@ fn test_lagrange_interpolate() {
 
         for (point, eval) in points.iter().zip(evals) {
             assert_eq!(eval_polynomial(&poly, *point), *eval);
+        }
+    }
+}
+
+#[test]
+fn parallel_inversion_preserves_zero_denominators() {
+    for threads in [1, 3, 8] {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+        for len in [0usize, 1, 1023, 1024, 1025, 65531] {
+            let mut values: Vec<_> = (0..len).map(|i| Scalar::from((i % 97) as u64)).collect();
+            let expected: Vec<_> =
+                values.iter().map(|v| v.invert().unwrap_or(Scalar::ZERO)).collect();
+            pool.install(|| batch_invert_parallel(&mut values));
+            assert_eq!(values, expected);
+        }
+    }
+}
+
+#[test]
+fn parallel_prefix_product_matches_serial_scan() {
+    for threads in [1, 3, 8] {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+        for len in [0usize, 1, 1023, 1024, 1025, 65531] {
+            for zero in [None, Some(0), Some(1024), Some(len.saturating_sub(1))] {
+                let mut values: Vec<_> = (0..len)
+                    .map(|i| {
+                        if Some(i) == zero {
+                            Scalar::ZERO
+                        } else {
+                            Scalar::from((i % 31 + 1) as u64)
+                        }
+                    })
+                    .collect();
+                let mut total = Scalar::from(7);
+                let expected: Vec<_> = values
+                    .iter()
+                    .map(|value| {
+                        let previous = total;
+                        total *= value;
+                        previous
+                    })
+                    .collect();
+                let actual_total = pool.install(|| prefix_product(&mut values, Scalar::from(7)));
+                assert_eq!(actual_total, total);
+                assert_eq!(values, expected);
+            }
         }
     }
 }

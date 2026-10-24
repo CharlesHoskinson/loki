@@ -1,7 +1,6 @@
-use std::{collections::HashMap, hash::Hash, iter};
+use std::{collections::BTreeMap, hash::Hash, iter};
 
 use ff::{FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
-use group::ff::BatchInvert;
 use rand_core::{CryptoRng, RngCore};
 
 use super::{
@@ -15,7 +14,7 @@ use crate::{
         ProverQuery, Rotation,
     },
     transcript::{Hashable, Transcript},
-    utils::arithmetic::{eval_polynomial, parallelize},
+    utils::arithmetic::{batch_invert_parallel, eval_polynomial, parallelize, prefix_product},
 };
 
 #[cfg_attr(feature = "bench-internal", derive(Clone))]
@@ -179,7 +178,9 @@ impl<F: WithSmallOrderMulGroup<3>> Permuted<F> {
         // s_j(X) is the jth table expression in this lookup,
         // s'(X) is the compression of the permuted table expressions,
         // and i is the ith row of the expression.
-        let mut lookup_product = vec![F::ZERO; pk.vk.n() as usize];
+        let usable_rows = pk.vk.n() as usize - (blinding_factors + 1);
+        let mut lookup_product = Vec::with_capacity(pk.vk.n() as usize);
+        lookup_product.resize(usable_rows, F::ZERO);
         // Denominator uses the permuted input expression and permuted table expression
         parallelize(&mut lookup_product, |lookup_product, start| {
             for ((lookup_product, permuted_input_value), permuted_table_value) in lookup_product
@@ -193,7 +194,7 @@ impl<F: WithSmallOrderMulGroup<3>> Permuted<F> {
 
         // Batch invert to obtain the denominators for the lookup product
         // polynomials
-        lookup_product.iter_mut().batch_invert();
+        batch_invert_parallel(&mut lookup_product);
 
         // Finish the computation of the entire fraction by computing the numerators
         // (\theta^{m-1} a_0(\omega^i) + \theta^{m-2} a_1(\omega^i) + ... + \theta
@@ -226,18 +227,11 @@ impl<F: WithSmallOrderMulGroup<3>> Permuted<F> {
 
         // Compute the evaluations of the lookup product polynomial
         // over our domain, starting with z[0] = 1
-        let z = iter::once(F::ONE)
-            .chain(lookup_product)
-            .scan(F::ONE, |state, cur| {
-                *state *= &cur;
-                Some(*state)
-            })
-            // Take all rows including the "last" row which should
-            // be a boolean (and ideally 1, else soundness is broken)
-            .take(pk.vk.n() as usize - blinding_factors)
-            // Chain random blinding factors.
-            .chain((0..blinding_factors).map(|_| F::random(&mut *rng)))
-            .collect::<Vec<_>>();
+        let last = prefix_product(&mut lookup_product, F::ONE);
+        // Include the last row and retain the same sequential RNG consumption.
+        lookup_product.push(last);
+        lookup_product.extend((0..blinding_factors).map(|_| F::random(&mut *rng)));
+        let z = lookup_product;
         assert_eq!(z.len(), pk.vk.n() as usize);
         let z = pk.vk.domain.lagrange_from_vec(z);
 
@@ -395,8 +389,8 @@ where
     // Sort input lookup expression values
     permuted_input_expression.sort();
 
-    // A HashMap of each unique element in the table expression and its count
-    let mut leftover_table_map = HashMap::<F, u32>::with_capacity(table_expression.len());
+    // Iterate leftover values in field order so fixed-RNG proofs are reproducible.
+    let mut leftover_table_map = BTreeMap::<F, u32>::new();
     table_expression.iter().take(usable_rows).for_each(|coeff| {
         *leftover_table_map.entry(*coeff).or_insert(0) += 1;
     });

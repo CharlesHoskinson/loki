@@ -60,6 +60,10 @@ path = "src/lib.rs"
 bench = false
 
 [[example]]
+name = "cpu-bench"
+path = "examples/cpu-bench.rs"
+
+[[example]]
 name = "proof-size"
 path = "examples/proof-size.rs"
 
@@ -82,6 +86,10 @@ path = "examples/vector-mul.rs"
 [[example]]
 name = "vector-ops-unblinded"
 path = "examples/vector-ops-unblinded.rs"
+
+[[test]]
+name = "cpu"
+path = "tests/cpu.rs"
 
 [[test]]
 name = "plonk_api"

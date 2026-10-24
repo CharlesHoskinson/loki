@@ -1,7 +1,6 @@
 use std::iter::{self, ExactSizeIterator};
 
 use ff::{PrimeField, WithSmallOrderMulGroup};
-use group::ff::BatchInvert;
 use rand_core::{CryptoRng, RngCore};
 
 use super::{super::circuit::Any, Argument, ProvingKey};
@@ -12,7 +11,7 @@ use crate::{
         Rotation,
     },
     transcript::{Hashable, Transcript},
-    utils::arithmetic::{eval_polynomial, parallelize},
+    utils::arithmetic::{batch_invert_parallel, eval_polynomial, parallelize, prefix_product},
 };
 
 #[cfg_attr(feature = "bench-internal", derive(Clone))]
@@ -82,7 +81,9 @@ impl Argument {
             // where p_j(X) is the jth column in this permutation,
             // and i is the ith row of the column.
 
-            let mut modified_values = vec![F::ONE; domain.n as usize];
+            let usable_rows = domain.n as usize - (blinding_factors + 1);
+            let mut modified_values = Vec::with_capacity(domain.n as usize);
+            modified_values.resize(usable_rows, F::ONE);
 
             // Iterate over each column of the permutation
             for (&column, permuted_column_values) in columns.iter().zip(permutations.iter()) {
@@ -103,7 +104,7 @@ impl Argument {
             }
 
             // Invert to obtain the denominator for the permutation product polynomial
-            modified_values.batch_invert();
+            batch_invert_parallel(&mut modified_values);
 
             // Iterate over each column again, this time finishing the computation
             // of the entire fraction by computing the numerators
@@ -138,19 +139,10 @@ impl Argument {
 
             // Compute the evaluations of the permutation product polynomial
             // over our domain, starting with z[0] = 1
-            let mut z = Vec::with_capacity(domain.n as usize);
-            z.push(last_z);
-            for row in 1..(domain.n as usize) {
-                let tmp = z[row - 1] * &modified_values[row - 1];
-                z.push(tmp);
-            }
-            let mut z = domain.lagrange_from_vec(z);
-            // Set blinding factors
-            for z in &mut z[domain.n as usize - blinding_factors..] {
-                *z = F::random(&mut *rng);
-            }
-            // Set new last_z
-            last_z = z[domain.n as usize - (blinding_factors + 1)];
+            last_z = prefix_product(&mut modified_values, last_z);
+            modified_values.push(last_z);
+            modified_values.extend((0..blinding_factors).map(|_| F::random(&mut *rng)));
+            let z = domain.lagrange_from_vec(modified_values);
 
             let permutation_product_commitment = CS::commit_lagrange(params, &z);
             let permutation_product_poly = domain.lagrange_to_coeff(z);

@@ -327,6 +327,44 @@ impl<F: Field> Polynomial<Rational<F>, LagrangeCoeff> {
     }
 }
 
+#[cfg(test)]
+mod cpu_tests {
+    use super::*;
+    use midnight_curves::Fq;
+
+    #[test]
+    fn rational_batch_matches_individual_evaluation() {
+        let values = [
+            Rational::Zero,
+            Rational::Trivial(Fq::from(7)),
+            Rational::Rational(Fq::from(9), Fq::ONE),
+            Rational::Rational(Fq::from(11), Fq::ZERO),
+            Rational::Rational(Fq::ZERO, Fq::from(5)),
+            Rational::Rational(Fq::from(13), Fq::from(5)),
+        ];
+        for threads in [1, 4] {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+            for len in [0, 1, 1025, 65531] {
+                let assigned: Vec<_> = (0..3)
+                    .map(|column| Polynomial {
+                        values: (0..len).map(|row| values[(row + column) % values.len()]).collect(),
+                        _marker: PhantomData,
+                    })
+                    .collect();
+                let expected: Vec<Vec<_>> = assigned
+                    .iter()
+                    .map(|poly| poly.iter().map(|value| value.evaluate()).collect())
+                    .collect();
+                let actual = pool.install(|| batch_invert_rational(assigned));
+                for (actual, expected) in actual.iter().zip(expected) {
+                    assert_eq!(actual.values, expected);
+                }
+            }
+            assert!(batch_invert_rational::<Fq>(vec![]).is_empty());
+        }
+    }
+}
+
 impl<'a, F: Field, B: PolynomialRepresentation> Add<&'a Polynomial<F, B>> for Polynomial<F, B> {
     type Output = Polynomial<F, B>;
 
