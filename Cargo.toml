@@ -53,11 +53,17 @@ dev-curves = [
     "midnight-curves/dev-curves",
 ]
 truncated-challenges = []
+loki-profile = []
 
 [lib]
 name = "midnight_proofs"
 path = "src/lib.rs"
 bench = false
+
+[[example]]
+name = "loki-profile"
+path = "examples/loki-profile.rs"
+required-features = ["loki-profile"]
 
 [[example]]
 name = "proof-size"

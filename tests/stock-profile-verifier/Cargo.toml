@@ -1,0 +1,14 @@
+[package]
+name = "loki-profile-stock-verifier"
+version = "0.1.0"
+edition = "2021"
+[features]
+default = ["committed-instances"]
+committed-instances = ["midnight-proofs/committed-instances"]
+circuit-params = ["midnight-proofs/circuit-params"]
+[dependencies]
+midnight-proofs = { version = "=0.8.3", default-features = false }
+midnight-curves = "=0.3.1"
+ff = "0.13"
+blake2b_simd = "1"
+rand_chacha = "0.3"

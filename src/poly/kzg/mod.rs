@@ -100,6 +100,9 @@ where
         E::Fr: Sampleable<T::Hash> + Hash + Ord + Hashable<T::Hash>,
         E::G1: Hashable<T::Hash>,
     {
+        #[cfg(feature = "loki-profile")]
+        let _profile_phase = crate::profile::PhaseGuard::start("kzg_multiopen");
+
         // Refer to the halo2 book for docs:
         // https://zcash.github.io/halo2/design/proving-system/multipoint-opening.html
         let x1: E::Fr = transcript.squeeze_challenge();

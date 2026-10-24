@@ -107,6 +107,9 @@ where
     // Sample theta challenge for keeping lookup columns linearly independent
     let theta: F = transcript.squeeze_challenge();
 
+    #[cfg(feature = "loki-profile")]
+    let _profile_phase = crate::profile::PhaseGuard::start("lookup_prepare");
+
     let lookups: Vec<Vec<lookup::prover::Permuted<F>>> = instance
         .iter()
         .zip(advice.iter())
@@ -134,11 +137,17 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    #[cfg(feature = "loki-profile")]
+    drop(_profile_phase);
+
     // Sample beta challenge
     let beta: F = transcript.squeeze_challenge();
 
     // Sample gamma challenge
     let gamma: F = transcript.squeeze_challenge();
+
+    #[cfg(feature = "loki-profile")]
+    let _profile_phase = crate::profile::PhaseGuard::start("permutation_products");
 
     // Commit to permutations.
     let permutations: Vec<permutation::prover::Committed<F>> = instance
@@ -160,6 +169,12 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    #[cfg(feature = "loki-profile")]
+    drop(_profile_phase);
+
+    #[cfg(feature = "loki-profile")]
+    let _profile_phase = crate::profile::PhaseGuard::start("lookup_products");
+
     let lookups: Vec<Vec<lookup::prover::Committed<F>>> = lookups
         .into_iter()
         .map(|lookups| -> Result<Vec<_>, _> {
@@ -170,6 +185,12 @@ where
                 .collect::<Result<Vec<_>, _>>()
         })
         .collect::<Result<Vec<_>, _>>()?;
+
+    #[cfg(feature = "loki-profile")]
+    drop(_profile_phase);
+
+    #[cfg(feature = "loki-profile")]
+    let _profile_phase = crate::profile::PhaseGuard::start("trash");
 
     // Trash argument
     let trash_challenge: F = transcript.squeeze_challenge();
@@ -197,6 +218,9 @@ where
                 .collect()
         })
         .collect::<Result<Vec<_>, _>>()?;
+
+    #[cfg(feature = "loki-profile")]
+    drop(_profile_phase);
 
     // Commit to the vanishing argument's random polynomial for blinding h(x_3)
     let vanishing = vanishing::Argument::<F, CS>::commit(params, domain, rng, transcript)?;
@@ -264,7 +288,13 @@ where
 
     let domain = pk.get_vk().get_domain();
 
+    #[cfg(feature = "loki-profile")]
+    let _profile_phase = crate::profile::PhaseGuard::start("compute_nu_poly");
+
     let nu_poly = compute_nu_poly(pk, &trace);
+
+    #[cfg(feature = "loki-profile")]
+    drop(_profile_phase);
 
     let ProverTrace {
         advice_polys,
@@ -276,8 +306,17 @@ where
         ..
     } = trace;
 
+    #[cfg(feature = "loki-profile")]
+    let _profile_phase = crate::profile::PhaseGuard::start("quotient_construct");
+
     // Construct the vanishing argument's h(X) commitments
     let vanishing = vanishing.construct::<CS, T>(params, domain, nu_poly, transcript, rng)?;
+
+    #[cfg(feature = "loki-profile")]
+    drop(_profile_phase);
+
+    #[cfg(feature = "loki-profile")]
+    let _profile_phase = crate::profile::PhaseGuard::start("evaluations");
 
     let x: F = transcript.squeeze_challenge();
 
@@ -322,6 +361,12 @@ where
                 .collect::<Result<Vec<_>, _>>()
         })
         .collect::<Result<Vec<_>, _>>()?;
+
+    #[cfg(feature = "loki-profile")]
+    drop(_profile_phase);
+
+    #[cfg(feature = "loki-profile")]
+    let _profile_phase = crate::profile::PhaseGuard::start("multiopen");
 
     let queries = compute_queries(
         pk,
@@ -368,6 +413,9 @@ where
         + Ord
         + FromUniformBytes<64>,
 {
+    #[cfg(feature = "loki-profile")]
+    let mut _profile_proof = crate::profile::ProofGuard::start(pk.vk.domain.k(), circuits.len());
+
     let trace = compute_trace(
         params,
         pk,
@@ -378,7 +426,7 @@ where
         transcript,
         &mut rng,
     )?;
-    finalise_proof(
+    let result = finalise_proof(
         params,
         pk,
         #[cfg(feature = "committed-instances")]
@@ -386,7 +434,12 @@ where
         trace,
         transcript,
         &mut rng,
-    )
+    );
+    #[cfg(feature = "loki-profile")]
+    {
+        _profile_proof.success = result.is_ok();
+    }
+    result
 }
 
 pub(super) fn compute_instances<F, CS, T>(
@@ -499,6 +552,8 @@ where
 
     let unusable_rows_start = domain.n as usize - (meta.blinding_factors() + 1);
     for current_phase in pk.vk.cs.phases() {
+        #[cfg(feature = "loki-profile")]
+        let phase_index = pk.vk.cs.phases().position(|phase| phase == current_phase).unwrap();
         let column_indices = meta
             .advice_column_phase
             .iter()
@@ -514,6 +569,11 @@ where
 
         for ((circuit, advice), instances) in circuits.iter().zip(advice.iter_mut()).zip(instances)
         {
+            #[cfg(feature = "loki-profile")]
+            let _profile_synthesis = crate::profile::PhaseGuard::start(
+                format!("witness_synthesis.phase_{phase_index}"),
+            );
+
             let mut witness = WitnessCollection {
                 k: domain.k(),
                 current_phase,
@@ -565,8 +625,16 @@ where
                 }
             }
 
+            #[cfg(feature = "loki-profile")]
+            drop(_profile_synthesis);
+            #[cfg(feature = "loki-profile")]
+            let _profile_commitments = crate::profile::PhaseGuard::start("advice_commitments");
+
             let advice_commitments: Vec<_> =
                 advice_values.iter().map(|poly| CS::commit_lagrange(params, poly)).collect();
+
+            #[cfg(feature = "loki-profile")]
+            drop(_profile_commitments);
 
             for commitment in &advice_commitments {
                 transcript.write(commitment)?;

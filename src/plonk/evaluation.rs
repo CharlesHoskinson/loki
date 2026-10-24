@@ -303,6 +303,9 @@ impl<F: WithSmallOrderMulGroup<3>> Evaluator<F> {
         l_active_row: &Polynomial<F, B>,
         permutation_pk_cosets: &[Polynomial<F, B>],
     ) -> Polynomial<F, B> {
+        #[cfg(feature = "loki-profile")]
+        let _profile_phase = crate::profile::PhaseGuard::start("quotient_evaluation");
+
         let size = B::len(domain);
         let rot_scale = 1 << (B::k(domain) - domain.k());
         let omega = B::omega(domain);

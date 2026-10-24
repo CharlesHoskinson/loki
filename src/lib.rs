@@ -11,6 +11,8 @@
 pub mod circuit;
 pub mod plonk;
 pub mod poly;
+#[cfg(feature = "loki-profile")]
+pub mod profile;
 pub mod transcript;
 
 pub mod dev;
