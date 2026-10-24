@@ -29,6 +29,7 @@ required-features = ["bench-internal"]
 harness = false
 
 [dependencies]
+loki-cuda-ntt = { path = "cuda-ntt", optional = true }
 ff = { workspace = true }
 group = { workspace = true }
 midnight-curves = "0.3.1"
@@ -65,6 +66,7 @@ midnight-curves = { version = "0.3.0", features = [
 ] }
 
 [features]
+cuda-ntt = ["dep:loki-cuda-ntt"]
 default = ["committed-instances"]
 circuit-params = []
 derive_serde = ["midnight-curves/serde"]

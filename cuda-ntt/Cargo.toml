@@ -1,0 +1,17 @@
+[package]
+name = "loki-cuda-ntt"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.76"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+blst = "0.3.16"
+midnight-curves = "0.3.1"
+sppark = { version = "=0.1.16", features = ["cuda"] }
+
+[build-dependencies]
+cc = "1"
+# Keep which's transitive dependency compatible with the crate MSRV.
+home = "=0.5.5"
