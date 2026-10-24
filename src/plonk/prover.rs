@@ -264,6 +264,8 @@ where
 
     let domain = pk.get_vk().get_domain();
 
+    #[cfg(feature = "cuda-ntt")]
+    let quotient_span = tracing::info_span!("loki_ntt_quotient").entered();
     let nu_poly = compute_nu_poly(pk, &trace);
 
     let ProverTrace {
@@ -278,6 +280,8 @@ where
 
     // Construct the vanishing argument's h(X) commitments
     let vanishing = vanishing.construct::<CS, T>(params, domain, nu_poly, transcript, rng)?;
+    #[cfg(feature = "cuda-ntt")]
+    drop(quotient_span);
 
     let x: F = transcript.squeeze_challenge();
 
@@ -610,6 +614,8 @@ pub(super) fn compute_nu_poly<F: WithSmallOrderMulGroup<3>, CS: PolynomialCommit
         y,
         ..
     } = &trace;
+    #[cfg(feature = "cuda-ntt")]
+    let _numerator_span = tracing::info_span!("loki_ntt_numerator").entered();
     // Calculate the advice and instance cosets
     let advice_cosets: Vec<Vec<Polynomial<F, ExtendedLagrangeCoeff>>> = advice_polys
         .iter()
