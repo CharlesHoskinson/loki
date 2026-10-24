@@ -14,7 +14,7 @@ edition = "2021"
 rust-version = "1.76.0"
 name = "midnight-proofs"
 version = "0.8.3"
-build = false
+build = "build.rs"
 autolib = false
 autobins = false
 autoexamples = false
@@ -45,6 +45,7 @@ rustdoc-args = [
 [features]
 bench-internal = ["criterion"]
 circuit-params = []
+cuda = ["dep:sppark", "dep:blst", "dep:cc"]
 committed-instances = []
 default = ["committed-instances"]
 derive_serde = ["midnight-curves/serde"]
@@ -151,6 +152,9 @@ optional = true
 [dependencies.tracing]
 version = "0.1"
 
+[dev-dependencies.blst]
+version = "0.3.16"
+
 [dev-dependencies.assert_matches]
 version = "1.5"
 
@@ -176,3 +180,16 @@ features = ["js"]
 [target."cfg(ci_build)".dependencies.midnight-curves]
 version = "0.3.0"
 features = ["portable"]
+
+[dependencies.blst]
+version = "0.3.16"
+optional = true
+
+[dependencies.sppark]
+version = "=0.1.16"
+features = ["cuda"]
+optional = true
+
+[build-dependencies.cc]
+version = "1"
+optional = true

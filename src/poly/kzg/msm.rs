@@ -161,6 +161,15 @@ where
 #[allow(unsafe_code)]
 /// Wrapper over the MSM function to use the blstrs underlying function
 pub fn msm_specific<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) -> C::Curve {
+    #[cfg(feature = "cuda")]
+    if let Some(result) = cuda::try_msm::<C>(coeffs, bases) {
+        return result;
+    }
+    msm_cpu::<C>(coeffs, bases)
+}
+
+#[allow(unsafe_code)]
+fn msm_cpu<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) -> C::Curve {
     // We remove zeros (keep only non-zero coefficients)
     let (coeffs, bases): (Vec<C::Scalar>, Vec<C::Curve>) = coeffs
         .iter()
@@ -302,3 +311,6 @@ where
         bool::from(E::multi_miller_loop(&terms[..]).final_exponentiation().is_identity())
     }
 }
+
+#[cfg(any(test, feature = "cuda"))]
+mod cuda;
