@@ -26,6 +26,6 @@ jobs and only one heavy proof at once; stay on the provided worktree branch.
   MSM entry and every FFT entry. All hooks carry cfg attributes.
 - [x] Run targeted release tests with/without the feature, JSONL append checks and
   default/feature checks. Review the diff, then commit the implementation.
-- [ ] Run the example at k16 with four Rayon workers. Record the full command,
+- [x] Run the example at k16 with four Rayon workers. Record the full command,
   phase table, operation histograms, circuit shape and limits in LOKI-PROFILE.md.
   Verify documentation and commit it. Send final AgentBus status.
