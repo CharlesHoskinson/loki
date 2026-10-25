@@ -1,0 +1,8 @@
+loki-gpu
+Copyright 2026 The loki-gpu authors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This is a clean-room implementation. No code from open-icicle (ingonyama-zk/open-icicle) or
+other sources under unclear or incompatible licences is included or derived. Third-party
+Apache-2.0 or MIT code, if any is included, is listed below with its copyright notice.
