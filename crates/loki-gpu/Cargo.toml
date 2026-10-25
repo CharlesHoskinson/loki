@@ -46,6 +46,10 @@ name = "lifecycle_regressions"
 path = "tests/lifecycle_regressions.rs"
 
 [[test]]
+name = "quint_findings"
+path = "tests/quint_findings.rs"
+
+[[test]]
 name = "ffi_abi"
 path = "tests/ffi_abi.rs"
 required-features = ["cuda"]

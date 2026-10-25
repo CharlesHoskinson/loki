@@ -80,9 +80,14 @@ corrected helpers (below) and landed in 3839e6b.
 | ensure_device error preservation | Fixed (source); no native fault injection on the shared GPU. | source review ACK |
 | Dispatcher: unnormalized inverse | Fixed in loki-gpu: Inverse requires `DivideByLengthOnce`, Forward requires `None`; Lean `shapeExtent` matches. | `rejected_shapes_and_roots`, `inverse_normalization_is_applied_exactly_once`, Lean example |
 | Dispatcher: write-back canonicality | Holds: downloads decode via `Fq::from_repr`, which refuses residues ≥ r. | `non_canonical_transform_output_is_refused_on_write_back` |
-| Dispatcher: curve admission, CPU validator | Loki-side (P1 code in `dispatch.rs`/`cpu.rs`); out of the loki-gpu merge, tracked for the Loki branch. | — |
+| Dispatcher: curve admission, CPU validator, Cancelled, TOCTOU, coset re-offer | Loki-side; fixed on `loki/p4-ntt` 7804fa6 (source ACK by astra-gpu). | `tests/backend_cpu_equivalence.rs` (18) |
+| quint-q3 BUG-1/BUG-2 | Fixed by L1/L2; reproductions adopted. | `tests/quint_findings.rs` (`bug_*`, 3) |
 
-## Gates (f716257, first round; superseded by the final-source rerun below)
+## Gates (f716257, first round)
+
+PENDING: native gates on the final corrected source wait for W12 RELEASE;
+the receipts below are from the first round, before the review fixes, and
+do not cover the corrected source.
 
 | Gate | Command | Result | Log |
 |---|---|---|---|
@@ -169,3 +174,13 @@ CUDA- and curve-neutral.
    consumers to realise the speedup.
 8. `cudaDeviceReset` in recovery invalidates handles by epoch; chains across a
    reset rely on host checkpoints (tested with the fake driver only).
+9. P2 leaks confirmed by quint-q3 and pinned by `tests/quint_findings.rs`
+   (`known_*`), not fixed by P4: (a) checkpoint bytes of a poisoned
+   generation stay charged across reinitialize until `recover_checkpoint`
+   (they are the recovery data, so this is a budget policy question);
+   (b) pageable staging slots of a reset context are never freed, because
+   `NativeDriver::reset` forgets every minted handle and the native epoch
+   check refuses old-epoch frees, while `cudaDeviceReset` does not free
+   `malloc` memory. Proposed fix: keep pageable host handles across a reset
+   (they are host memory) and free the retired context's pageable slots after
+   a successful reset; needs a native rerun.
