@@ -1,0 +1,40 @@
+P3 red/mutation record: `cargo test -p loki-gpu --offline --test srs_registry` with one edit to src/srs.rs at a time (fake driver, no device).
+
+== red: acquire_srs is the Unsupported skeleton
+exit=101 ['test result: FAILED. 0 passed; 16 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s']
+failed: ['concurrent_acquires_share_and_account_exactly', 'corrupted_off_curve_and_non_subgroup_inputs_are_rejected_before_upload', 'equal_content_at_distinct_addresses_hits', 'eviction_is_lru_not_fifo', 'failed_eviction_release_is_quarantined', 'failed_upload_publishes_nothing', 'forged_lease_metadata_and_public_paths_are_rejected', 'k19_k20_coefficient_versus_lagrange', 'leased_entries_are_never_evicted', 'leases_across_context_loss', 'malformed_requests_are_rejected_before_any_work', 'n_and_n_minus_one_prefixes', 'oversized_entries_are_refused_before_upload', 'rewarm_then_same_address_mutation_misses', 'srs_msm_validates_then_reports_unsupported', 'synthetic_cold_warm_figures']
+
+== M1 hit on compatible key without content compare (address/metadata trust)
+exit=101 ['test result: FAILED. 7 passed; 9 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s']
+failed: ['concurrent_acquires_share_and_account_exactly', 'corrupted_off_curve_and_non_subgroup_inputs_are_rejected_before_upload', 'equal_content_at_distinct_addresses_hits', 'eviction_is_lru_not_fifo', 'failed_eviction_release_is_quarantined', 'k19_k20_coefficient_versus_lagrange', 'leased_entries_are_never_evicted', 'n_and_n_minus_one_prefixes', 'rewarm_then_same_address_mutation_misses']
+
+== M2 eviction ignores active leases
+exit=101 ['test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s']
+failed: ['leased_entries_are_never_evicted']
+
+== M3 Lagrange prefix of a larger domain accepted
+exit=101 ['test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s']
+failed: ['k19_k20_coefficient_versus_lagrange']
+
+== M4 upload without codec validation
+exit=101 ['test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s']
+failed: ['corrupted_off_curve_and_non_subgroup_inputs_are_rejected_before_upload']
+
+== M5 no purge on generation change (cross-generation reuse)
+exit=101 ['test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s']
+failed: ['leases_across_context_loss']
+
+== M6 oversize check removed (eviction may run past budget)
+exit=101 ['test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s']
+failed: ['oversized_entries_are_refused_before_upload']
+
+== M7 lease metadata not checked against record
+exit=101 ['test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s']
+failed: ['forged_lease_metadata_and_public_paths_are_rejected']
+
+
+M8 (lean-w1 finding 2): revert the stray-generation release quarantine in
+srs.rs (discard the release result). Caught:
+  stray_generation_upload_release_failure_is_quarantined
+  assertion failed: failed stray release stays charged (left: 0, right: 2048)
+With the fix: cargo test -p loki-gpu --offline --locked --test srs_registry -> 17 passed.
