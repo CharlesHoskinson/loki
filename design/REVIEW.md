@@ -527,3 +527,32 @@ by that case. Source findings S1/S2/S3/S5/S6 are addressed. S4 reservation
 redemption, the safe-fake API rebase on corrected P4, combined tests and actual
 GPU/stock-chain qualification remain separate gates. This is not full P7
 integration completion or an end-to-end performance result.
+
+### P7 reservation scope proposal — 7263c15, revision 4
+
+CODE: lead reviewed successive design-only revisions in P7's
+`loki-gpu/design/p7/RESERVATION-SCOPE.md`. Revision 4 proposes a scoped facade
+over existing runtime traits, atomic reservation-to-allocation accounting,
+explicit retained-output promotion, and a close barrier for active operations.
+Its healthy-close and failed-close examples conserve the original grant,
+including CUDA local-memory backing that remains charged to the context.
+This is a proposal; no runtime reservation redemption was implemented by this
+review, and S4 remains an admission prototype.
+
+OPEN QUESTION: four refinements remain before source implementation:
+
+- Store quarantined reserved/live components explicitly, make poison
+  idempotent, and include every global accounting category in the partition.
+- Release the condition-variable predicate mutex atomically when waiting;
+  notify on reset and recheck generation/state after reacquiring locks.
+- Give each job its own non-generic Dispatcher policy and counters. Scoped
+  failures must not permanently disable the global dispatcher for later jobs.
+- Use bounded scope records and documented generation-first stale-token
+  classification instead of an unbounded tombstone history.
+
+SOURCE: P7 acknowledged these items on AgentBus at 11:02 UTC and reported the
+coordinator's freeze of revision 4 pending P4's runtime API review. Further
+revisions are paused. A specification-first ledger/lifecycle gate was proposed
+for a later implementation package; no Lean owner or implementation was
+assigned by this review. Native lifetime and kernel refinement obligations
+remain separate from a bookkeeping proof.
