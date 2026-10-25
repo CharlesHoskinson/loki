@@ -37,6 +37,23 @@ pub(super) type IntermediateSets<F, Q> = (
 pub fn construct_intermediate_sets<F: Field + Hash + Ord, Q: Query<F>>(
     queries: &[Q],
 ) -> Result<IntermediateSets<F, Q>, Error> {
+    construct_intermediate_sets_with_evals(queries, |query| query.get_eval())
+}
+
+/// The prover never reads the grouping evaluations (#554); all transcript
+/// evaluations are computed separately in multi_open. Keep the verifier and
+/// default path on the original entry point, including their real evaluations.
+#[cfg(feature = "loki-multiopen")]
+pub(super) fn construct_prover_sets<'com, F: ff::PrimeField + Hash + Ord>(
+    queries: &[crate::poly::ProverQuery<'com, F>],
+) -> Result<IntermediateSets<F, crate::poly::ProverQuery<'com, F>>, Error> {
+    construct_intermediate_sets_with_evals(queries, |_| F::ZERO)
+}
+
+fn construct_intermediate_sets_with_evals<F: Field + Hash + Ord, Q: Query<F>>(
+    queries: &[Q],
+    get_eval: impl Fn(&Q) -> Q::Eval,
+) -> Result<IntermediateSets<F, Q>, Error> {
     // Construct sets of unique commitments and corresponding information about
     // their queries.
     let mut commitment_map: Vec<CommitmentData<Q::Eval, Q::Commitment>> = vec![];
@@ -115,7 +132,7 @@ pub fn construct_intermediate_sets<F: Field + Hash + Ord, Q: Query<F>>(
             if query.get_commitment() == commitment_data.commitment {
                 commitment_data.set_index = *set_index;
                 // Insert the eval using the ordering of the point_index_set
-                commitment_data.evals[point_index_in_set] = query.get_eval();
+                commitment_data.evals[point_index_in_set] = get_eval(query);
             }
         }
     }

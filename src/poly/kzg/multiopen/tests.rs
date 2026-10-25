@@ -5,6 +5,91 @@ use midnight_curves::{Bls12, Fq};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
+#[test]
+fn product_division_matches_successive_kate_division() {
+    let mut rng = ChaCha20Rng::from_seed([83; 32]);
+    let r = Fq::random(&mut rng);
+    let i = Fq::ROOT_OF_UNITY.pow_vartime([1u64 << (Fq::S - 2)]);
+    let shapes = [
+        vec![],
+        vec![Fq::ZERO],
+        vec![Fq::from(7)],
+        vec![Fq::ZERO, Fq::ZERO, Fq::ZERO],
+        vec![r, r, r],
+        vec![r, r * i, r * i.square(), r * i.square() * i],
+        (0..5).map(|_| Fq::random(&mut rng)).collect(),
+    ];
+    for n in [0, 1, 2, 3, 4, 5, 6, 64, 4097] {
+        for zero in [false, true] {
+            let mut poly: Vec<_> = (0..n)
+                .map(|_| if zero { Fq::ZERO } else { Fq::random(&mut rng) })
+                .collect();
+            // Preserve vector length even when the polynomial degree is lower.
+            for trailing_zeros in [false, true] {
+                if trailing_zeros {
+                    for coefficient in poly.iter_mut().rev().take(3) {
+                        *coefficient = Fq::ZERO;
+                    }
+                }
+                for roots in &shapes {
+                    // The stock kernel underflows when dividing an empty vector.
+                    if roots.len() <= n {
+                        let expected = roots
+                            .iter()
+                            .fold(poly.clone(), |p, x| kate_division(&p, *x));
+                        assert_eq!(divide_by_roots(&poly, roots), expected);
+                    } else {
+                        assert!(divide_by_roots(&poly, roots).is_empty());
+                    }
+                }
+            }
+        }
+    }
+    // Nonzero remainder: (X^2 + 1) / ((X - 1)(X - 2)) has quotient 1.
+    assert_eq!(
+        divide_by_roots(&[Fq::ONE, Fq::ZERO, Fq::ONE], &[Fq::ONE, Fq::from(2)]),
+        vec![Fq::ONE]
+    );
+}
+
+#[test]
+fn prover_grouping_skips_only_unused_evaluations() {
+    let mut rng = ChaCha20Rng::from_seed([97; 32]);
+    let polys: Vec<_> = (0..3)
+        .map(|_| Polynomial {
+            values: (0..16).map(|_| Fq::random(&mut rng)).collect(),
+            _marker: PhantomData,
+        })
+        .collect();
+    let queries = [
+        ProverQuery::new(Fq::from(3), &polys[0]),
+        ProverQuery::new(Fq::from(7), &polys[0]),
+        ProverQuery::new(Fq::from(7), &polys[1]),
+        ProverQuery::new(Fq::from(3), &polys[2]),
+        ProverQuery::new(Fq::from(7), &polys[2]),
+    ];
+    let (expected, points) = construct_intermediate_sets(&queries).unwrap();
+    let (actual, actual_points) = super::super::utils::construct_prover_sets(&queries).unwrap();
+    assert_eq!(actual_points, points);
+    assert!(expected
+        .iter()
+        .flat_map(|data| &data.evals)
+        .any(|e| *e != Fq::ZERO));
+    for (a, b) in actual.iter().zip(&expected) {
+        assert_eq!(a.commitment, b.commitment);
+        assert_eq!(a.commitment_label, b.commitment_label);
+        assert_eq!(a.set_index, b.set_index);
+        assert_eq!(a.point_indices, b.point_indices);
+        assert_eq!(a.evals, vec![Fq::ZERO; b.evals.len()]);
+    }
+    assert_eq!(actual.len(), expected.len());
+    let duplicates = [queries[0], queries[0]];
+    assert!(matches!(
+        super::super::utils::construct_prover_sets(&duplicates),
+        Err(Error::DuplicatedQuery)
+    ));
+}
+
 // Independent copy of the pre-feature polynomial path, including its clones.
 fn serial(
     queries: &[ProverQuery<Fq>],
