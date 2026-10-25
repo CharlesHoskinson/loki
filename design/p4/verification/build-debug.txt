@@ -1,0 +1,10 @@
+warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+  Executable unittests src/lib.rs (target/debug/deps/loki_gpu-f551ea5a6a291667)
+  Executable tests/ffi_abi.rs (target/debug/deps/ffi_abi-a07d0359ef377a29)
+  Executable tests/ntt_differential.rs (target/debug/deps/ntt_differential-86fe44898b882254)
+  Executable tests/ntt_process_entry.rs (target/debug/deps/ntt_process_entry-a01fd26ccc1c1af8)
+  Executable tests/p2_fix_regressions.rs (target/debug/deps/p2_fix_regressions-c716a57ea6057b0e)
+  Executable tests/resident_ntt.rs (target/debug/deps/resident_ntt-577daf231d4232e9)
+  Executable tests/review_regressions.rs (target/debug/deps/review_regressions-8472b58b0e36b136)
+  Executable tests/runtime_contract.rs (target/debug/deps/runtime_contract-78fda065237f07ac)
