@@ -46,6 +46,12 @@ pub enum ErrorKind {
     ContextLost,
     Poisoned,
     Internal,
+    /// The caller cancelled before publication. `NotStarted` means no work
+    /// began; `InputsPreserved` means submitted work retired successfully.
+    /// Failure to establish retirement is reported as the actual device or
+    /// synchronization error with `SessionPoisoned`, not as cancellation.
+    /// This category does not request automatic CPU retry of cancelled work.
+    Cancelled,
 }
 
 /// Caller-visible effects of a failed operation.

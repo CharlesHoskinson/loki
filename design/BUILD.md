@@ -1,6 +1,7 @@
 # Build and feature contract
 
-Status: implementation skeleton. **SOURCE** means a design or interface fact;
+Status: P2 runtime merged at `d71b7ca`; arithmetic remains an Unsupported
+skeleton. Independent runtime review has open blockers in [REVIEW.md](REVIEW.md). **SOURCE** means a design or interface fact;
 **CODE** means present in this repository; **MEASURED** means demonstrated by
 the named command on the named host; **ESTIMATE** and **OPEN QUESTION** are not
 performance claims. Normative prose below is **CODE (proposed contract)** unless
@@ -17,9 +18,11 @@ are requirements, not evidence that they have already run.
   `build.rs` returns before looking for CUDA when that feature is absent. No
   CUDA headers, toolkit, CUDA libraries, or C++ build crate are needed by the
   default build.
-- **CODE:** all operation shims initially report `Unsupported`. Capability
-  queries must report no available GPU operation until an implementation and
-  its differential gates are supplied. Unsupported is not a successful GPU
+- **CODE:** MSM, NTT, quotient and SRS arithmetic shims still report
+  `Unsupported`. P2 implements initialization and resident scalar transfers;
+  only an initialized healthy runtime advertises `resident_buffers`. No
+  arithmetic capability is advertised. Runtime correctness review remains
+  open; successful compilation is not production approval. Unsupported is not a successful GPU
   dispatch and must never be counted as acceleration.
 
 From the repository root, the intended CPU-only compile check is:
@@ -58,13 +61,16 @@ CUDA_HOME="$HOME/.local/opt/cuda-13.4.3" \
   ffi::tests::all_unsupported_stubs_leave_output_untouched
 ```
 
-**CODE:** the feature build consumes one shared C ABI header and the operation
-translation units in `crates/loki-gpu/cuda/`. The v1 C entry points are
-synchronous byte-wire placeholders. They do not express device residency,
-borrowed asynchronous copies, or completion ownership. Public v1 resident API
-calls block until transfer retirement, use backend-owned upload staging, and
-return completed download vectors. Device streams/events remain private to the
-GPU crate. Any future asynchronous public API must use owned completion state
+**CODE:** the feature build consumes one shared C ABI header and four CUDA
+translation units: `msm.cu`, `ntt.cu`, `quotient.cu`, and P2 `runtime.cu`. The
+three arithmetic entry points remain synchronous byte-wire placeholders.
+The separate `loki_gpu_rt_*_v1` ABI implements transfers, allocation, events,
+streams and a byte-copy self-test kernel. Its 32-byte handle mirror and
+16-byte status mirror have checked layouts. Ownership/publication policy
+belongs to the Rust coordinator; these raw entry points do not enforce it.
+Public v1 resident API calls block until transfer retirement, use backend-owned upload staging, and
+return completed download vectors. Device streams/events must remain behind
+the coordinator; the current public driver exposure is review finding D4. Any future asynchronous public API must use owned completion state
 whose safety does not rely on `Drop` running; direct DMA from or to borrowed
 caller slices is forbidden. It must not reinterpret this placeholder ABI as a
 production transfer path.
@@ -79,8 +85,10 @@ are documented.
 
 - The GPU crate depends on `loki-backend-api`; it owns CUDA compilation and
   implementation details, while the API owns host-side operation contracts.
-- No CUDA pointer or runtime type crosses the public Rust API.
-- The C ABI uses fixed-width integer status codes. Every stub returns
+- No CUDA pointer or runtime type crosses the backend-neutral API. The GPU
+  crate's public raw-driver exposure is a review blocker (D4), not an approved
+  application interface.
+- The C ABI uses fixed-width integer status codes. Every arithmetic stub returns
   `UNSUPPORTED` before reading input or modifying output.
 - API errors distinguish `NotStarted`, `InputsPreserved`, and
   `SessionPoisoned`. Every returned error preserves caller-visible inputs and
@@ -121,7 +129,7 @@ GPU or execute arithmetic. The selected compiler was
 `/home/charles/.local/opt/cuda-13.4.3/bin/nvcc`, reporting CUDA release 13.4,
 V13.4.92; Rust was `rustc 1.99.1 (58cf8f9c3 2026-10-13)`. The directory name
 13.4.3 is an installation label, not the compiler's reported version.
-The receipt applies to the skeleton tree committed with this document;
+The receipt applies to the original skeleton commit `df9584f`;
 [default-check log](verification/rust-default-check.txt) records the CPU-only
 workspace check. GPU kernel timing and proof speedup require separate
 measurements; these checks establish neither.
@@ -145,3 +153,42 @@ isolated process environment before constructing `cc::Build`. `Build::env`
 sets child-process variables and does not select the compiler. No cc-rs code is
 copied into this repository.
 
+
+
+## P2 gates and their limits
+
+**MEASURED (implementer evidence):** [P2 review](p2/REVIEW.md) records default
+compilation, 39 runtime-contract tests, 10 native ABI tests (one measurement
+ignored), three CUDA unit tests and sanitizer runs over seven native cases.
+The native ABI gate now requires an actual device by default;
+`LOKI_GPU_ALLOW_NO_DEVICE=1` explicitly permits skipping and must never be
+used for a GPU-required qualification. Run native tests only through the
+host runner with device admission. Existing commands are:
+
+```sh
+cargo check --workspace --locked -j3
+cargo test -p loki-gpu --locked -j3 --test runtime_contract
+CUDA_HOME="$HOME/.local/opt/cuda-13.4.3" \
+  cargo test -p loki-gpu --locked --features cuda --test ffi_abi -- --test-threads=1
+```
+
+**MEASURED (independent review):** four additional no-GPU regressions fail
+against `d71b7ca`: cross-runtime handle identity, setup teardown after a
+sticky error, normal teardown after a sticky error, and success publication
+after a sticky timing error. [Raw log](verification/p2-review-regressions.txt)
+and [reproducer](verification/p2-review-regressions.rs) are retained.
+These failures qualify the existing passes; the runtime is not approved for
+resident arithmetic promotion until the corrective gates in REVIEW.md pass.
+
+**CODE:** `ErrorKind::Cancelled` is an API category, separate from the native
+status ABI. Cancellation before work is `NotStarted`; after successful
+retirement it is `InputsPreserved`. A failed drain/free retains its actual
+failure category and `SessionPoisoned`. P2 follow-up owns the runtime mappings
+and tests. Cancellation never authorizes automatic CPU retry.
+
+
+**MEASURED (lead rerun after the additive API change):** locked workspace
+check exits 0 ([log](verification/p2-api-check.txt)); existing runtime contract
+suite passes 39/39 ([log](verification/p2-existing-contracts.txt)). Both ran
+through the host runner with no CUDA feature or device access. These are
+compatibility checks, not closure of the four independently reproduced defects.

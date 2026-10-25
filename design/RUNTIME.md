@@ -1,9 +1,12 @@
 # Device runtime, residency, and SRS leases
 
-**Status:** design for the first `loki-gpu` runtime. CUDA operations remain
-stubs until the kernel packages are implemented. The Rust types in this
-package describe ownership and failure rules; they do not claim measured
-overlap or concurrent-proof throughput.
+**Status — CODE:** P2 `d71b7ca` implements the device coordinator, scalar
+residency, bounded staging, streams/events, allocation/reservation registry,
+private checkpoints and the native runtime ABI. MSM, NTT, quotient and SRS
+operations remain `Unsupported`. Independent review found blocking identity,
+publication and teardown defects; see [REVIEW.md](REVIEW.md). This is an
+implementation with outstanding corrections, not an approved production
+runtime or a claim of measured overlap/concurrent-proof throughput.
 
 **Evidence convention:** unless explicitly labeled `SOURCE`, `MEASURED`,
 `ESTIMATE`, or `OPEN QUESTION`, normative design prose is `CODE (proposed)`;
@@ -26,7 +29,12 @@ compute capability, and provides a single lock order:
 
 1. device coordinator / context guard;
 2. SRS registry or allocator metadata lock;
-3. per-operation stream/event bookkeeping.
+3. telemetry counters.
+
+CODE (implemented): stream/event state is protected by the device lock;
+`OrderedMutex` checks lock-order violations. Registry metadata is not held
+across driver calls. Native-driver exclusivity still needs enforcement;
+public construction currently permits bypassing this intended policy.
 
 Do not wait for Rayon work while holding any of these locks. Do not call CUDA
 or release a device handle while holding a registry-only lock. The current
@@ -61,8 +69,11 @@ runtime may use async streams internally, but a completion registry owns each
 staging allocation and event until retirement. Direct asynchronous DMA to or
 from caller slices is deferred; a future async public API needs an owned
 completion object whose safety does not rely on its destructor running.
-Device-error cleanup that cannot prove completion marks the context unhealthy
-and retains uncertain handles until process teardown.
+Device-error cleanup that cannot prove completion must mark the context
+unhealthy and retain uncertain handles until completion/reset is proven.
+CODE (review gap): P2 does this on primary transfer failure paths, but its
+setup/Drop cleanup and timing-error handling have confirmed exceptions.
+P2 follow-up must correct them before this invariant is claimed generally.
 
 Host outputs are transactional. Kernels write into private device scratch;
 the backend copies into a caller-visible host result only after the completion
@@ -117,8 +128,13 @@ temporaries, and delayed frees. Pinned host staging is charged to its separate
 bounded host-memory budget, not to device allocation. At initialization,
 available device memory is queried; the usable device budget is the lower of
 an explicit operator cap and available memory minus reserved headroom. Every
-device allocation uses `try_reserve` for its full accounted size before launch
-and releases the reservation only after completion. A failed reservation
+device allocation obtains an internal reservation for its full accounted size
+before launch and releases that reservation only at publication or retirement.
+CODE (integration gap): public scheduler reservations are separate tokens; the
+current upload/launch API cannot consume one. P7 must define reservation
+redemption or a scoped proof budget before treating admission as a guarantee
+that the admitted operation can allocate; double charging or releasing the
+reservation before allocation does not provide that guarantee. A failed reservation
 returns an error before mutating inputs or publishing an output. This prevents
 quotient scratch, NTT buffers, MSM scratch, and resident SRS data from
 independently assuming the same free memory.
@@ -226,3 +242,47 @@ stock operations without constructing this runtime.
   allocation sizes. If it does not, the adapter must use a version-pinned
   conservative footprint estimator and keep the measurement limitation
   visible.
+
+
+## Post-P2 representation and recovery boundaries
+
+- CODE: P2 stores `PrimeField::to_repr` canonical bytes, bound to element
+  `TypeId` and a private `ScalarCanonicalRepr` form. This is not the proposed
+  Montgomery kernel encoding. P4 must introduce checked conversion and an
+  explicit form transition; P6 must reuse that contract. P3 owns the concrete
+  point encoding because generic `group::Curve` supplies none.
+- CODE: cooperative cancellation uses a private `CancelToken`, checked at
+  chunk boundaries. API `ErrorKind::Cancelled` distinguishes a requested stop
+  from a runtime bug, with `NotStarted` or confirmed `InputsPreserved` effects.
+  Failed retirement must report the actual device/synchronization error and
+  poison the generation. The Loki scheduler must not restart cancelled work
+  automatically on CPU. P2 follow-up updates the current `Internal` mapping.
+- CODE: checkpoint retention is separately bounded (default 1 GiB). Current
+  poisoned/stale handles cannot be explicitly discarded without recovery;
+  repeated abandoned sessions can exhaust this budget. Pageable host staging
+  also remains leaked after native reset, up to 128 MiB per reset with the
+  maximum configuration. P2/P7 must supply validated discard and safe retired
+  host cleanup before reusable recovery is promoted. Never fix these leaks by
+  freeing memory that may still be referenced by work of uncertain completion.
+- CODE: download temporarily retains encoded bytes and decoded elements;
+  budget both in host-memory/chain peak measurements. No two-proof capacity
+  or overlap claim follows from the bounded staging ring.
+- MEASURED (implementer report): on this WSL2 host, the same pinned-budget probe
+  previously allocated 4096 MiB (128 × 32 MiB) without failure in 2.136 s,
+  despite a 64 MiB memlock limit. This does not establish a universal WSL2
+  limit. The [receipt](p2/verification/pinned-probe.txt) explicitly records that
+  the later logged rerun timed out acquiring the heavy lock and did not run;
+  the earlier successes are reported there, not a fresh final-source probe.
+  Keep the 2-slot default/4-slot cap as a design budget, not a measured 500 MB
+  platform ceiling. Pageable fallback remains mandatory.
+- SOURCE/CODE: CUDA device selection applies to the calling host thread.
+  P2 binds the device in probe/reset only; every later native call must bind
+  or validate the selected device, or all calls must run on one dedicated
+  device thread. The single ordinal-0 test configuration does not validate
+  arbitrary worker-thread/device combinations. See NVIDIA's
+  [device-management reference](https://docs.nvidia.com/cuda/cuda-runtime-api/cuda_runtime_api/group__CUDART__DEVICE.html)
+  and [thread-device guidance](https://developer.nvidia.com/blog/cuda-pro-tip-always-set-current-device-avoid-multithreading-bugs/).
+- CODE: the P2 Lean extension at `gpu-spec 21f208d` proves abstract single-state
+  round trips, accounting and generation properties. It does not verify native
+  lifetimes, cross-runtime identities, FFI accessibility, or byte encodings.
+  Its successful build cannot discharge the runtime defects found by review.
