@@ -369,6 +369,28 @@ Exact call sites to thread `Option<&BackendContext>` through, all behind
   never publish.
 - The "admission prototype" label is removed when this lands.
 
+## Specification-first gate (prerequisite to any runtime code)
+
+Before any scope code lands in the runtime, a formal ledger-and-lifecycle model
+must check the rules above:
+
+- **Quint** (extending the Q3 runtime model): state = the registry counters
+  plus scope records. Actions are open, extend, charge (including P5 local
+  growth), publish, abort-certain, abort-uncertain/poison, free, pinned-free,
+  close steps 1–7, double-close and reinitialize. The model checks I1–I5,
+  conservation, the error precedence, and "a published completion implies a
+  clean close" (S5).
+- **Lean**: a proposed new `BackendScope.lean` module proving I2 conservation
+  and I3 budget safety for every action sequence. It maps failure preservation
+  (NotStarted and InputsPreserved restore credit; SessionPoisoned quarantines)
+  to the existing Backend refinement contracts.
+
+Out of scope for both: native CUDA lifetime and retirement. The rule "v1 calls
+retire their work before returning" and "`device_free` succeeded means the
+memory is free" stay explicit assumptions. No theorem claims CUDA refinement
+from bookkeeping arithmetic alone. The Lean files and root imports need an
+owner assigned by the coordinator; P7 does not edit them unassigned.
+
 ## Tests (implementation phase)
 
 All tests run on FakeDriver through the safe `with_fake` / `FakeControl` API.
