@@ -103,3 +103,6 @@ bench-internal = ["criterion"]
 
 [lib]
 bench = false
+
+# Clone-free, ordered parallel KZG multiopen polynomial work.
+loki-multiopen = []
