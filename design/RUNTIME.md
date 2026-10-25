@@ -3,10 +3,11 @@
 **Status — CODE:** P2 `d71b7ca` implements the device coordinator, scalar
 residency, bounded staging, streams/events, allocation/reservation registry,
 private checkpoints and the native runtime ABI. MSM, NTT, quotient and SRS
-operations remain `Unsupported`. Independent review found blocking identity,
-publication and teardown defects; see [REVIEW.md](REVIEW.md). This is an
-implementation with outstanding corrections, not an approved production
-runtime or a claim of measured overlap/concurrent-proof throughput.
+operations remain `Unsupported`. Corrective merge `eb27233` addresses the
+original identity/publication/teardown defects found by review. A device-query
+error-preservation follow-up and recovery/integration limits remain; see
+[REVIEW.md](REVIEW.md). This is not a claim of measured overlap or
+concurrent-proof throughput.
 
 **Evidence convention:** unless explicitly labeled `SOURCE`, `MEASURED`,
 `ESTIMATE`, or `OPEN QUESTION`, normative design prose is `CODE (proposed)`;
@@ -33,8 +34,9 @@ compute capability, and provides a single lock order:
 
 CODE (implemented): stream/event state is protected by the device lock;
 `OrderedMutex` checks lock-order violations. Registry metadata is not held
-across driver calls. Native-driver exclusivity still needs enforcement;
-public construction currently permits bypassing this intended policy.
+across driver calls. Corrective merge `eb27233` makes the native driver
+private and enforces one live native owner through `GpuRuntime::native`;
+`GpuRuntime::process` uses that same constructor.
 
 Do not wait for Rayon work while holding any of these locks. Do not call CUDA
 or release a device handle while holding a registry-only lock. The current
@@ -71,9 +73,10 @@ from caller slices is deferred; a future async public API needs an owned
 completion object whose safety does not rely on its destructor running.
 Device-error cleanup that cannot prove completion must mark the context
 unhealthy and retain uncertain handles until completion/reset is proven.
-CODE (review gap): P2 does this on primary transfer failure paths, but its
-setup/Drop cleanup and timing-error handling have confirmed exceptions.
-P2 follow-up must correct them before this invariant is claimed generally.
+CODE (corrected): merge `eb27233` stops setup/Drop destruction at the first
+failed cleanup call and aborts publication on sticky optional timing errors.
+The former counterexamples are retained as regression tests. Recovery leaks
+and native qualification limits remain separately tracked.
 
 Host outputs are transactional. Kernels write into private device scratch;
 the backend copies into a caller-visible host result only after the completion
@@ -256,7 +259,7 @@ stock operations without constructing this runtime.
   from a runtime bug, with `NotStarted` or confirmed `InputsPreserved` effects.
   Failed retirement must report the actual device/synchronization error and
   poison the generation. The Loki scheduler must not restart cancelled work
-  automatically on CPU. P2 follow-up updates the current `Internal` mapping.
+  automatically on CPU. Merge `eb27233` updates the former `Internal` mapping.
 - CODE: checkpoint retention is separately bounded (default 1 GiB). Current
   poisoned/stale handles cannot be explicitly discarded without recovery;
   repeated abandoned sessions can exhaust this budget. Pageable host staging
@@ -276,9 +279,9 @@ stock operations without constructing this runtime.
   Keep the 2-slot default/4-slot cap as a design budget, not a measured 500 MB
   platform ceiling. Pageable fallback remains mandatory.
 - SOURCE/CODE: CUDA device selection applies to the calling host thread.
-  P2 binds the device in probe/reset only; every later native call must bind
-  or validate the selected device, or all calls must run on one dedicated
-  device thread. The single ordinal-0 test configuration does not validate
+  Merge `eb27233` adds per-entry `ensure_device` binding. P4 must also
+  propagate a failed `cudaGetDevice` query immediately, before attempting
+  to change device; discarding a potentially sticky first error is not valid. The single ordinal-0 test configuration does not validate
   arbitrary worker-thread/device combinations. See NVIDIA's
   [device-management reference](https://docs.nvidia.com/cuda/cuda-runtime-api/cuda_runtime_api/group__CUDART__DEVICE.html)
   and [thread-device guidance](https://developer.nvidia.com/blog/cuda-pro-tip-always-set-current-device-avoid-multithreading-bugs/).

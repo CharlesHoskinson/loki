@@ -1,7 +1,9 @@
 # Build and feature contract
 
-Status: P2 runtime merged at `d71b7ca`; arithmetic remains an Unsupported
-skeleton. Independent runtime review has open blockers in [REVIEW.md](REVIEW.md). **SOURCE** means a design or interface fact;
+Status: P2 runtime plus corrective merge `eb27233`; arithmetic remains an
+Unsupported skeleton. Original review regressions are corrected; remaining
+qualification limits and a device-query error follow-up are in
+[REVIEW.md](REVIEW.md). **SOURCE** means a design or interface fact;
 **CODE** means present in this repository; **MEASURED** means demonstrated by
 the named command on the named host; **ESTIMATE** and **OPEN QUESTION** are not
 performance claims. Normative prose below is **CODE (proposed contract)** unless
@@ -70,7 +72,8 @@ streams and a byte-copy self-test kernel. Its 32-byte handle mirror and
 belongs to the Rust coordinator; these raw entry points do not enforce it.
 Public v1 resident API calls block until transfer retirement, use backend-owned upload staging, and
 return completed download vectors. Device streams/events must remain behind
-the coordinator; the current public driver exposure is review finding D4. Any future asynchronous public API must use owned completion state
+the coordinator; the former public driver exposure (D4) is closed by the private native
+driver and exclusive `GpuRuntime::native` ownership in `eb27233`. Any future asynchronous public API must use owned completion state
 whose safety does not rely on `Drop` running; direct DMA from or to borrowed
 caller slices is forbidden. It must not reinterpret this placeholder ABI as a
 production transfer path.
@@ -86,8 +89,8 @@ are documented.
 - The GPU crate depends on `loki-backend-api`; it owns CUDA compilation and
   implementation details, while the API owns host-side operation contracts.
 - No CUDA pointer or runtime type crosses the backend-neutral API. The GPU
-  crate's public raw-driver exposure is a review blocker (D4), not an approved
-  application interface.
+  crate's raw native driver is private after `eb27233`; use the runtime
+  coordinator, never a native pointer interface.
 - The C ABI uses fixed-width integer status codes. Every arithmetic stub returns
   `UNSUPPORTED` before reading input or modifying output.
 - API errors distinguish `NotStarted`, `InputsPreserved`, and
@@ -177,13 +180,14 @@ against `d71b7ca`: cross-runtime handle identity, setup teardown after a
 sticky error, normal teardown after a sticky error, and success publication
 after a sticky timing error. [Raw log](verification/p2-review-regressions.txt)
 and [reproducer](verification/p2-review-regressions.rs) are retained.
-These failures qualify the existing passes; the runtime is not approved for
-resident arithmetic promotion until the corrective gates in REVIEW.md pass.
+These are historical failures on `d71b7ca`. Corrective merge `eb27233`
+addresses them and incorporates the unchanged reproductions as passing gates;
+see REVIEW.md for the independent correction review and residual limits.
 
 **CODE:** `ErrorKind::Cancelled` is an API category, separate from the native
 status ABI. Cancellation before work is `NotStarted`; after successful
 retirement it is `InputsPreserved`. A failed drain/free retains its actual
-failure category and `SessionPoisoned`. P2 follow-up owns the runtime mappings
+failure category and `SessionPoisoned`. Corrective merge `eb27233` updates the runtime mappings
 and tests. Cancellation never authorizes automatic CPU retry.
 
 
@@ -192,3 +196,17 @@ check exits 0 ([log](verification/p2-api-check.txt)); existing runtime contract
 suite passes 39/39 ([log](verification/p2-existing-contracts.txt)). Both ran
 through the host runner with no CUDA feature or device access. These are
 compatibility checks, not closure of the four independently reproduced defects.
+
+
+**MEASURED (P2-fix implementer):** on the native device, `ffi_abi` now passes
+13 tests with one measurement ignored; CUDA unit tests pass 4/4 and the four
+privacy compile-fail doctests pass. [Receipt](p2/verification/p2-fix-ffi-abi.txt).
+Native-driver construction is through `GpuRuntime::native(config)` or the
+process runtime, with a single live owner; the former public factory is gone.
+These gates do not establish NTT/MSM/quotient correctness or a speedup.
+
+**MEASURED (independent lead rerun on `eb27233`):** `cargo test -p loki-gpu
+--locked -j3 --test review_regressions --test p2_fix_regressions --test
+runtime_contract` exits 0: 4 + 10 + 39 tests pass.
+[Raw log](verification/p2-fixed-regressions.txt). This closes the original
+reproductions while retaining the separate device-query and recovery limits.

@@ -51,3 +51,13 @@ snapshot comparisons. The new SRS Lean module must prove consumed-prefix
 refinement, generation rejection and lease/accounting properties with concrete
 nonempty examples, not merely restate an assumed cache-hit predicate. Existing
 full-sequence `SoundHit` does not already prove capacity/prefix reuse.
+
+
+SOURCE/CODE (coordinator handoff, 2026-10-25 07:02 UTC): P2-fix `09fd92a`
+merged as `eb27233`. Coordinator transferred `runtime.rs`, `ffi.rs`,
+`cuda/runtime.cu`, and `cuda/include/loki_gpu_ffi.h` to loki-p4. P4 rebases its
+shared-file patch before application; P3 sends its point-wire seam to P4 for
+serialized integration or obtains a later explicit transfer. P2-fix remains
+the correction credit; its earlier exclusive ownership row is historical
+from this handoff onward. P4 also owns the lead's follow-up to propagate
+`cudaGetDevice` errors immediately from `ensure_device`.

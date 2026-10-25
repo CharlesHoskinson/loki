@@ -56,7 +56,8 @@ CODE: `quotient-compiler-lowering`, `quot-inputs`, the existing stock-trace-fait
 CODE: astra-gpu reviewed the merged runtime, native ABI, FFI visibility,
 transfer/publication paths, registry checks, cleanup and P2 evidence against
 RUNTIME.md. The implementation supplies substantial runtime scaffolding, but
-**resident arithmetic promotion is blocked** by the findings below. Existing
+**resident arithmetic promotion was blocked at that revision** by the
+findings below. The correction status is recorded in the later P2-fix section. Existing
 39-test and sanitizer passes do not cover these cases. P4 may develop kernels
 in isolation; integration approval requires the P2 corrections first.
 
@@ -153,3 +154,41 @@ to stock. No constant-time claim is made for this path or inferred from the
 stock-verifier passes. P7's host/prover integration owner must document the
 accepted timing threat model and escalate any required constant-time mode to
 the coordinator; proof-byte equality alone does not resolve this item.
+
+
+## P2-fix source review — 09fd92a / merge eb27233
+
+CODE: astra-gpu independently reviewed `09fd92a` after the coordinator merged
+it as `eb27233`. The original four reproductions are preserved byte-for-byte
+as executable `tests/review_regressions.rs`; the broader
+`tests/p2_fix_regressions.rs` covers foreign release/duplicate/reservations/
+checkpoints, cleanup boundaries and timing faults.
+
+| Finding | Disposition |
+|---|---|
+| D1 | Original collision closed by process-global checked allocation/reservation/generation counters. Exhaustion returns Capacity instead of wrapping. IDs are acquired before device work. |
+| D2 | Original setup/Drop destruction-through-poison cases closed by stopping cleanup at the first failed destruction or synchronization; uncertain resources are retained. This does not close the separately tracked abandoned-checkpoint/pageable-reset leaks. |
+| D3 | Original optional-timing publication bug closed: the shared optional-call handler ignores only transient/unsupported failures and aborts/poisons on sticky errors. Upload, download and duplicate use it. |
+| D4 | Public native-driver escape closed: NativeDriver/factory are crate-private. `GpuRuntime::native(config)` owns an exclusive native claim; `process()` uses the same route. Native minted-handle checks provide additional defense. Public API compile-fail cases and native single-owner tests are recorded by the implementer. Callers still must use runtime allocation IDs; the private native pointer set is not a substitute for registry identity. |
+| D5 | Per-thread device binding implemented at all native entry points. One error-preservation follow-up remains assigned to P4: `ensure_device` currently discards a failed `cudaGetDevice` result before trying `cudaSetDevice`; propagate the first error immediately. The single-GPU tests do not qualify nonzero-device switching. |
+
+CODE: cancellation now uses `Cancelled` on the requested-stop path; failed
+retirement/free uses the actual failure kind and poisons. No additional API
+layout or native ABI change was needed.
+
+MEASURED (implementer evidence): native ABI tests 13 passed/1 ignored, CUDA
+unit tests 4 passed, privacy doctests 4 passed, sanitizer suites exit 0.
+[Native receipt](p2/verification/p2-fix-ffi-abi.txt),
+[sanitizer receipt](p2/verification/p2-fix-compute-sanitizer.txt).
+No real sticky fault was injected on the shared GPU. The implementer explicitly
+notes that a single ordinal-0 device cannot detect regression of device
+selection on another ordinal. The Lean model at `21f208d` is unchanged.
+
+SOURCE (coordinator): main merge `eb27233` independently passed 4 original
+regressions, 10 expanded regressions and 39 existing runtime cases. Lead's
+own runner rerun also passed all 53 cases (exit 0, 1.067 s execution after
+487.093 s queueing), with no CUDA feature: [raw log](verification/p2-fixed-regressions.txt). The coordinator handed
+runtime.rs/ffi.rs/native runtime/header ownership to P4 at this merge; P3 must
+send its point-wire seam through that owner or wait for explicit transfer.
+R9/R10 (repeated recovery leaks), reservation redemption and the abstraction
+limits remain open under their assigned package gates.
