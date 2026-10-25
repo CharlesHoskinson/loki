@@ -1,14 +1,10 @@
 //! Narrow, serialized sppark NTT adapter for Midnight's BLS12-381 scalar field.
 
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Mutex,
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use blst::blst_fr;
 use midnight_curves::Fq;
 
-static DEVICE: Mutex<()> = Mutex::new(());
 static COMPLETED: AtomicU64 = AtomicU64::new(0);
 
 extern "C" {
@@ -34,7 +30,10 @@ pub fn fft(values: &mut [Fq], root: Fq, inverse: bool) -> Result<(), String> {
     if !values.len().is_power_of_two() || values.len().trailing_zeros() > 28 {
         return Err("cuda-ntt requires a power-of-two length no larger than 2^28".into());
     }
-    let _device = DEVICE.lock().map_err(|_| "CUDA NTT lock poisoned")?;
+    if std::env::var_os("LOKI_NTT_FORCE_ERROR").is_some() {
+        return Err("injected CUDA NTT error".into());
+    }
+    let _device = loki_cuda_runtime::lock()?;
     // Public conversions preserve Montgomery limbs without relying on Fq layout.
     let mut limbs: Vec<blst_fr> = values.iter().copied().map(Into::into).collect();
     let root: blst_fr = root.into();

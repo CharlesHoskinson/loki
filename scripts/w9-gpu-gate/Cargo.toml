@@ -1,0 +1,11 @@
+[package]
+name = "w9-gpu-gate"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[features]
+# Ask the host runner to hold its GPU reservation across the nested commands.
+cuda = []

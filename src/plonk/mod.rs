@@ -173,6 +173,10 @@ where
             ));
         }
 
+        #[cfg(feature = "loki-harden")]
+        let domain = EvaluationDomain::try_new(cs.degree(), k.into())
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        #[cfg(not(feature = "loki-harden"))]
         let domain = EvaluationDomain::new(cs.degree() as u32, k.into());
 
         let mut num_fixed_columns = [0u8; 4];

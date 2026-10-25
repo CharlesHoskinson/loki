@@ -735,9 +735,14 @@ dependencies = [
  "blst",
  "cc",
  "home",
+ "loki-cuda-runtime",
  "midnight-curves",
  "sppark",
 ]
+
+[[package]]
+name = "loki-cuda-runtime"
+version = "0.1.0"
 
 [[package]]
 name = "memchr"
@@ -790,6 +795,7 @@ dependencies = [
  "group",
  "itertools 0.14.0",
  "loki-cuda-ntt",
+ "loki-cuda-runtime",
  "midnight-curves",
  "num-bigint",
  "proptest",

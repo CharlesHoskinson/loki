@@ -8,9 +8,29 @@ use crate::{
     utils::arithmetic::parallelize,
 };
 
+#[cfg(feature = "loki-harden")]
+type RotationIndex = usize;
+#[cfg(not(feature = "loki-harden"))]
+type RotationIndex = i32;
+
 /// Return the index in the polynomial of size `isize` after rotation `rot`.
-pub(crate) fn get_rotation_idx(idx: usize, rot: i32, rot_scale: i32, isize: i32) -> usize {
-    (((idx as i32) + (rot * rot_scale)).rem_euclid(isize)) as usize
+pub(crate) fn get_rotation_idx(
+    idx: usize,
+    rot: i32,
+    rot_scale: RotationIndex,
+    isize: RotationIndex,
+) -> usize {
+    #[cfg(feature = "loki-harden")]
+    {
+        // LokiLean/Ntt.lean: rotIdx and rotate_extended use integer arithmetic,
+        // including a negative rotation, before reducing modulo the domain size.
+        // i128 holds a usize index plus any i32 rotation times a usize stride.
+        (idx as i128 + rot as i128 * rot_scale as i128).rem_euclid(isize as i128) as usize
+    }
+    #[cfg(not(feature = "loki-harden"))]
+    {
+        (((idx as i32) + (rot * rot_scale)).rem_euclid(isize)) as usize
+    }
 }
 
 /// Value used in a calculation
@@ -309,7 +329,7 @@ impl<F: WithSmallOrderMulGroup<3>> Evaluator<F> {
         let size = B::len(domain);
         let rot_scale = 1 << (B::k(domain) - domain.k());
         let omega = B::omega(domain);
-        let isize = size as i32;
+        let isize = size as RotationIndex;
         let one = F::ONE;
 
         let p = &cs.permutation;
@@ -746,8 +766,8 @@ impl<F: PrimeField> GraphEvaluator<F> {
         y: &F,
         previous_value: &F,
         idx: usize,
-        rot_scale: i32,
-        isize: i32,
+        rot_scale: RotationIndex,
+        isize: RotationIndex,
     ) -> F {
         // All rotation index values
         for (rot_idx, rot) in self.rotations.iter().enumerate() {
@@ -786,14 +806,14 @@ impl<F: PrimeField> GraphEvaluator<F> {
 pub fn evaluate<F: Field, B: PolynomialRepresentation>(
     expression: &Expression<F>,
     size: usize,
-    rot_scale: i32,
+    rot_scale: RotationIndex,
     fixed: &[Polynomial<F, B>],
     advice: &[Polynomial<F, B>],
     instance: &[Polynomial<F, B>],
     challenges: &[F],
 ) -> Vec<F> {
     let mut values = vec![F::ZERO; size];
-    let isize = size as i32;
+    let isize = size as RotationIndex;
     parallelize(&mut values, |values, start| {
         for (i, value) in values.iter_mut().enumerate() {
             let idx = start + i;
@@ -821,4 +841,56 @@ pub fn evaluate<F: Field, B: PolynomialRepresentation>(
         }
     });
     values
+}
+
+
+#[cfg(all(test, feature = "loki-harden"))]
+mod edge_tests {
+    use super::*;
+
+    #[test]
+    fn rotation_large_domains_and_extreme_rotations() {
+        // No polynomial allocation is needed to exhibit the index overflow.
+        let mut sizes = vec![1usize << 28, 1usize << 31];
+        #[cfg(target_pointer_width = "64")]
+        sizes.push(1usize << 32);
+        for n in sizes {
+            for scale in [1usize, 4, 1 << 20] {
+                for idx in [0, n - 1] {
+                    for rot in [i32::MIN, -7, -1, 0, 1, 7, i32::MAX] {
+                        let expected = ((idx as i128 + rot as i128 * scale as i128)
+                            .rem_euclid(n as i128)) as usize;
+                        assert_eq!(get_rotation_idx(idx, rot, scale as _, n as _), expected);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn quotient_degree_has_a_positive_floor() {
+        use midnight_curves::Fq;
+        // Even a circuit with no gates or permutation columns has degree >= 3.
+        let cs = ConstraintSystem::<Fq>::default();
+        assert!(cs.degree() >= 3);
+        let domain = EvaluationDomain::<Fq>::new(cs.degree() as u32, 4);
+        assert!(domain.get_quotient_poly_degree() >= 2);
+    }
+}
+
+#[cfg(all(test, feature = "loki-harden", target_pointer_width = "64"))]
+#[test]
+fn oversized_degree_is_rejected_when_reading_key() {
+    use crate::poly::kzg::KZGCommitmentScheme;
+    use midnight_curves::{Bls12, Fq};
+    let mut cs = ConstraintSystem::<Fq>::default();
+    cs.set_minimum_degree(1usize << 32);
+    let error = crate::plonk::VerifyingKey::<Fq, KZGCommitmentScheme<Bls12>>::read_from_cs(
+        &mut &[crate::plonk::VERSION, 4][..],
+        crate::utils::SerdeFormat::Processed,
+        cs,
+    )
+    .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(error.to_string().contains("degree"));
 }

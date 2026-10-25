@@ -8,10 +8,9 @@ use midnight_curves::{
     pairing::{Engine, MillerLoopResult, MultiMillerLoop},
     CurveAffine, Fq, G1Projective,
 };
-use rayon::{
-    iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
-    slice::ParallelSlice,
-};
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+#[cfg(feature = "loki-cpu-budget")]
+use rayon::{iter::IndexedParallelIterator, slice::ParallelSlice};
 
 use super::params::ParamsVerifierKZG;
 use crate::{
@@ -199,15 +198,20 @@ fn msm_cpu<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) -> C::Curve
         let bases_slice = bases.as_slice();
         let coeffs = unsafe { &*(coeffs_slice as *const _ as *const [Fq]) };
         let bases = unsafe { &*(bases_slice as *const _ as *const [G1Projective]) };
+        #[cfg(not(feature = "loki-cpu-budget"))]
+        let res = G1Projective::multi_exp(bases, coeffs);
         // BLST's no-threads feature disables its independent global pool.
         // Schedule serial Pippenger chunks on the caller's active Rayon pool.
         // Nested commitments therefore share the same worker budget.
-        let chunk_size = coeffs.len().div_ceil(rayon::current_num_threads()).max(1024);
-        let res = coeffs
-            .par_chunks(chunk_size)
-            .zip(bases.par_chunks(chunk_size))
-            .map(|(coeffs, bases)| G1Projective::multi_exp(bases, coeffs))
-            .reduce(G1Projective::identity, |a, b| a + b);
+        #[cfg(feature = "loki-cpu-budget")]
+        let res = {
+            let chunk_size = coeffs.len().div_ceil(rayon::current_num_threads()).max(1024);
+            coeffs
+                .par_chunks(chunk_size)
+                .zip(bases.par_chunks(chunk_size))
+                .map(|(coeffs, bases)| G1Projective::multi_exp(bases, coeffs))
+                .reduce(G1Projective::identity, |a, b| a + b)
+        };
         unsafe { std::mem::transmute_copy(&res) }
     } else {
         let mut affine_bases = vec![C::identity(); coeffs.len()];
@@ -261,7 +265,7 @@ mod cpu_tests {
         );
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "loki-cpu-budget"))]
     #[test]
     fn msm_uses_only_the_active_rayon_pool() {
         // Isolate process thread accounting from concurrently running tests.

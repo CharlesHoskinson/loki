@@ -33,6 +33,7 @@ required-features = ["bench-internal"]
 harness = false
 
 [dependencies]
+loki-cuda-runtime = { path = "cuda-runtime", optional = true }
 loki-cuda-ntt = { path = "cuda-ntt", optional = true }
 ff = { workspace = true }
 group = { workspace = true }
@@ -79,7 +80,7 @@ midnight-curves = { version = "0.3.0", features = [
 cuda-ntt = ["dep:loki-cuda-ntt"]
 default = ["committed-instances"]
 circuit-params = []
-cuda = ["dep:sppark", "dep:blst", "dep:cc"]
+cuda = ["dep:sppark", "dep:blst", "dep:cc", "dep:loki-cuda-runtime"]
 derive_serde = ["midnight-curves/serde"]
 dev-curves = ["midnight-curves/serde", "midnight-curves/dev-curves"]
 
@@ -88,6 +89,8 @@ truncated-challenges = []
 
 # Optional wall timing and arithmetic counts; no hooks are built by default.
 loki-profile = []
+loki-cpu-budget = ["blst/no-threads"]
+loki-harden = []
 
 # This feature adds a new argument to prover and verifier functions, which
 # represents instances in committed form (e.g. in the form of a polynomial

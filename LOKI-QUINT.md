@@ -240,12 +240,15 @@ measurements do not predict recl9 parent-proof performance.
    Reported to `#loki` as `CRITICAL W8 fixed-RNG byte oracle`; no production fix
    or protocol change was made here. Verifier acceptance, encoding and operation
    ordering remain mandatory. Full-family byte equality is **not established**.
-3. **W5 NTT error policy differs from the requested total fallback.** W5's
+3. **At W8, W5 NTT errors lacked total fallback (addressed by W9).** W5's
    `8e1a33c` adapter preserves input on error but the domain adapter panics on an
    eligible GPU failure. Its owner confirmed this deliberate fail-stop policy.
    The model specifies total CPU fallback; W8 does not claim W5 satisfies it.
    No NTT implementation MBT or GPU arithmetic differential ran in this package.
-   A coordinator decision or a fallback/strict-mode integration change is needed.
+   W9 replaces the panic with once-logged CPU fallback. Its isolated forced-error
+   regression compares all five public domain conversions against CPU oracles,
+   including inverse normalization. The pinned W8 source replay remains historical;
+   it does not test the new NTT implementation.
 4. **W6 use requires matching immutable relation/params.** The cache validates
    the full key and loaded PK/VK binding, including more identity fields than the
    model (source/type/relation/VK). Its public `prove` preserves stdlib's caller
@@ -262,7 +265,11 @@ measurements do not predict recl9 parent-proof performance.
    completion evidence is not a fairness proof. The budget is ten abstract units
    with reservations seven/heavy and three/small, not measured VRAM. Actual
    allocation peaks, checkpoint persistence and cross-backend locking remain
-   implementation obligations; W4 and W5 currently own separate backend locks.
+   implementation obligations. W4 and W5 had separate backend locks at W8;
+   W9 adds the common `loki-cuda-runtime` process guard for MSM, NTT and resident
+   release. Its four-prover regression verifies proofs and requires exactly four
+   times a reference proof's successful MSM/NTT dispatch counts. This is a runtime
+   concurrency check, not a temporal or GPU arithmetic proof.
 
 Independent review found and corrected weak cache-content selection, a
 non-incrementing build counter, partial-use checks, misleading witnesses, and

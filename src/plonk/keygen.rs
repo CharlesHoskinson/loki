@@ -27,11 +27,7 @@ use crate::{
 pub(crate) fn create_domain<F, ConcreteCircuit>(
     k: u32,
     #[cfg(feature = "circuit-params")] params: ConcreteCircuit::Params,
-) -> (
-    EvaluationDomain<F>,
-    ConstraintSystem<F>,
-    ConcreteCircuit::Config,
-)
+) -> Result<(EvaluationDomain<F>, ConstraintSystem<F>, ConcreteCircuit::Config), Error>
 where
     F: WithSmallOrderMulGroup<3>,
     ConcreteCircuit: Circuit<F>,
@@ -44,9 +40,13 @@ where
 
     let degree = cs.degree();
 
+    #[cfg(feature = "loki-harden")]
+    let domain = EvaluationDomain::try_new(degree, k)
+        .map_err(|error| Error::Synthesis(error.to_owned()))?;
+    #[cfg(not(feature = "loki-harden"))]
     let domain = EvaluationDomain::new(degree as u32, k);
 
-    (domain, cs, config)
+    Ok((domain, cs, config))
 }
 
 /// Assembly to be used in circuit synthesis.
@@ -248,7 +248,7 @@ where
         k,
         #[cfg(feature = "circuit-params")]
         circuit.params(),
-    );
+    )?;
 
     if (domain.n as usize) < cs.minimum_rows() {
         return Err(Error::not_enough_rows_available(domain.k()));
@@ -399,4 +399,33 @@ where
     });
 
     [l0, l_last, l_active_row]
+}
+
+#[cfg(all(test, feature = "loki-harden", target_pointer_width = "64"))]
+#[test]
+fn oversized_degree_returns_keygen_error() {
+    use midnight_curves::Fq;
+    struct Oversized;
+    impl Circuit<Fq> for Oversized {
+        type Config = ();
+        type FloorPlanner = crate::circuit::SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
+        fn without_witnesses(&self) -> Self {
+            Self
+        }
+        fn configure(cs: &mut ConstraintSystem<Fq>) {
+            cs.set_minimum_degree(1usize << 32);
+        }
+        fn synthesize(&self, _: (), _: impl crate::circuit::Layouter<Fq>) -> Result<(), Error> {
+            panic!("invalid degree must be rejected before synthesis")
+        }
+    }
+    let error = create_domain::<Fq, Oversized>(
+        4,
+        #[cfg(feature = "circuit-params")]
+        (),
+    )
+    .unwrap_err();
+    assert!(matches!(error, Error::Synthesis(message) if message.contains("degree")));
 }

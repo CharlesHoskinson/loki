@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
+loki-cuda-runtime = { path = "../cuda-runtime" }
 blst = "0.3.16"
 midnight-curves = "0.3.1"
 sppark = { version = "=0.1.16", features = ["cuda"] }

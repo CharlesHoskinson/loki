@@ -366,3 +366,81 @@ fn gpu_ntt_reject_wrong_root() {
     assert!(loki_cuda_ntt::fft(&mut values[..1000], Fq::ONE, false).is_err());
     assert_eq!(values, original);
 }
+
+#[test]
+fn gpu_ntt_forced_error_falls_back() {
+    // A subprocess isolates backend selection from parallel GPU tests.
+    const CHILD: &str = "LOKI_NTT_FORCE_ERROR";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "poly::domain::gpu_tests::gpu_ntt_forced_error_falls_back",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let domain = EvaluationDomain::<Fq>::new(5, 10);
+    let base = input(10, 0);
+    let mut forward = base.clone();
+    cpu_fft(&mut forward, domain.omega, 10, false);
+    assert_eq!(
+        domain
+            .coeff_to_lagrange(domain.coeff_from_vec(base.clone()))
+            .values,
+        forward
+    );
+    let mut inverse = base.clone();
+    cpu_fft(&mut inverse, domain.omega_inv, 10, true);
+    assert_eq!(
+        domain
+            .lagrange_to_coeff(domain.lagrange_from_vec(base.clone()))
+            .values,
+        inverse
+    );
+    let mut extended = base.clone();
+    cpu_coset(&mut extended, false);
+    extended.resize(domain.extended_len(), Fq::ZERO);
+    cpu_fft(
+        &mut extended,
+        domain.extended_omega,
+        domain.extended_k,
+        false,
+    );
+    assert_eq!(
+        domain.coeff_to_extended(domain.coeff_from_vec(base)).values,
+        extended
+    );
+    let mut coefficients = extended.clone();
+    cpu_fft(
+        &mut coefficients,
+        domain.extended_omega_inv,
+        domain.extended_k,
+        true,
+    );
+    cpu_coset(&mut coefficients, true);
+    let polynomial = || Polynomial {
+        values: extended.clone(),
+        _marker: PhantomData,
+    };
+    assert_eq!(domain.extended_to_coeff(polynomial()), coefficients);
+    coefficients.truncate(domain.n as usize);
+    cpu_fft(&mut coefficients, domain.omega, domain.k, false);
+    assert_eq!(
+        domain.extended_to_lagrange(polynomial()).values,
+        coefficients
+    );
+    assert_eq!(
+        gpu_calls(),
+        0,
+        "forced error must not complete a GPU transform"
+    );
+}

@@ -32,6 +32,31 @@ pub struct EvaluationDomain<F: Field> {
 }
 
 impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
+    /// Construct a domain while checking the degree and field size bounds.
+    ///
+    /// Unlike the stock `new` constructor, invalid parameters return an error.
+    #[cfg(feature = "loki-harden")]
+    pub fn try_new(j: usize, k: u32) -> Result<Self, &'static str> {
+        // LokiLean/Ntt.lean: extendedK uses natural subtraction for j - 1.
+        // Rust must reject zero before subtracting, and must not truncate a
+        // circuit's usize degree to u32 first.
+        let j = u32::try_from(j).map_err(|_| "circuit degree exceeds u32")?;
+        let quotient_degree = j.checked_sub(1).ok_or("circuit degree must be nonzero")?;
+        let n = 1u64.checked_shl(k).ok_or("domain size exceeds u64")?;
+        let required = n
+            .checked_mul(u64::from(quotient_degree))
+            .ok_or("extended domain size exceeds u64")?;
+        let extended = n
+            .max(required)
+            .checked_next_power_of_two()
+            .ok_or("extended domain size exceeds u64")?;
+        let max_elements = (isize::MAX as usize / std::mem::size_of::<F>().max(1)) as u64;
+        if extended.trailing_zeros() > F::S || extended > max_elements {
+            return Err("extended domain exceeds field or address space");
+        }
+        Ok(Self::new(j, k))
+    }
+
     /// This constructs a new evaluation domain object based on the provided
     /// values $j, k$.
     pub fn new(j: u32, k: u32) -> Self {
@@ -390,8 +415,16 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             let root = (&omega as &dyn std::any::Any)
                 .downcast_ref::<midnight_curves::Fq>()
                 .expect("field/root type mismatch");
-            loki_cuda_ntt::fft(values, *root, inverse).expect("CUDA NTT failed");
-            return true;
+            // LokiLean/Ntt.lean: idft includes exactly one 1/n. The adapter
+            // preserves values on error; returning false selects best_fft and
+            // its CPU divisor, whereas a successful sppark inverse is scaled.
+            match loki_cuda_ntt::fft(values, *root, inverse) {
+                Ok(()) => return true,
+                Err(error) => {
+                    static LOGGED: std::sync::Once = std::sync::Once::new();
+                    LOGGED.call_once(|| tracing::warn!(%error, "GPU NTT failed; using CPU FFT"));
+                }
+            }
         }
         false
     }
@@ -610,3 +643,22 @@ fn test_l_i() {
 
 #[cfg(all(test, feature = "cuda-ntt"))]
 mod gpu_tests;
+
+#[cfg(all(test, feature = "loki-harden"))]
+#[test]
+fn checked_domain_rejects_invalid_parameters() {
+    use midnight_curves::Fq;
+    assert_eq!(
+        EvaluationDomain::<Fq>::try_new(0, 4).unwrap_err(),
+        "circuit degree must be nonzero"
+    );
+    assert!(EvaluationDomain::<Fq>::try_new(3, 64).is_err());
+    assert!(EvaluationDomain::<Fq>::try_new(u32::MAX as usize, 63).is_err());
+    assert!(EvaluationDomain::<Fq>::try_new(3, <Fq as ff::PrimeField>::S).is_err());
+    #[cfg(target_pointer_width = "32")]
+    assert!(EvaluationDomain::<Fq>::try_new(1usize << 27, 0).is_err());
+    assert!(EvaluationDomain::<Fq>::try_new(1, 4).is_ok());
+    let domain = EvaluationDomain::<Fq>::try_new(3, 4).unwrap();
+    assert_eq!(domain.get_quotient_poly_degree(), 2);
+    assert_eq!(domain.extended_len(), 32);
+}
