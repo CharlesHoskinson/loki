@@ -1,0 +1,46 @@
+schema: spec-driven
+context: |
+  This lab plans Loki v1.0.0; it does not implement production code or claim unrun gates pass.
+  Stock midnight-proofs 0.8.3 is the non-negotiable compatibility oracle. Loki must
+  remain a drop-in [patch.crates-io] replacement: every public item, signature, trait,
+  feature flag, MSRV/edition contract, and default-feature behavior remains usable.
+  Proofs, VK/PK serialization, transcripts and challenges interoperate in both directions.
+  Every Loki-only behavior is opt-in behind a feature; acceleration cannot alter defaults.
+  WASM and mobile are first-class v1 targets: wasm32-unknown-unknown in browser and
+  Node, single-threaded and wasm-threads; aarch64-apple-ios and aarch64-linux-android.
+  Each needs CPU compile/runtime compatibility CI, numeric memory/size/time budgets,
+  documented limits, and explicit in/out decisions for WebGPU, Metal and Vulkan.
+  Release QA includes differential fuzzing against stock, Quint models with Rust MBT
+  replay, and Lean coverage synchronized to the release commit with no sorry or new axioms.
+  Documentation covers README, architecture, every module, GPU, platforms, identity and rustdoc.
+  The benchmark closing condition is a published head-to-head table against stock 0.8.3;
+  end-to-end Sherlock recursion-chain latency is the primary performance objective.
+  Every open TODO T01 onward and unmerged p3/p4/p5/p7/w10/W12 work needs an owned
+  change or explicit reasoned deferral. Estimates must be labelled estimates.
+  Only planning artifacts may be edited during the lab; do not commit. Do not inspect
+  open-icicle source or H21.md. Heavy tests, proofs and GPU runs are outside this lab.
+  Proposed verification commands are future acceptance gates, not evidence of execution.
+  Package/publication identity is an open owner decision; do not describe it as frozen.
+  The compatible midnight-proofs 0.8.3 git/path artifact remains mandatory regardless.
+  Lean release evidence uses one immutable Loki manifest SHA for SYNCED-LOKI-COMMIT,
+  MAIN_REV/release drift, coverage and build/audit receipts. Historical pins do not qualify.
+  Deferring P6 removes only unfinished segmented declarations and hole-dependent source;
+  retain required nonsegmented BackendMsm/P3 coverage with no holes in the release bundle.
+rules:
+  proposal:
+    - 'Use change IDs v1-<area>-<topic>; list scope, exclusions with reasons, risks, owner and dependencies.'
+    - 'State effects on stock 0.8.3 compatibility, WASM/mobile, QA and documentation.'
+    - 'Identify existing source artifacts with file:line references; distinguish observed facts from proposals.'
+  specs:
+    - 'Use ADDED Requirements and normative SHALL/MUST with at least one measurable WHEN/THEN scenario per requirement.'
+    - 'Every requirement names its verification command, test, model or proof and an existing file:line source.'
+    - 'Compatibility scenarios use stock 0.8.3 as oracle in both directions; cover failure and negative controls where applicable.'
+    - 'Use numeric budgets or a deterministic freeze gate; unresolved budget decisions must block release rather than silently pass.'
+    - 'Assign cross-area contracts to one owner and reference that contract from consumers; avoid conflicting duplicate thresholds.'
+  design:
+    - 'Record alternatives, dependencies, opt-in feature boundaries, target constraints and unresolved owner decisions.'
+    - 'Keep proposed work distinct from verified current behavior and label all estimates.'
+  tasks:
+    - 'Use unchecked numbered checkbox tasks with concrete deliverables and named acceptance checks.'
+    - 'Include compatibility, WASM/mobile impact, differential fuzz, Quint/MBT, Lean and documentation coverage or an explicit justified non-applicability.'
+    - 'Finish with strict OpenSpec validation and evidence at the exact release commit; no unchecked blocker may be waived as completed.'
