@@ -238,9 +238,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     pub fn coeff_to_lagrange(&self, mut a: Polynomial<F, Coeff>) -> Polynomial<F, LagrangeCoeff> {
         assert_eq!(a.values.len(), 1 << self.k);
 
-        #[cfg(feature = "loki-profile")]
-        crate::profile::record_fft(a.values.len());
-        best_fft(&mut a.values, self.omega, self.k);
+        Self::fft(&mut a.values, self.omega, self.k);
 
         Polynomial {
             values: a.values,
@@ -258,9 +256,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
 
         self.distribute_powers_zeta(&mut a.values, true);
         a.values.resize(self.extended_len(), F::ZERO);
-        #[cfg(feature = "loki-profile")]
-        crate::profile::record_fft(a.values.len());
-        best_fft(&mut a.values, self.extended_omega, self.extended_k);
+        Self::fft(&mut a.values, self.extended_omega, self.extended_k);
 
         Polynomial {
             values: a.values,
@@ -312,9 +308,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         a.values.truncate(self.n as usize);
         self.distribute_powers_zeta(&mut a.values, false);
 
-        #[cfg(feature = "loki-profile")]
-        crate::profile::record_fft(a.values.len());
-        best_fft(&mut a.values, self.omega, self.k);
+        Self::fft(&mut a.values, self.omega, self.k);
 
         Polynomial {
             values: a.values,
@@ -370,9 +364,46 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         });
     }
 
-    fn ifft(a: &mut [F], omega_inv: F, log_n: u32, divisor: F) {
+    fn fft(a: &mut Vec<F>, omega: F, log_n: u32) {
         #[cfg(feature = "loki-profile")]
         crate::profile::record_fft(a.len());
+        #[cfg(feature = "cuda-ntt")]
+        if Self::gpu_fft(a, omega, false) {
+            return;
+        }
+        best_fft(a, omega, log_n);
+    }
+
+    #[cfg(feature = "cuda-ntt")]
+    fn gpu_fft(a: &mut Vec<F>, omega: F, inverse: bool) -> bool {
+        // The optional backend is deliberately restricted to this concrete field.
+        // Any performs a checked downcast without assuming a generic F's layout.
+        if a.len() < (1 << 10)
+            || a.len() > (1 << 28)
+            || std::env::var_os("LOKI_NTT_CPU").is_some()
+        {
+            return false;
+        }
+        if let Some(values) = (a as &mut dyn std::any::Any)
+            .downcast_mut::<Vec<midnight_curves::Fq>>()
+        {
+            let root = (&omega as &dyn std::any::Any)
+                .downcast_ref::<midnight_curves::Fq>()
+                .expect("field/root type mismatch");
+            loki_cuda_ntt::fft(values, *root, inverse).expect("CUDA NTT failed");
+            return true;
+        }
+        false
+    }
+
+    fn ifft(a: &mut Vec<F>, omega_inv: F, log_n: u32, divisor: F) {
+        #[cfg(feature = "loki-profile")]
+        crate::profile::record_fft(a.len());
+        // sppark inverse NTTs already multiply by 1/n.
+        #[cfg(feature = "cuda-ntt")]
+        if Self::gpu_fft(a, omega_inv, true) {
+            return;
+        }
         best_fft(a, omega_inv, log_n);
         parallelize(a, |a, _| {
             for a in a {
@@ -576,3 +607,6 @@ fn test_l_i() {
         assert_eq!(eval_polynomial(&l[(8 - i) % 8][..], x), evaluations[7 - i]);
     }
 }
+
+#[cfg(all(test, feature = "cuda-ntt"))]
+mod gpu_tests;

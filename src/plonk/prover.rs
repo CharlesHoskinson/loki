@@ -291,6 +291,8 @@ where
     #[cfg(feature = "loki-profile")]
     let _profile_phase = crate::profile::PhaseGuard::start("compute_nu_poly");
 
+    #[cfg(feature = "cuda-ntt")]
+    let quotient_span = tracing::info_span!("loki_ntt_quotient").entered();
     let nu_poly = compute_nu_poly(pk, &trace);
 
     #[cfg(feature = "loki-profile")]
@@ -311,6 +313,8 @@ where
 
     // Construct the vanishing argument's h(X) commitments
     let vanishing = vanishing.construct::<CS, T>(params, domain, nu_poly, transcript, rng)?;
+    #[cfg(feature = "cuda-ntt")]
+    drop(quotient_span);
 
     #[cfg(feature = "loki-profile")]
     drop(_profile_phase);
@@ -678,6 +682,8 @@ pub(super) fn compute_nu_poly<F: WithSmallOrderMulGroup<3>, CS: PolynomialCommit
         y,
         ..
     } = &trace;
+    #[cfg(feature = "cuda-ntt")]
+    let _numerator_span = tracing::info_span!("loki_ntt_numerator").entered();
     // Calculate the advice and instance cosets
     let advice_cosets: Vec<Vec<Polynomial<F, ExtendedLagrangeCoeff>>> = advice_polys
         .iter()

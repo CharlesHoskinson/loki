@@ -45,6 +45,7 @@ rustdoc-args = [
 [features]
 bench-internal = ["criterion"]
 circuit-params = []
+cuda-ntt = ["dep:loki-cuda-ntt"]
 committed-instances = []
 default = ["committed-instances"]
 derive_serde = ["midnight-curves/serde"]
@@ -182,3 +183,7 @@ features = ["js"]
 [target."cfg(ci_build)".dependencies.midnight-curves]
 version = "0.3.0"
 features = ["portable"]
+
+[dependencies.loki-cuda-ntt]
+path = "cuda-ntt"
+optional = true

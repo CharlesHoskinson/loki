@@ -1,0 +1,21 @@
+extended_log2,extension_factor,input_pattern,entrypoint_comparisons,runner_exit,runner_wall_seconds,log
+10..21,1/2/4,all six,1080,0,86.796,target/gpu-runs/20261024T175302-w5-equality-low-final.log
+22,1/2/4,all six,90,0,90.673,target/gpu-runs/20261024T174902-w5-equality-22.log
+23,1,random,5,0,28.83,target/gpu-runs/20261024T175705-w5-23-f1-random.log
+23,1,zero,5,0,18.124,target/gpu-runs/20261024T175734-w5-23-f1-zero.log
+23,1,one,5,0,17.529,target/gpu-runs/20261024T175752-w5-23-f1-one.log
+23,1,max,5,0,16.819,target/gpu-runs/20261024T175810-w5-23-f1-max.log
+23,1,impulse,5,0,18.605,target/gpu-runs/20261024T175828-w5-23-f1-impulse.log
+23,1,mixed,5,0,18.779,target/gpu-runs/20261024T175847-w5-23-f1-mixed.log
+23,2,random,5,0,15.083,target/gpu-runs/20261024T175906-w5-23-f2-random.log
+23,2,zero,5,0,13.118,target/gpu-runs/20261024T175921-w5-23-f2-zero.log
+23,2,one,5,0,13.046,target/gpu-runs/20261024T175935-w5-23-f2-one.log
+23,2,max,5,0,12.995,target/gpu-runs/20261024T175948-w5-23-f2-max.log
+23,2,impulse,5,0,15.542,target/gpu-runs/20261024T180002-w5-23-f2-impulse.log
+23,2,mixed,5,0,13.239,target/gpu-runs/20261024T180018-w5-23-f2-mixed.log
+23,4,random,5,0,11.606,target/gpu-runs/20261024T180032-w5-23-f4-random.log
+23,4,zero,5,0,11.739,target/gpu-runs/20261024T180044-w5-23-f4-zero.log
+23,4,one,5,0,11.828,target/gpu-runs/20261024T180056-w5-23-f4-one.log
+23,4,max,5,0,14.518,target/gpu-runs/20261024T180108-w5-23-f4-max.log
+23,4,impulse,5,0,12.185,target/gpu-runs/20261024T180123-w5-23-f4-impulse.log
+23,4,mixed,5,0,11.04,target/gpu-runs/20261024T180136-w5-23-f4-mixed.log

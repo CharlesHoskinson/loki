@@ -95,11 +95,15 @@ impl<F: WithSmallOrderMulGroup<3>> Committed<F> {
         CS::Commitment: Hashable<T::Hash>,
         F: Hashable<T::Hash>,
     {
+        #[cfg(feature = "cuda-ntt")]
+        let recovery_span = tracing::info_span!("loki_ntt_quotient_recovery").entered();
         // Divide by t(X) = X^{params.n} - 1.
         let h_poly = domain.divide_by_vanishing_poly(h_poly);
 
         // Obtain final h(X) polynomial
         let mut h_poly = domain.extended_to_coeff(h_poly);
+        #[cfg(feature = "cuda-ntt")]
+        drop(recovery_span);
 
         // Let n := size of evaluation domain
         // Let d := degree of constraint system
