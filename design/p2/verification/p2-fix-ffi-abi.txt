@@ -1,0 +1,32 @@
+# P2-fix native ffi_abi + cuda lib (RTX 5090, under gpu.lock)
+$ flock ~/.cache/doctorwatson/gpu.lock cargo test -p loki-gpu --features cuda --test ffi_abi --lib -- --nocapture
+test runtime::identity_tests::identity_counter_fails_instead_of_wrapping ... ok
+test ffi::tests::all_unsupported_stubs_leave_output_untouched ... ok
+test runtime::tests::reentrant_lock_panics ... ok
+test runtime::tests::lock_order_is_enforced ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test measure_pinned_budget ... ignored
+test malformed_handles_and_null_pointers_are_rejected_before_use ... ok
+test v1_operation_stubs_are_unsupported_and_leave_output_untouched ... ok
+test rust_mirrors_match_native_layout ... ok
+test status_and_kind_constants_match_header ... ok
+device: NVIDIA GeForce RTX 5090 cc 12.0 total 32579 MiB free 30927 MiB runtime 13040 driver 13040 SMs 170 copy engines 1
+test device_probe_reports_sm120 ... ok
+test native_full_slot_transfer_timing ... ok
+test native_bounds_and_stale_epoch_after_reset ... ok
+test native_operations_from_other_host_threads_use_the_selected_device ... ok
+test native_pageable_fallback_round_trip ... ok
+test native_driver_has_a_single_owner ... ok
+test native_rejections_and_metadata_checks ... ok
+staging: StagingCapability { pinned_slots: 2, pageable_slots: 0, slot_bytes: 4096, async_overlap_available: true }
+telemetry: RuntimeTelemetry { init_ns: 1711929, pinned_slots: 2, pageable_slots: 0, pinned_bytes: 8192, pinned_probe_failures: 0, h2d_pinned_bytes: 80056, h2d_pageable_bytes: 0, d2h_pinned_bytes: 160112, d2h_pageable_bytes: 0, transfers: 3, launches: 1, live_high_water: 160112, quarantined_bytes: 0, quarantined_allocations: 0, poison_events: 0, event_wait_ns: 1357841, gpu_event_ms: 1.5714240204542875 }
+test native_runtime_lifetime_round_trip ... ok
+test out_of_range_ordinal_is_unsupported_and_allocates_nothing ... ok
+test result: ok. 13 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+$ cargo test -p loki-gpu --features cuda --doc
+test crates/loki-gpu/src/lib.rs - ffi (line 50) - compile fail ... ok
+test crates/loki-gpu/src/lib.rs - ffi (line 44) - compile fail ... ok
+test crates/loki-gpu/src/lib.rs - ffi (line 34) - compile fail ... ok
+test crates/loki-gpu/src/lib.rs - ffi (line 38) - compile fail ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s

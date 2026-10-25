@@ -114,3 +114,28 @@ mode dominates; no overlap or latency gain is claimed.
   TEST-PLAN gate command cannot pass silently on a toolkit-only host.
 - Lean model abstracts bytes as element counts and does not prove staging/free lifetime
   (`runtime-lifetime` stays a test/sanitizer obligation).
+
+## P2-fix — corrective work for the independent review (D1–D5 of cefecbc)
+
+Branch `p2-fix` from main cefecbc. astra-gpu's reproducers are vendored unchanged as
+`crates/loki-gpu/tests/review_regressions.rs` (4/4 failed before, pass after). Wider
+coverage is in `crates/loki-gpu/tests/p2_fix_regressions.rs`.
+
+| Finding | Fix |
+|---|---|
+| D1 runtime-local identity | Allocation ids, reservation ids and generations come from process-global counters (`NEXT_ID`, `NEXT_GENERATION`) through `checked_next`. That is a CAS loop that returns `None` at `u64::MAX` and never wraps; exhaustion is `Capacity`/`NotStarted`. Ids are issued before any device work, so exhaustion can't strand a completed transfer. A poisoned in-flight allocation goes to `Context::quarantined` and never consumes an id. Tests: unit `identity_counter_fails_instead_of_wrapping`; foreign download, release, duplicate, reservation and checkpoint are all rejected with no effect. |
+| D2 teardown / setup cleanup ignored results | `Drop` runs `teardown()`, which checks every sync/free/destroy and returns at the first failure, leaking the rest. Setup cleanup also stops at the first failed destroy (`'cleanup` block). Tests: Poisoned, ContextLost and Transient injected at calls 1–8 of each teardown call kind, and at each setup-create × cleanup-destroy boundary; no violations and no double frees. |
+| D3 timing results ignored | `optional()` ignores only Transient/Unsupported. Poisoned/ContextLost from a timing `record_event` or `event_elapsed_ms` poisons the generation, quarantines in-flight memory and aborts with `SessionPoisoned` before publication. Covered on upload, download and launch; transient timing failures are shown to be ignored. |
+| D4 native driver public | `NativeDriver`/`native_driver` are `pub(crate)`. The only entry is `GpuRuntime::native(config)`, a process-unique claim (`NATIVE_CLAIMED`); a second live claim gets `InvalidInput`. The claim is released on healthy or never-initialized drop and kept on poisoned drop. `process()` uses it. `NativeDriver` records every handle it minted and rejects unknown or freed handles as `Poisoned` before calling CUDA; reset forgets all of them. compile_fail doctests (4) show that `native_driver`, `NativeDriver`, `DeviceMemory(handle)` and `DriverHandle::raw` are unreachable from outside the crate. |
+| D5 per-thread device | `runtime.cu` keeps `g_ordinal` (set by a successful probe/reset; a device switch bumps the epoch). `ensure_device()` (`cudaGetDevice`/`cudaSetDevice`) runs on all 17 device-touching entry points after handle validation. Native tests: initialize, upload, download, duplicate and release on separate host threads; an out-of-range ordinal gives `Unsupported`/`NotStarted`, and ordinal 0 still works afterwards. On this single-GPU host a new thread already defaults to device 0, so the cross-thread test proves the path works but can't detect a D5 regression here; that needs a multi-GPU host. |
+| API `Cancelled` | Cancellation reports `ErrorKind::Cancelled` (NotStarted before submission, InputsPreserved after a successful drain). A failed retirement or free reports the actual driver category with `SessionPoisoned`. |
+
+Gates (logs in `verification/p2-fix-*.txt`):
+- No GPU: review_regressions 4/4, p2_fix_regressions 10/10, runtime_contract 39/39, lib 3/3. Clippy is clean for loki-gpu with and without `cuda`.
+- No-toolkit default check plus `cargo test --workspace`: green.
+- Native (RTX 5090, under gpu.lock): ffi_abi 13 passed, 1 ignored (`measure_pinned_budget`); cuda lib 4/4; doctests 4/4.
+- compute-sanitizer memcheck (leak-check full), racecheck, synccheck and initcheck: all exit 0, 0 errors, 0 bytes leaked.
+- The vendored `review_regressions.rs` is byte-identical to `design/verification/p2-review-regressions.rs`.
+- `cargo fmt --check` was not enforced: the base cefecbc is already not rustfmt-clean (including the vendored reproducer), so reformatting shared files is left to a separate change.
+- Not natively tested: a poisoned drop keeping the native claim (that needs a real sticky CUDA error). It is covered only by inspection, and by fake-driver poisoned-drop tests for the destruction side.
+- `lake build LokiLean.Backend` at gpu-spec 21f208d: green. The model is unchanged, since it abstracts identity allocation and native ownership.

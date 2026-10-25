@@ -1,0 +1,15 @@
+# P2-fix default build without a CUDA toolkit
+$ env -u CUDA_HOME PATH=/usr/bin:/bin:~/.cargo/bin cargo check -p loki-gpu --all-targets && cargo test --workspace
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (target/debug/deps/loki_backend_api-4800bd06ec334df6)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/loki_gpu-b547fe4e0be71735)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/p2_fix_regressions.rs (target/debug/deps/p2_fix_regressions-3684b745814d4d11)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/review_regressions.rs (target/debug/deps/review_regressions-b18065195f825226)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/runtime_contract.rs (target/debug/deps/runtime_contract-7b3150778c3ece1e)
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s

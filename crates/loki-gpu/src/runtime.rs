@@ -576,6 +576,8 @@ struct Context {
     timing_start: EventId,
     timing_end: EventId,
     memory: HashMap<AllocationId, DeviceMemory>,
+    /// In-flight allocations whose completion became uncertain. Never freed.
+    quarantined: Vec<DeviceMemory>,
 }
 
 #[derive(Debug, Default)]
@@ -681,9 +683,33 @@ pub struct GpuRuntime {
     device: OrderedMutex<DeviceState>,
     registry: OrderedMutex<Registry>,
     telemetry: OrderedMutex<RuntimeTelemetry>,
-    next_id: AtomicU64,
-    next_generation: AtomicU64,
+    /// Set when this runtime holds the process-unique native driver claim.
+    owns_native: bool,
 }
+
+/// Process-wide identity counters. Allocation, reservation and generation
+/// identities are unique across every `GpuRuntime` in the process, so a handle
+/// or token minted by one runtime can never match another runtime's records.
+/// Counters never wrap: exhaustion fails instead of recycling an identity.
+static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+/// Return the next value of `counter`, or `None` once it would wrap.
+pub(crate) fn checked_next(counter: &AtomicU64) -> Option<u64> {
+    let mut current = counter.load(Ordering::SeqCst);
+    loop {
+        let next = current.checked_add(1)?;
+        match counter.compare_exchange_weak(current, next, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(v) => return Some(v),
+            Err(v) => current = v,
+        }
+    }
+}
+
+/// Only one runtime may own the native CUDA driver at a time: the native
+/// context, epoch and device reset are process-global.
+#[cfg(feature = "cuda")]
+static NATIVE_CLAIMED: AtomicBool = AtomicBool::new(false);
 
 impl std::fmt::Debug for GpuRuntime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -714,8 +740,7 @@ impl GpuRuntime {
             device: OrderedMutex::new(LEVEL_DEVICE, DeviceState::default()),
             registry: OrderedMutex::new(LEVEL_REGISTRY, Registry::default()),
             telemetry: OrderedMutex::new(LEVEL_TELEMETRY, RuntimeTelemetry::default()),
-            next_id: AtomicU64::new(1),
-            next_generation: AtomicU64::new(1),
+            owns_native: false,
         }
     }
 
@@ -726,6 +751,30 @@ impl GpuRuntime {
         rt.driver = Some(driver);
         rt.config = config;
         rt
+    }
+
+    /// Construct the runtime that exclusively owns the native CUDA driver.
+    /// The native driver is not otherwise reachable from safe code, so no
+    /// caller can reset the context or submit foreign handles behind the
+    /// coordinator's back. A second live claim is refused (`InvalidInput`).
+    /// The claim is released when the runtime is dropped after a healthy
+    /// teardown (or without ever initializing); a runtime dropped with an
+    /// uncertain context keeps the claim for the rest of the process.
+    #[cfg(feature = "cuda")]
+    pub fn native(config: RuntimeConfig) -> Result<Self, BackendError> {
+        if NATIVE_CLAIMED
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err(err(
+                Operation::Runtime,
+                ErrorKind::InvalidInput,
+                FailureEffect::NotStarted,
+            ));
+        }
+        let mut rt = Self::with_driver(crate::ffi::native_driver(), config);
+        rt.owns_native = true;
+        Ok(rt)
     }
 
     /// Return the process-wide runtime coordinator shared by every operation
@@ -740,7 +789,7 @@ impl GpuRuntime {
                     invalid_environment: true,
                     ..RuntimeConfig::default()
                 });
-                Self::with_driver(crate::ffi::native_driver(), config)
+                Self::native(config).unwrap_or_else(|_| Self::unavailable())
             }
             #[cfg(not(feature = "cuda"))]
             {
@@ -772,8 +821,8 @@ impl GpuRuntime {
         }
     }
 
-    fn fresh_id(&self) -> u64 {
-        self.next_id.fetch_add(1, Ordering::Relaxed)
+    fn fresh_id(&self, op: Operation) -> Result<u64, BackendError> {
+        checked_next(&NEXT_ID).ok_or(err(op, ErrorKind::Capacity, FailureEffect::NotStarted))
     }
 
     // -----------------------------------------------------------------------
@@ -849,6 +898,9 @@ impl GpuRuntime {
             return Err(BackendError::unsupported(op));
         }
 
+        let generation_value = checked_next(&NEXT_GENERATION)
+            .ok_or(err(op, ErrorKind::Capacity, FailureEffect::NotStarted))?;
+
         // Track partially created resources so a failed setup releases them.
         let mut streams: Vec<StreamId> = Vec::new();
         let mut events: Vec<EventId> = Vec::new();
@@ -859,14 +911,24 @@ impl GpuRuntime {
                        e: DriverError| {
             if e.class == DriverErrorClass::Transient || e.class == DriverErrorClass::Unsupported
             {
-                for b in buffers {
-                    let _ = driver.host_free(b);
-                }
-                for ev in events {
-                    let _ = driver.destroy_event(ev);
-                }
-                for s in streams {
-                    let _ = driver.destroy_stream(s);
+                // Stop at the first failed destroy: the context may have just
+                // become sticky, and nothing more may be destructed through it.
+                'cleanup: {
+                    for b in buffers {
+                        if driver.host_free(b).is_err() {
+                            break 'cleanup;
+                        }
+                    }
+                    for ev in events {
+                        if driver.destroy_event(ev).is_err() {
+                            break 'cleanup;
+                        }
+                    }
+                    for s in streams {
+                        if driver.destroy_stream(s).is_err() {
+                            break 'cleanup;
+                        }
+                    }
                 }
             } else {
                 // Sticky failure during setup: leak rather than destruct
@@ -956,7 +1018,7 @@ impl GpuRuntime {
         let generation = DeviceGeneration {
             device_ordinal: info.ordinal,
             context_epoch: info.context_epoch,
-            generation: self.next_generation.fetch_add(1, Ordering::Relaxed),
+            generation: generation_value,
         };
         let budget = info
             .free_bytes
@@ -993,6 +1055,7 @@ impl GpuRuntime {
             timing_start,
             timing_end,
             memory: HashMap::new(),
+            quarantined: Vec::new(),
         })
     }
 
@@ -1099,8 +1162,7 @@ impl GpuRuntime {
         let mut quarantined_allocations = 0u64;
         if let Some((memory, bytes)) = extra {
             // Keep the raw handle so it is never reused or freed.
-            ctx.memory
-                .insert(AllocationId(self.fresh_id()), memory);
+            ctx.quarantined.push(memory);
             quarantined_bytes += bytes;
             quarantined_allocations += 1;
         }
@@ -1186,10 +1248,10 @@ impl GpuRuntime {
                     slot.pending = None;
                 }
                 if let Some((m, _)) = memory {
-                    if driver.device_free(m).is_err() {
+                    if let Err(e) = driver.device_free(m) {
                         self.poison(ctx, Some((m, 0)));
                         return Abort {
-                            error: err(op, kind, FailureEffect::SessionPoisoned),
+                            error: err(op, Self::kind_for(&e), FailureEffect::SessionPoisoned),
                         };
                     }
                 }
@@ -1203,6 +1265,30 @@ impl GpuRuntime {
                 Abort {
                     error: err(op, ErrorKind::Synchronization, FailureEffect::SessionPoisoned),
                 }
+            }
+        }
+    }
+
+    /// Optional (telemetry) driver call. A transient or unsupported failure is
+    /// ignored, but a sticky failure is a mandatory health transition: the
+    /// generation is poisoned and the operation must not publish.
+    fn optional<T>(
+        &self,
+        ctx: &mut Context,
+        op: Operation,
+        result: Result<T, DriverError>,
+        memory: Option<(DeviceMemory, u64)>,
+    ) -> Result<Option<T>, Abort> {
+        match result {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if matches!(e.class, DriverErrorClass::Transient | DriverErrorClass::Unsupported) => {
+                Ok(None)
+            }
+            Err(e) => {
+                self.poison(ctx, memory);
+                Err(Abort {
+                    error: err(op, Self::kind_for(&e), FailureEffect::SessionPoisoned),
+                })
             }
         }
     }
@@ -1284,8 +1370,11 @@ impl GpuRuntime {
             .ok_or(not_started(ErrorKind::Capacity))?;
         let host_bytes: usize = usize::try_from(bytes).map_err(|_| not_started(ErrorKind::Capacity))?;
         if cancel.is_cancelled() {
-            return Err(not_started(ErrorKind::Internal));
+            return Err(not_started(ErrorKind::Cancelled));
         }
+        // Identity is allocated before any device work so exhaustion can
+        // never strand a completed transfer.
+        let id = AllocationId(self.fresh_id(op)?);
 
         let mut device = self.lock_device(op)?;
         let ctx = device
@@ -1344,7 +1433,6 @@ impl GpuRuntime {
         }
 
         // Publication: the completion event retired successfully.
-        let id = AllocationId(self.fresh_id());
         ctx.memory.insert(id, memory);
         let live = {
             let mut reg = self.lock_registry(op)?;
@@ -1394,10 +1482,12 @@ impl GpuRuntime {
         let stream = ctx.copy_stream;
         let nslots = ctx.slots.len();
         let mut enqueued = false;
-        let mut timing = driver.record_event(ctx.timing_start, stream).is_ok();
+        let mem = Some((memory, bytes));
+        let r = driver.record_event(ctx.timing_start, stream);
+        let mut timing = self.optional(ctx, op, r, mem)?.is_some();
         for (index, chunk) in values.chunks(chunk_elems).enumerate() {
             if cancel.is_cancelled() {
-                let kind = ErrorKind::Internal;
+                let kind = ErrorKind::Cancelled;
                 return Err(if enqueued {
                     self.fail_after_enqueue(driver, ctx, op, kind, None, stream, Some((memory, bytes)))
                 } else {
@@ -1406,10 +1496,10 @@ impl GpuRuntime {
                         Ok(()) => Abort {
                             error: err(op, kind, FailureEffect::NotStarted),
                         },
-                        Err(_) => {
+                        Err(e) => {
                             self.poison(ctx, Some((memory, bytes)));
                             Abort {
-                                error: err(op, kind, FailureEffect::SessionPoisoned),
+                                error: err(op, Self::kind_for(&e), FailureEffect::SessionPoisoned),
                             }
                         }
                     }
@@ -1467,7 +1557,8 @@ impl GpuRuntime {
                 }
             });
         }
-        timing &= driver.record_event(ctx.timing_end, stream).is_ok();
+        let r = driver.record_event(ctx.timing_end, stream);
+        timing &= self.optional(ctx, op, r, mem)?.is_some();
         let done = ctx.copy_done;
         if let Err(e) = driver.record_event(done, stream) {
             return Err(self.fail_after_enqueue(
@@ -1479,7 +1570,8 @@ impl GpuRuntime {
             slot.pending = None;
         }
         if timing {
-            if let Ok(ms) = driver.event_elapsed_ms(ctx.timing_start, ctx.timing_end) {
+            let r = driver.event_elapsed_ms(ctx.timing_start, ctx.timing_end);
+            if let Some(ms) = self.optional(ctx, op, r, mem)? {
                 self.with_telemetry(|t| t.gpu_event_ms += f64::from(ms));
             }
         }
@@ -1499,7 +1591,7 @@ impl GpuRuntime {
         let op = Operation::Download;
         let driver = self.driver.as_deref().ok_or(BackendError::unsupported(op))?;
         if cancel.is_cancelled() {
-            return Err(err(op, ErrorKind::Internal, FailureEffect::NotStarted));
+            return Err(err(op, ErrorKind::Cancelled, FailureEffect::NotStarted));
         }
         let mut device = self.lock_device(op)?;
         let ctx = device
@@ -1541,10 +1633,11 @@ impl GpuRuntime {
         let mut offset = 0usize;
         let mut index = 0usize;
         let mut enqueued = false;
-        let mut timing = driver.record_event(ctx.timing_start, stream).is_ok();
+        let r = driver.record_event(ctx.timing_start, stream);
+        let mut timing = self.optional(ctx, op, r, None).map_err(|a| a.error)?.is_some();
         while offset < total {
             if cancel.is_cancelled() {
-                let kind = ErrorKind::Internal;
+                let kind = ErrorKind::Cancelled;
                 if !enqueued {
                     return Err(err(op, kind, FailureEffect::NotStarted));
                 }
@@ -1583,7 +1676,8 @@ impl GpuRuntime {
             offset += len;
             index += 1;
         }
-        timing &= driver.record_event(ctx.timing_end, stream).is_ok();
+        let r = driver.record_event(ctx.timing_end, stream);
+        timing &= self.optional(ctx, op, r, None).map_err(|a| a.error)?.is_some();
         let done = ctx.copy_done;
         if let Err(e) = driver.record_event(done, stream) {
             return Err(self
@@ -1596,7 +1690,8 @@ impl GpuRuntime {
             harvest(ctx, s, &mut out);
         }
         if timing {
-            if let Ok(ms) = driver.event_elapsed_ms(ctx.timing_start, ctx.timing_end) {
+            let r = driver.event_elapsed_ms(ctx.timing_start, ctx.timing_end);
+            if let Some(ms) = self.optional(ctx, op, r, None).map_err(|a| a.error)? {
                 self.with_telemetry(|t| t.gpu_event_ms += f64::from(ms));
             }
         }
@@ -1623,6 +1718,7 @@ impl GpuRuntime {
     ) -> Result<ResidentBuffer<F>, BackendError> {
         let op = Operation::ResidentTransform;
         let driver = self.driver.as_deref().ok_or(BackendError::unsupported(op))?;
+        let id = AllocationId(self.fresh_id(op)?);
         let mut device = self.lock_device(op)?;
         let ctx = device
             .current
@@ -1674,15 +1770,19 @@ impl GpuRuntime {
             step(ctx, r)?;
             let r = driver.stream_wait_event(stream, copy_done);
             step(ctx, r)?;
-            let timing = driver.record_event(timing_start, stream).is_ok();
+            let mem = Some((dst, bytes));
+            let r = driver.record_event(timing_start, stream);
+            let timing = self.optional(ctx, op, r, mem)?.is_some();
             let r = driver.launch_copy(dst, src, bytes, stream);
             step(ctx, r)?;
-            let timing = timing && driver.record_event(timing_end, stream).is_ok();
+            let r = driver.record_event(timing_end, stream);
+            let timing = self.optional(ctx, op, r, mem)?.is_some() && timing;
             let r = driver.record_event(done, stream);
             step(ctx, r)?;
-            self.wait_event(driver, ctx, op, done, Some((dst, bytes)))?;
+            self.wait_event(driver, ctx, op, done, mem)?;
             if timing {
-                if let Ok(ms) = driver.event_elapsed_ms(timing_start, timing_end) {
+                let r = driver.event_elapsed_ms(timing_start, timing_end);
+                if let Some(ms) = self.optional(ctx, op, r, mem)? {
                     self.with_telemetry(|t| t.gpu_event_ms += f64::from(ms));
                 }
             }
@@ -1694,7 +1794,6 @@ impl GpuRuntime {
             return Err(abort.error);
         }
 
-        let id = AllocationId(self.fresh_id());
         ctx.memory.insert(id, dst);
         let live = {
             let mut reg = self.lock_registry(op)?;
@@ -1816,7 +1915,7 @@ impl GpuRuntime {
                 available_bytes: available,
             });
         }
-        let id = ReservationId(self.fresh_id());
+        let id = ReservationId(self.fresh_id(op)?);
         reg.reserved += bytes;
         reg.reservations
             .insert(id, ReservationRecord { generation, bytes });
@@ -1887,44 +1986,78 @@ fn decode<F: PrimeField>(bytes: &[u8], elem_size: usize) -> Option<Vec<F>> {
 
 impl Drop for GpuRuntime {
     fn drop(&mut self) {
+        let owns_native = self.owns_native;
         let Some(driver) = self.driver.clone() else {
             return;
         };
         let state = self.device.get_mut();
-        // Retired (reset) contexts were destroyed by the reset: forget them.
-        // HostBuffer/DeviceMemory have no Drop: discarding the records frees
-        // nothing through the driver.
+        // HostBuffer/DeviceMemory have no Drop: discarding the records of a
+        // retired (reset) context frees nothing through the driver.
         state.retired.clear();
         let Some(ctx) = state.current.take() else {
+            // Never initialized (or nothing live): nothing native to protect.
+            #[cfg(feature = "cuda")]
+            if owns_native {
+                NATIVE_CLAIMED.store(false, Ordering::SeqCst);
+            }
+            let _ = owns_native;
             return;
         };
         if ctx.poisoned {
             // Never destruct through a poisoned context; leak until process
-            // teardown so no queued work can reach freed memory. Dropping the
-            // records (no Drop impls) issues no driver call.
+            // teardown so no queued work can reach freed memory. The native
+            // claim is kept: the process context is not known to be clean.
             drop(ctx);
             return;
         }
-        // Healthy teardown: all v1 work has retired. Check every result; a
-        // failure is not recoverable here but must not panic in Drop.
-        let _ = driver.stream_synchronize(ctx.copy_stream);
+        // Healthy teardown. Every result is checked: the first failure means
+        // completion or context health is no longer certain, so destruction
+        // stops immediately and everything not yet destroyed is leaked.
+        if Self::teardown(driver.as_ref(), ctx) {
+            #[cfg(feature = "cuda")]
+            if owns_native {
+                NATIVE_CLAIMED.store(false, Ordering::SeqCst);
+            }
+        }
+    }
+}
+
+impl GpuRuntime {
+    /// Destroy a healthy context; returns `false` (and leaks the remainder)
+    /// at the first failed synchronization or destroy.
+    fn teardown(driver: &dyn DeviceDriver, ctx: Context) -> bool {
+        if driver.stream_synchronize(ctx.copy_stream).is_err() {
+            return false;
+        }
         for s in ctx.compute_streams {
-            let _ = driver.stream_synchronize(s);
+            if driver.stream_synchronize(s).is_err() {
+                return false;
+            }
         }
         for (_, memory) in ctx.memory {
-            let _ = driver.device_free(memory);
+            if driver.device_free(memory).is_err() {
+                return false;
+            }
         }
         for slot in ctx.slots {
-            let _ = driver.destroy_event(slot.event);
-            let _ = driver.host_free(slot.buffer);
+            if driver.destroy_event(slot.event).is_err() || driver.host_free(slot.buffer).is_err() {
+                return false;
+            }
         }
         for event in [ctx.copy_done, ctx.compute_done, ctx.timing_start, ctx.timing_end] {
-            let _ = driver.destroy_event(event);
+            if driver.destroy_event(event).is_err() {
+                return false;
+            }
         }
-        let _ = driver.destroy_stream(ctx.copy_stream);
+        if driver.destroy_stream(ctx.copy_stream).is_err() {
+            return false;
+        }
         for s in ctx.compute_streams {
-            let _ = driver.destroy_stream(s);
+            if driver.destroy_stream(s).is_err() {
+                return false;
+            }
         }
+        true
     }
 }
 
@@ -2925,5 +3058,19 @@ mod tests {
             let _b = rt.registry.lock().unwrap();
         }));
         assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::checked_next;
+    use std::sync::atomic::AtomicU64;
+
+    #[test]
+    fn identity_counter_fails_instead_of_wrapping() {
+        let c = AtomicU64::new(u64::MAX - 1);
+        assert_eq!(checked_next(&c), Some(u64::MAX - 1));
+        assert_eq!(checked_next(&c), None);
+        assert_eq!(checked_next(&c), None);
     }
 }
