@@ -1,9 +1,17 @@
 # P7 reservation scope: redeeming an admission reservation into allocations
 
-Status: DESIGN ONLY, revision 2 (P7 owns this file). P4 reviews the runtime
+Status: DESIGN ONLY, revision 4 (P7 owns this file). P4 reviews the runtime
 parts by message, and no shared runtime code changes. This closes review
 finding S4 by giving the scheduler's "admission prototype" an implementable
-contract. Revision 2 answers astra-gpu's review of 4c8a50c, points (1) to (5).
+contract.
+
+Revision history:
+
+- revision 2 answered astra-gpu's review of 4c8a50c;
+- revision 3 reduced the public API;
+- revision 4 answers the edc7896 review: the conservation ledger on close,
+  quarantine, retain pinning, SRS promotion, the actual dispatcher shape and
+  error precedence.
 
 Target: corrected P4 plus P5, as seen in the standalone loki-gpu
 `p5-native-dev` `runtime.rs`, which includes the sticky `local_backing`. It does
@@ -43,15 +51,18 @@ pub struct ScopeId(pub u64);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ScopeToken { id: ScopeId, generation: DeviceGeneration }   // untrusted metadata
 
-pub enum ScopeState { Open, Closing, Closed }
+pub enum ScopeState { Open, Closing, Closed, Quarantined }
 pub struct ScopeSnapshot {
     pub state: ScopeState,
-    pub granted: u64,        // total ever credited (open + extend), minus retained-out
+    pub granted: u64,        // total ever credited (open + extend); monotone, never decreases
     pub credit: u64,         // spendable now
     pub in_flight: u64,      // charged, not yet published
-    pub live: u64,           // published scoped allocations
-    pub context_spent: u64,  // credit transferred to sticky local_backing (never refunded)
-    pub active_ops: u32,     // scoped calls currently inside the runtime
+    pub live: u64,           // published allocations still owned by the scope
+    pub context_spent: u64,  // moved to sticky local_backing (never refunded)
+    pub retained_out: u64,   // promoted to Persistent at close (still globally live)
+    pub returned: u64,       // given back to `available` (freed allocations at close + unspent credit)
+    pub quarantined: u64,    // stuck in a poisoned generation until reinitialize
+    pub active_ops: u32,     // ScopedRuntime calls currently inside the runtime
 }
 pub struct ScopeClose { pub freed: u64, pub retained: u64, pub credit_returned: u64, pub context_spent: u64 }
 ```
@@ -102,8 +113,8 @@ held where the existing path holds it.
 The *charge* of an op is everything it can newly consume:
 
 - the sum of its output and scratch bytes;
-- plus, for a quotient launch, `local_growth = local_bytes -
-  local_backing`.
+- plus, for a quotient launch, `local_growth =
+  local_bytes.saturating_sub(local_backing)`, matching the P5 code.
 
 1. **Charge.** The scope must be `Open` and in the current, healthy generation,
    and `charge <= credit`. Then:
@@ -129,20 +140,33 @@ The *charge* of an op is everything it can newly consume:
    charged against the poisoned generation, the same as today's quarantine.
    Nothing returns to credit, and `active_ops -= 1`. The generation's
    accounting is discarded wholesale at `reinitialize`.
-5. **Free a `Scope(id)` allocation** through `release`: global `live -= b`
-   **only after** `device_free` succeeds. Then, if the scope is `Open` and
-   current, `reserved += b`, scope `live -= b` and `credit += b` (reusable
-   workspace credit). Otherwise the bytes simply leave the scope and return to
-   `available`. A failed `device_free` poisons the generation and returns no
-   credit. `Persistent` and `Unscoped` allocations are unchanged from today.
+5. **Free a `Scope(id)` allocation** through `release` while the scope is
+   `Open`: the free is refused if the allocation is pinned (see close step 1).
+   Global `live -= b` happens **only after** `device_free` succeeds. Then
+   `reserved += b`, scope `live -= b` and `credit += b` (reusable workspace
+   credit). A failed `device_free` poisons the generation, and rule 7 applies.
+   While the scope is `Closing`, a non-pinned free is allowed and books
+   `returned += b` instead of credit (no `reserved` change). `Persistent` and
+   `Unscoped` allocations are unchanged from today.
+6. **Promote (close only):** scope `live -= b` and `retained_out += b`, with
+   `owner = Persistent`. Globally the bytes stay `live`.
+7. **Poison.** Every open, closing or quarantined scope of the generation
+   moves `credit + in_flight + live` into `quarantined`, and its state becomes
+   `Quarantined`. The global counters do not move: those bytes stay in
+   `reserved` or `live`, as they do for today's quarantine. `reinitialize`
+   discards the whole generation ledger.
 
 ### Invariants (registry, under its mutex)
 
-- **I1:** `reserved = Σ unscoped reservations + Σ_{Open/Closing scopes} (credit
-  + in_flight) + Σ unscoped internal in-flight`.
-- **I2:** per scope, `credit + in_flight + live + context_spent == granted`.
-  `granted` grows only through `open_scope` and `extend_scope`, and shrinks only
-  by bytes retained out at close.
+- **I1:** `reserved = Σ unscoped reservations + Σ_{every scope record of the
+  current generation} (credit + in_flight + quarantined_reserved) + Σ unscoped
+  internal in-flight`. Here `quarantined_reserved` is the part of `quarantined`
+  that came from `credit + in_flight`. Summing over every record, not only open
+  ones, keeps a poisoned close inside I1.
+- **I2 (conservation):** per scope, at every step,
+  `granted == credit + in_flight + live + context_spent + retained_out +
+  returned + quarantined`. `granted` only increases, through `open_scope` and
+  `extend_scope`.
 - **I3:** `live + reserved + local_backing <= budget`. Quarantined allocations
   stay inside `live`, and their in-flight bytes inside `reserved`, until
   `reinitialize` zeroes the generation's counters.
@@ -151,42 +175,95 @@ The *charge* of an op is everything it can newly consume:
 - **I5:** only scoped calls on a matching, validated token spend scope credit.
   Unscoped and default calls use `available` and can never touch a scope.
 
-## Lifecycle: Open, then Closing, then Closed
+## Lifecycle: Open, then Closing, then Closed (or Quarantined)
 
-`close_scope(s, retain)` follows these steps in order. The device lock is taken
-first and then the registry lock, as in the existing lock order.
+`close_scope(s, retain)` takes the device lock and then the registry lock, as
+in the existing lock order, and follows these steps:
 
-1. **Validate before any change.** The token must name a scope of the current
-   generation in state `Open`. If it names an older generation, the call
-   returns **`Err(ContextLost)`**: one choice for every stale use, with no
-   `Ok(Stale)` variant. An unknown or `Closed` scope returns
-   `Err(InvalidInput)`. Every `retain` id must be a live, non-quarantined
-   allocation with `owner == Scope(id)`. If any id is not, the call returns
-   `Err(InvalidInput)` and nothing changes. An allocation already `Persistent`
-   cannot be in `retain` and is never freed by a close.
-2. **Closing.** `state = Closing`. New scoped calls and `extend_scope` on this
-   scope are refused with `InvalidInput / NotStarted`.
-3. **Retire active ops.** While `active_ops > 0`, release BOTH locks (an
-   active op needs the device lock to finish), wait on the scope's condition
-   variable, which is signalled whenever `active_ops` drops, then retake the
-   device lock and then the registry lock, and re-check. `Closing` already
-   blocks new ops, so the wait cannot starve. Every v1 call retires its own work before returning, so
-   `active_ops` reaches 0 in bounded time unless the process is wedged.
-4. **Retained allocations.** For each retained id, set `owner = Persistent`
-   and move its bytes out of the scope: scope `live -= b` and `granted -= b`.
-   The bytes stay globally `live`.
-5. **Free the rest.** Every other `Scope(id)` allocation is freed with rule 5,
-   minus the credit return. If a `device_free` fails, the generation is
-   poisoned, the remaining allocations are quarantined, and the scope goes to
-   `Closed` with `Err(SessionPoisoned)`. The scheduler treats that as failure
-   (S5): nothing is published.
-6. **Return the credit.** `reserved -= credit`, so the bytes return to
-   `available`. `context_spent` stays in `local_backing`, the same as today
-   without scopes. Set `state = Closed` and return the `ScopeClose` totals.
+1. **Validate and pin, before any change.** Validation follows the error
+   precedence below. It requires state `Open`, and every `retain` id must be:
+   - distinct (a duplicate is `Err(InvalidInput)`);
+   - live and not quarantined;
+   - `owner == Scope(id)`.
 
-After `reinitialize`, every scope of the old generation is dropped along with
-that generation's counters. Any later `ScopedRuntime` op, `extend_scope`, `close_scope` or
-`scope_snapshot` on its token returns `Err(ContextLost)`.
+   If any check fails, nothing changes. Then every retain id is marked
+   **pinned**: until close ends, `release` of a pinned allocation returns
+   `Err(InvalidInput / NotStarted)`. This lets validation survive the lock
+   release in step 3.
+2. **Closing.** `state = Closing`. New `ScopedRuntime` ops and `extend_scope`
+   on this scope are refused with `InvalidInput / NotStarted`.
+3. **Retire active ops.** While `active_ops > 0`:
+   - release BOTH locks (an active op needs the device lock to finish);
+   - wait on the scope's condition variable, which is signalled whenever
+     `active_ops` drops;
+   - retake the device lock, then the registry lock, and re-check.
+
+   `Closing` blocks new ops, so the wait cannot starve. If the generation was
+   poisoned meanwhile (rule 7), the scope is now `Quarantined`, and close
+   returns `Err(SessionPoisoned)` after unpinning.
+4. **Revalidate pins.** Each pinned id is still live, scope-owned and not
+   quarantined, because pinning blocked its release and quarantine would have
+   moved the scope to `Quarantined`. A failure here is `Err(Internal)` and
+   poisons the generation (rule 7). It is an invariant breach, not a normal
+   result.
+5. **Promote** every retained id (rule 6), then unpin.
+6. **Free the rest.** For each other `Scope(id)` allocation: `device_free`,
+   then global `live -= b`, scope `live -= b`, `returned += b`. If a
+   `device_free` fails, the generation is poisoned (rule 7: the remaining live,
+   credit and in-flight bytes become `quarantined`), the state is
+   `Quarantined`, and the result is `Err(SessionPoisoned)`. Nothing is
+   published (S5).
+7. **Return the unspent credit.** `reserved -= credit`, `returned += credit`,
+   `credit = 0`. `context_spent` stays in `local_backing`. Set `state = Closed`
+   and return `ScopeClose { freed, retained, credit_returned, context_spent }`.
+
+### Numeric traces (every row satisfies I2; `budget = 1000`, P5 `local_backing = 0` at start)
+
+Healthy close:
+
+| Step | credit | in_flight | live | ctx | ret_out | returned | quar | global reserved / live / local_backing |
+|---|---|---|---|---|---|---|---|---|
+| `open_scope` (reservation 100) | 100 | 0 | 0 | 0 | 0 | 0 | 0 | 100 / 0 / 0 |
+| charge quotient 60 out + 10 local | 30 | 60 | 0 | 10 | 0 | 0 | 0 | 90 / 0 / 10 |
+| publish 60 | 30 | 0 | 60 | 10 | 0 | 0 | 0 | 30 / 60 / 10 |
+| `close(retain=[40-byte out])`: promote 40 | 30 | 0 | 20 | 10 | 40 | 0 | 0 | 30 / 60 / 10 |
+| free remaining 20 | 30 | 0 | 0 | 10 | 40 | 20 | 0 | 30 / 40 / 10 |
+| return credit 30 → Closed | 0 | 0 | 0 | 10 | 40 | 50 | 0 | 0 / 40 / 10 |
+
+At the end, `granted = 100 = 10 + 40 + 50`, and `available = 1000 - 40 - 0 -
+10 = 950`.
+
+Failed close (the second free fails):
+
+| Step | credit | in_flight | live | ctx | ret_out | returned | quar | global reserved / live |
+|---|---|---|---|---|---|---|---|---|
+| after publish two 30-byte buffers | 30 | 0 | 60 | 10 | 0 | 0 | 0 | 30 / 60 |
+| `close(retain=[])`: free first 30 | 30 | 0 | 30 | 10 | 0 | 30 | 0 | 30 / 30 |
+| second `device_free` fails → poison (rule 7) | 0 | 0 | 0 | 10 | 0 | 30 | 60 | 30 / 30 |
+| state `Quarantined`; `Err(SessionPoisoned)` | — | — | — | — | — | — | — | unchanged until reinitialize |
+
+At the end, `granted = 100 = 10 + 30 + 60`. I1 holds because the 30 bytes that
+came from credit stay in `reserved` as `quarantined_reserved`, and the record
+still exists.
+
+## Error precedence (every ScopeControl call and every ScopedRuntime op)
+
+1. Runtime has no driver or generation: `Unsupported`.
+2. `token.id` was never issued by THIS runtime instance (foreign or forged id):
+   `InvalidInput / NotStarted`. Ids are per-instance and never reused, and
+   issuing one is checked: exhaustion returns `Err(Internal)`, never a wrap.
+3. The id is known, but `token.generation` differs from the record's generation
+   (forged metadata): `InvalidInput`.
+4. The record's generation is older than the current one (a genuine stale
+   token): `ContextLost`. On `reinitialize` the registry keeps a tombstone
+   `ScopeId -> generation`, so step 4 stays decidable after the record's
+   counters are discarded.
+5. The current generation is poisoned, or the scope is `Quarantined`:
+   `Poisoned / SessionPoisoned`.
+6. Wrong state: `Closing` or `Closed` for spend, extend or close (double close),
+   or a pinned release: `InvalidInput / NotStarted`.
+7. Capacity (charge greater than credit, or extend greater than available):
+   `Capacity / NotStarted`, or `Extend::Rejected`.
 
 ### Release authority
 
@@ -202,44 +279,78 @@ This is a defined error, not undefined behaviour.
 
 - Allocations made by the SRS registry (P3) are `Persistent` from creation.
   They are never charged to a scope, even when the registry populates them
-  during a scoped job. This keeps a job close from freeing a cached SRS. If an
-  SRS upload must be charged to the job's budget, it is uploaded through `ScopedRuntime`
-  and listed in `retain`, which moves it to `Persistent`.
+  during a scoped job. This keeps a job close from freeing a cached SRS.
+- **The SRS cache accepts only `Persistent` handles.** A scope-funded upload
+  cannot be inserted into, or published through, the SRS cache before
+  promotion: insertion of a `Scope(_)` handle is `Err(InvalidInput)`. To fund
+  an SRS upload from the job, upload it through `ScopedRuntime`, list it in
+  `retain`, and insert the now `Persistent` handle after `close_scope` returns
+  `Ok`. The promotion (rule 6) is the atomic ownership transfer. It happens
+  under the registry lock, before the close result is visible.
 - A job may *borrow* a `Persistent` or `Unscoped` handle (read it as an
   input). Borrowing never changes ownership, and close never frees it.
 
 ## Plumbing: an explicit per-job backend view (no global binding)
 
-```rust
-// loki-gpu
-pub struct ScopedRuntime { runtime: Arc<GpuRuntime>, scope: ScopeToken }
-// (defined above; implements the existing ResidentBackend facets)
+This section covers the actual P1 shape of `src/backend/dispatch.rs`.
+`Dispatcher` is a non-generic struct holding counters and policy. Its generic
+methods `msm<C, B>(&self, accelerator: Option<(&B, &BackendCapabilities)>, ..)`,
+`transform<F, B>(..)` and `try_accelerated_transform(..)` take the accelerator
+explicitly. The free helpers `msm_specific`, `fft`, `ifft` and
+`accelerated_coset` construct `loki_gpu::LokiGpu` (a unit struct) and call
+`GLOBAL.<method>(Some((&gpu, &caps)), ..)`. That shape stays. Only the
+accelerator argument changes.
 
-// Loki src/backend/dispatch.rs (feature-gated)
-pub struct Dispatcher<B> { backend: B, counters: ... }     // already generic in P1
-pub fn scoped(rt: ScopedRuntime) -> Dispatcher<ScopedRuntime>;  // explicit per-job dispatcher
+```rust
+// loki-gpu: accelerator view over a scope (implements the SAME traits LokiGpu does)
+pub struct ScopedAccelerator { runtime: Arc<GpuRuntime>, scope: ScopeToken }
+impl<F, G> Backend<F, G> for ScopedAccelerator { /* capabilities as LokiGpu; ops via ScopedRuntime */ }
+
+// Loki src/backend/dispatch.rs (feature loki-gpu-backend)
+pub struct BackendContext { accel: loki_gpu::ScopedAccelerator }   // new; explicit, Sync
+pub(crate) fn msm_specific_with<C>(ctx: Option<&BackendContext>, coeffs, bases) -> C::Curve;
+pub(crate) fn fft_with<F>(ctx: Option<&BackendContext>, a, omega, log_n);
+pub(crate) fn ifft_with<F>(ctx: Option<&BackendContext>, a, omega_inv, log_n, divisor);
+pub(crate) fn accelerated_coset_with<F>(ctx: Option<&BackendContext>, values, spec) -> Option<Vec<F>>;
+// existing msm_specific/fft/ifft/accelerated_coset == *_with(None, ..): unscoped LokiGpu, unchanged
 ```
 
-The global `dispatch::global()` stays unscoped. A job's dispatcher is passed
-explicitly to its feature-on call sites. This replaces the revision 1
-`Dispatcher::bind_job`, under which every concurrent caller would implicitly
-spend the job's scope. The exact plumbing:
+With `Some(ctx)`, each `*_with` helper passes `(&ctx.accel, &caps)` to the same
+`GLOBAL` method. Counters stay on `GLOBAL`, so attribution is per process,
+which is unambiguous under one-heavy. With `None`, it constructs `LokiGpu` as
+today. No global or thread-local binding exists. A call site spends the scope
+only if it is explicitly handed `Some(&BackendContext)`.
 
-1. **Prover entry.** Add `create_proof_with_backend(.., backend: &dyn
-   AcceleratorBackend)` behind `loki-gpu-backend`. `create_proof` calls it with
-   `global()`.
-2. **Call sites.** These sites take a `&Dispatcher` parameter instead of
-   calling `global()` under the feature:
-   - `poly::kzg` commit and open MSMs (`msm.rs` / `msm/cuda.rs` dispatch);
-   - `poly::domain` FFT/coset;
-   - the quotient (`plonk::prover` h(X) evaluation);
-   - multi-open.
+Exact call sites to thread `Option<&BackendContext>` through, all behind
+`loki-gpu-backend`, with default builds unchanged:
 
-   The default build keeps the current direct calls.
-3. **Rayon closures** capture `&Dispatcher`, which is `Sync`. No thread-local
-   state is involved.
-4. **P7 driver.** It receives `permit.scoped_runtime()` and calls
-   `create_proof_with_backend`.
+1. `src/poly/kzg/mod.rs:83` (`commit`) and `:94` (`commit_lagrange`) call
+   `msm_specific_with`. These are reached through new defaulted trait methods
+   `PolynomialCommitmentScheme::{commit_with, commit_lagrange_with}`; the
+   defaults call the existing methods.
+2. `src/poly/kzg/msm.rs:146` (`MSMKZG::eval` during multi-open) calls
+   `msm_specific_with`, via `multi_open_with`, a new defaulted method.
+3. `src/poly/domain.rs:420` (`fft`), `:472` (`ifft`), and `:284` / `:313` via
+   `:488`/`:517` (`accelerated_coset`) get new
+   `EvaluationDomain::{lagrange_to_coeff_with, coeff_to_extended_with,
+   extended_to_coeff_with}`. The existing methods call these with `None`.
+4. Prover call sites that switch to the `_with` forms when given a context:
+   - `src/plonk/prover.rs`: 10 sites, covering advice/instance
+     `lagrange_to_coeff`, commits, h(X) `coeff_to_extended` /
+     `extended_to_coeff`, and `multi_open`;
+   - `src/plonk/lookup/prover.rs`: 4 sites;
+   - `src/plonk/permutation/prover.rs`: 2;
+   - `src/plonk/vanishing/prover.rs`: 1;
+   - `src/plonk/trash/prover.rs`: 2.
+
+   Keygen (`keygen.rs`, `permutation/keygen.rs`) stays unscoped. It runs
+   outside the proof job, or else in its own scope through the same `_with`
+   entry (`keygen_*_with`, a later step).
+5. Entry point: `create_proof_with_backend(.., ctx: Option<&BackendContext>)`.
+   `create_proof` calls it with `None`. The P7 driver passes
+   `Some(&BackendContext::new(permit.scoped_accelerator()))`.
+6. Rayon closures capture `Option<&BackendContext>`, which is `Copy` and
+   `Sync`.
 
 ## Scheduler changes (P7, `schedule.rs`)
 
@@ -248,7 +359,7 @@ spend the job's scope. The exact plumbing:
 - Admission order stays heavy lock, GPU lock, `try_reserve`, and adds
   `open_scope(&token)`. If `open_scope` fails, the scheduler releases the still
   valid reservation with the same token, then unwinds the locks.
-- `HeavyPermit` holds a `ScopeToken` and exposes `scoped_runtime()`.
+- `HeavyPermit` holds a `ScopeToken` and exposes `scoped_accelerator()`.
 - `complete(identity, retain)`:
   1. `check_current`;
   2. `close_scope(retain)`;
@@ -276,12 +387,18 @@ All tests run on FakeDriver through the safe `with_fake` / `FakeControl` API.
 | `close_waits_for_active_ops_and_refuses_new_ones` | Closing state; a concurrent `ScopedRuntime` op gets `InvalidInput`; close completes after the in-flight op retires |
 | `close_retains_outputs_as_persistent_and_frees_rest` | steps 4 to 6; retained handle usable after close and never freed by a later close |
 | `srs_registry_allocations_are_never_freed_by_close` | Persistent ownership |
-| `stale_token_is_context_lost_everywhere` | every scoped call after `reinitialize` |
+| `stale_token_is_context_lost_everywhere` | genuine old-generation token (tombstone, precedence 4) on every call after `reinitialize` |
 | `double_close_is_invalid_input` | release-authority edge |
 | `unscoped_and_global_dispatch_never_spend_scope_credit` | I5; a concurrent global-dispatcher MSM during a scoped job |
 | `concurrent_scoped_ops_preserve_i2` | Rayon stress; snapshot after every step |
+| `healthy_close_trace_matches_table` | each row of the healthy trace: snapshot and global counters after every step; I1–I4 checked each time |
+| `failed_close_trace_matches_table` | FakeDriver `DeviceFree` fault on the second free; `Quarantined`; I1/I2 hold until reinitialize |
+| `duplicate_retain_id_is_invalid_input_without_mutation` | close step 1 |
+| `pinned_retain_cannot_be_released_during_close_wait` | a concurrent release during the `active_ops` wait gets `InvalidInput`; the promotion succeeds |
+| `scope_funded_handle_cannot_enter_srs_cache_before_promotion` | SRS cache insertion of a `Scope(_)` handle is refused; the same handle is accepted after close |
+| `error_precedence_is_total` | each precedence row 1–7 with a case that satisfies all lower-numbered checks |
 | `foreign_runtime_scope_token_is_invalid_input` | a token minted by runtime A is refused by runtime B (ids are per-instance) |
-| `forged_scope_metadata_is_invalid_input` | wrong id, or right id with wrong generation, on every ScopeControl call and every ScopedRuntime op |
+| `forged_scope_metadata_is_invalid_input` | unknown id, or known id with a generation that differs from its record (precedence 2–3), on every call |
 | `closed_scope_token_is_invalid_input` | spending or extending after close |
 | `duplicate_open_of_one_reservation_is_invalid_input` | the second `open_scope` on the same reservation token fails without mutation; the first scope is intact |
 | `scope_id_exhaustion_is_checked` | `fresh_id` overflow returns an error, never wraps or reuses an id (D1/D4 lesson) |
