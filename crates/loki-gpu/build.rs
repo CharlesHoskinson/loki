@@ -11,6 +11,7 @@ fn main() {
         cuda_dir.join("msm.cu"),
         cuda_dir.join("ntt.cu"),
         cuda_dir.join("quotient.cu"),
+        cuda_dir.join("runtime.cu"),
     ];
     let header = cuda_dir.join("include/loki_gpu_ffi.h");
     for path in sources.iter().chain(std::iter::once(&header)) {
@@ -68,6 +69,9 @@ fn main() {
         .cudart("shared")
         .include(cuda_dir.join("include"))
         .flag("-std=c++17")
+        // Native sm_120 SASS for the RTX 5090 plus the documented portable
+        // compute_80 PTX (BUILD.md). The runtime still refuses any device
+        // other than compute capability 12.0.
         .flag("-gencode=arch=compute_120,code=sm_120")
         .flag("-gencode=arch=compute_80,code=compute_80");
     for source in &sources {
