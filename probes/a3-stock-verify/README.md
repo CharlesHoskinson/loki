@@ -15,7 +15,7 @@ invocation below enters that wrapper automatically; wait for Astra to reserve
 the CPU heavy slot and for W10 to publish an accepted A3 artifact first:
 
 ```sh
-cargo run --release -j3 --manifest-path probes/a3-stock-verify/Cargo.toml -- \
+cargo run --release -j3 --locked --manifest-path probes/a3-stock-verify/Cargo.toml -- \
   /home/charles/repos/loki-wt/w10-gpu-quotient/target/a3-profile/gpu-after-1792902759671818294-2247472/artifacts/parent \
   /home/charles/repos/Moriarty-loki/target/sherlock-srs/bls_midnight_2p20 \
   /home/charles/repos/loki-wt/w10-gpu-quotient/target/w10-integrated-a3-public-manifest.json
