@@ -23,7 +23,7 @@ use loki_backend_api::{
     MsmLengthPolicy, ResidentBackend, ResidentBuffer, SrsBasis, SrsCacheKey, SrsLease,
     SrsLeaseId, SrsRegistry, SrsRequest,
 };
-use loki_gpu::runtime::fake::{DriverCall, FakeConfig, FakeDriver, Fault};
+use loki_gpu::runtime::fake::{DriverCall, FakeConfig, FakeControl, Fault};
 use loki_gpu::runtime::{DriverErrorClass, GpuRuntime, RuntimeConfig};
 use loki_gpu::srs::{parse_budget, GpuSrsRegistry, SrsPointCodec, SrsPointError, SrsStats};
 use support::{Toy, ToyPoint, P};
@@ -97,16 +97,15 @@ fn points(n: usize, seed: u64) -> Vec<ToyPoint> {
 }
 
 struct Env {
-    fake: Arc<FakeDriver>,
+    fake: Arc<FakeControl>,
     rt: &'static GpuRuntime,
     codec: Arc<ToyCodec>,
     reg: GpuSrsRegistry<ToyPoint>,
 }
 
 fn env_with(budget: u64, device_cap: u64) -> Env {
-    let fake = Arc::new(FakeDriver::new(FakeConfig::default()));
-    let rt = Box::leak(Box::new(GpuRuntime::with_driver(
-        fake.clone(),
+    let (fake, rt) = GpuRuntime::with_fake(
+        FakeConfig::default(),
         RuntimeConfig {
             device_budget_cap: Some(device_cap),
             device_headroom_bytes: 0,
@@ -114,7 +113,9 @@ fn env_with(budget: u64, device_cap: u64) -> Env {
             staging_slot_bytes: 1 << 20,
             ..RuntimeConfig::default()
         },
-    )));
+    );
+    let fake = Arc::new(fake);
+    let rt: &'static GpuRuntime = Box::leak(Box::new(rt));
     rt.initialize().expect("fake device initializes");
     let codec = Arc::new(ToyCodec::default());
     let reg = GpuSrsRegistry::with_runtime(rt, codec.clone(), budget);
@@ -427,8 +428,8 @@ fn malformed_requests_are_rejected_before_any_work() {
     assert_eq!(e.codec.validated_points.load(Ordering::Relaxed), validated);
     assert_eq!(e.stats().uploads, 0);
     // Uninitialized runtime: Unsupported.
-    let fake = Arc::new(FakeDriver::new(FakeConfig::default()));
-    let rt = Box::leak(Box::new(GpuRuntime::with_driver(fake, RuntimeConfig::default())));
+    let (_fake, rt) = GpuRuntime::with_fake(FakeConfig::default(), RuntimeConfig::default());
+    let rt: &'static GpuRuntime = Box::leak(Box::new(rt));
     let reg = GpuSrsRegistry::with_runtime(rt, Arc::new(ToyCodec::default()), 1 << 20);
     let r: &Reg = &reg;
     assert_err(
