@@ -61,6 +61,20 @@ retained and checked separately when using it. Logs are under
 `target/w9-validation/gate/`; runner
 logs are under `target/gpu-runs/`.
 
+For the resumed run, the first six stages completed before the GPU suffix was
+batched. `scripts/w9-gpu-gate/` runs the same seven remaining Cargo commands
+sequentially under one host reservation, writing each stage's log and
+`batch-results.tsv`. Its dependency-free driver passes `cargo check`; all seven
+argument lists were compared with `verify-w9.sh`. Submit it through the runner:
+
+```text
+run --offline --manifest-path /home/charles/repos/loki-wt/w9-harden/scripts/w9-gpu-gate/Cargo.toml --target-dir /home/charles/repos/loki-wt/w9-harden/target/w9-gpu-driver --features cuda
+```
+
+The driver's `cuda` flag requests the runner's device lock; it does not add a
+library dependency or change the default prover. This avoids repeated queue
+waits between short verification stages.
+
 Additional CPU configurations:
 
 ```sh
