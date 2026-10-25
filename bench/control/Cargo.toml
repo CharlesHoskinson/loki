@@ -1,0 +1,21 @@
+# Block controller for the Loki benchmark suite (SUITE.md "Runner and
+# exclusion"). No prover dependencies: it validates a frozen manifest, takes
+# heavy.lock then gpu.lock, and launches saved, separately built arm binaries
+# under a declared CPU mask and an explicit environment allowlist.
+[package]
+name = "bench-launch"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "bench-launch"
+path = "src/main.rs"
+
+[dependencies]
+libc = "=0.2.190"
+
+[profile.release]
+debug = false
