@@ -181,9 +181,16 @@ prefix equality this yields the stock zip-truncated sum. Empty input returns
 the identity. This is the prefix refinement of `stockHit_sound`,
 `cachedMsmSeq_eq` and `msmSpecific_take_min`; validity of the stored prefix
 follows from whole-upload validation as required by W9 `runV_sound` /
-`dispatchSeqW9_eq`. A request for a corresponding Lean prefix refinement was
-sent to `lean-speedups`; the Rust implementation does not claim a new Lean
-proof has been checked here. `srs-identity-immutable` remains open and unused.
+`dispatchSeqW9_eq`. `srs-identity-immutable` remains open and unused.
+
+Lean status (loki-lean `SrsRegistry.lean`, lean-w1, 3ab6f4f): registry soundness
+is proved (`msmReg_sound`, `registryCache_eq`, mutation-miss and budget theorems),
+but only under a new kernel hypothesis `KernelPrefixOk`: n scalars on a handle
+prepared from validated S with n ≤ |S| compute the MSM over S[0..n]. W9's
+`KernelOkOnValid` covers equal lengths only and does not imply it
+(`w9Kernel_not_enough`), so prefix soundness does not follow from W9 alone. The
+prefix behavior of sppark is an assumption backed by the source reading above and
+by the prefix regression tests, not by a proof.
 
 Misses validate the entire supplied capacity before upload: on-curve check,
 batch normalization, then subgroup check, with at most four native scoped
