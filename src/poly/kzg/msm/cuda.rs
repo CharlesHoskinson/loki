@@ -19,18 +19,38 @@ fn parse_min(value: Option<&str>) -> usize {
     value.and_then(|v| v.parse().ok()).unwrap_or(1 << 14)
 }
 
+/// Minimum effective pair count (`LOKI_GPU_MSM_MIN`, default 2^14) below
+/// which the legacy path uses the CPU.
 #[cfg(feature = "cuda")]
+pub(crate) fn min_len() -> usize {
+    static MIN: OnceLock<usize> = OnceLock::new();
+    *MIN.get_or_init(|| parse_min(std::env::var("LOKI_GPU_MSM_MIN").ok().as_deref()))
+}
+
+#[cfg(feature = "cuda")]
+#[cfg_attr(feature = "loki-sppark", allow(dead_code))]
 pub(super) fn try_msm<C: CurveAffine>(
     coeffs: &[C::Scalar],
     bases: &[C::Curve],
 ) -> Option<C::Curve> {
-    static MIN: OnceLock<usize> = OnceLock::new();
-    let min = *MIN.get_or_init(|| parse_min(std::env::var("LOKI_GPU_MSM_MIN").ok().as_deref()));
-    dispatch::<C>(coeffs, bases, min, backend::msm)
+    dispatch::<C>(coeffs, bases, min_len(), backend::msm)
+}
+
+/// The legacy sppark MSM (serialized device guard, resident SRS cache, zip
+/// truncation) over the concrete BLS12-381 types. P3's `loki-sppark` typed
+/// adapter (`crate::backend::sppark`) calls exactly this, so routing through
+/// the dispatcher cannot change the arithmetic.
+#[cfg(feature = "loki-sppark")]
+pub(crate) use backend::{Failure, FailureClass};
+
+#[cfg(feature = "loki-sppark")]
+pub(crate) fn sppark_msm(coeffs: &[Fq], bases: &[G1Projective]) -> Result<G1Projective, Failure> {
+    backend::classified_msm(coeffs, bases)
 }
 
 #[cfg(feature = "cuda")]
 #[allow(unsafe_code)]
+#[cfg_attr(feature = "loki-sppark", allow(dead_code))]
 fn dispatch<C: CurveAffine>(
     coeffs: &[C::Scalar],
     bases: &[C::Curve],

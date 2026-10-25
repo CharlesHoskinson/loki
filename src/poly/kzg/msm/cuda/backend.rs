@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use std::{collections::VecDeque, ffi::c_void, sync::Mutex};
 
+#[cfg(not(feature = "cuda-srs-registry"))]
 use group::Curve;
 
 struct PrepareTimer {
@@ -40,9 +41,15 @@ fn record(name: &'static str, size: usize, wall_ns: u64) {
     #[cfg(not(feature = "loki-profile"))]
     let _ = (name, size, wall_ns);
 }
-use midnight_curves::{Fq, G1Affine, G1Projective};
+#[cfg(not(feature = "cuda-srs-registry"))]
+use midnight_curves::G1Affine;
+use midnight_curves::{Fq, G1Projective};
 
 use super::convert::{self, Affine, Scalar};
+#[cfg(feature = "cuda-srs-registry")]
+use crate::poly::kzg::msm::srs_validate::{same_prefix, validate};
+#[cfg(not(feature = "cuda-srs-registry"))]
+use crate::poly::kzg::msm::srs_validate::same_coordinates;
 
 extern "C" {
     fn loki_gpu_prepare(out: &mut *mut c_void, bases: *const Affine, n: usize) -> sppark::Error;
@@ -71,11 +78,81 @@ struct Entry {
 // Each FFI entry sets the active device and completes work before returning.
 unsafe impl Send for Entry {}
 
+/// Why a legacy MSM request failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(not(feature = "cuda-srs-registry"), allow(dead_code))]
+pub(crate) enum FailureClass {
+    /// The device, driver or kernel failed, or produced an invalid result.
+    Device,
+    /// The request's SRS bases were refused before upload.
+    InvalidInput,
+    /// The request does not fit the persistent SRS budget.
+    Capacity,
+    /// A host-side worker could not run (no device work started).
+    Host,
+}
+
+/// A legacy MSM failure. Only device faults are sticky (quint-q2 L2): a
+/// request refused on the host (invalid or oversized SRS, host worker
+/// failure) leaves the backend usable, and the caller recomputes that one
+/// request on the CPU. Every `String` error converts as a device fault, so an
+/// unclassified failure stays conservative.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Failure {
+    pub(crate) message: String,
+    pub(crate) class: FailureClass,
+}
+
+impl Failure {
+    fn new(class: FailureClass, message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            class,
+        }
+    }
+
+    /// Whether this failure disables the backend for the process.
+    pub(crate) fn is_device(&self) -> bool {
+        self.class == FailureClass::Device
+    }
+
+    #[cfg(feature = "cuda-srs-registry")]
+    fn rejection(rejection: crate::poly::kzg::msm::srs_validate::Rejection) -> Self {
+        use crate::poly::kzg::msm::srs_validate::Rejection;
+        let class = match rejection {
+            Rejection::OffCurve { .. } | Rejection::NotInSubgroup { .. } => FailureClass::InvalidInput,
+            Rejection::Worker => FailureClass::Host,
+        };
+        Self::new(class, rejection.message())
+    }
+}
+
+impl From<String> for Failure {
+    fn from(message: String) -> Self {
+        Self::new(FailureClass::Device, message)
+    }
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
 #[derive(Default)]
 struct Cache {
     entries: VecDeque<Entry>,
     failed: bool,
+    /// Live handles returned with a preparation error (quint-q4 F4: the
+    /// constructor allocated, then the completing sync failed). They are
+    /// never used or destroyed on the faulted context, only kept reachable.
+    retained: Vec<Retained>,
 }
+
+struct Retained(#[allow(dead_code)] *mut c_void);
+
+// Held only for reachability under CACHE; never dereferenced.
+unsafe impl Send for Retained {}
 
 #[cfg(test)]
 static GPU_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -83,6 +160,7 @@ static GPU_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CACHE: Mutex<Cache> = Mutex::new(Cache {
     entries: VecDeque::new(),
     failed: false,
+    retained: Vec::new(),
 });
 
 fn status(error: sppark::Error) -> Result<(), String> {
@@ -91,95 +169,6 @@ fn status(error: sppark::Error) -> Result<(), String> {
     } else {
         Err(error.to_string())
     }
-}
-
-fn same_coordinates(a: &G1Projective, b: &G1Projective) -> bool {
-    // Exact coordinate equality is cheap and sufficient here. Mathematical
-    // equality would perform field multiplications for every cached point.
-    blst::blst_fp::from(a.x()).l == blst::blst_fp::from(b.x()).l
-        && blst::blst_fp::from(a.y()).l == blst::blst_fp::from(b.y()).l
-        && blst::blst_fp::from(a.z()).l == blst::blst_fp::from(b.z()).l
-}
-
-// Never enter Rayon while holding DEVICE/CACHE: even install on a private
-// pool can execute jobs from a calling Rayon worker's pool while it waits.
-// Scoped native workers only read CPU data, and join without scheduler reentry.
-#[cfg(feature = "cuda-srs-registry")]
-fn parallel_chunks<R: Send>(
-    bases: &[G1Projective],
-    f: impl Fn(usize, &[G1Projective]) -> Result<R, String> + Sync,
-) -> Result<Vec<R>, String> {
-    if bases.len() < 4096 {
-        return Ok(vec![f(0, bases)?]);
-    }
-    let chunk_len = bases.len().div_ceil(4);
-    std::thread::scope(|scope| {
-        let f = &f;
-        let mut jobs = Vec::with_capacity(4);
-        let mut error = None;
-        for (i, chunk) in bases.chunks(chunk_len).enumerate() {
-            match std::thread::Builder::new()
-                .name("loki-srs".into())
-                .spawn_scoped(scope, move || f(i * chunk_len, chunk))
-            {
-                Ok(job) => jobs.push(job),
-                Err(cause) => {
-                    error = Some(format!("SRS worker creation failed: {cause}"));
-                    break;
-                }
-            }
-        }
-        let mut results = Vec::with_capacity(jobs.len());
-        // Join every worker, even after an error or panic. Letting Scope
-        // implicitly join a second panicking worker would unwind the caller.
-        for job in jobs {
-            match job.join() {
-                Ok(Ok(result)) => results.push(result),
-                Ok(Err(cause)) => {
-                    error.get_or_insert(cause);
-                }
-                Err(_) => {
-                    error.get_or_insert_with(|| "SRS worker panicked".into());
-                }
-            }
-        }
-        error.map_or(Ok(results), Err)
-    })
-}
-
-#[cfg(feature = "cuda-srs-registry")]
-fn same_prefix(source: &[G1Projective], bases: &[G1Projective]) -> Result<bool, String> {
-    let matches = parallel_chunks(bases, |start, chunk| {
-        Ok(source[start..start + chunk.len()]
-            .iter()
-            .zip(chunk)
-            .all(|(a, b)| same_coordinates(a, b)))
-    })?;
-    Ok(matches.into_iter().all(|equal| equal))
-}
-
-#[cfg(feature = "cuda-srs-registry")]
-fn validate(bases: &[G1Projective]) -> Result<Vec<G1Affine>, String> {
-    let chunks = parallel_chunks(bases, |_, chunk| {
-        if chunk.iter().any(|base| !bool::from(base.is_on_curve())) {
-            return Err("invalid SRS base: off curve".into());
-        }
-        let mut affine = vec![G1Affine::default(); chunk.len()];
-        // Pinned BLST dispatches batches >=768 to its own global pool unless
-        // no-threads is enabled. Keep normalization serial inside each native
-        // worker even when loki-cpu-budget is off (without changing its feature).
-        for (points, output) in chunk.chunks(512).zip(affine.chunks_mut(512)) {
-            G1Projective::batch_normalize(points, output);
-        }
-        if affine
-            .iter()
-            .any(|base| !bool::from(base.is_torsion_free()))
-        {
-            return Err("invalid SRS base: outside G1 subgroup".into());
-        }
-        Ok(affine)
-    })?;
-    Ok(chunks.into_iter().flatten().collect())
 }
 
 #[cfg(feature = "cuda-srs-registry")]
@@ -243,7 +232,8 @@ fn device_sm_count() -> Result<usize, String> {
 }
 
 impl Cache {
-    #[cfg(feature = "cuda-srs-registry")]
+    /// Release one entry, removing it only after the release succeeded
+    /// (quint-q4 F2 for the legacy two-entry path as well as the registry).
     fn release_entry(
         &mut self,
         index: usize,
@@ -262,9 +252,19 @@ impl Cache {
         Ok(())
     }
 
-    fn run(&mut self, scalars: &[Fq], bases: &[G1Projective]) -> Result<G1Projective, String> {
+    /// Keep a handle returned together with a preparation error reachable
+    /// (quint-q4 F4). The error is a device fault, so the cache is disabled
+    /// by the caller and the handle is never released through that context.
+    fn track_prepare(&mut self, prepared: Result<(), String>, resident: *mut c_void) -> Result<(), String> {
+        if prepared.is_err() && !resident.is_null() {
+            self.retained.push(Retained(resident));
+        }
+        prepared
+    }
+
+    fn run(&mut self, scalars: &[Fq], bases: &[G1Projective]) -> Result<G1Projective, Failure> {
         if self.failed {
-            return Err("GPU backend disabled after an earlier error".into());
+            return Err(String::from("GPU backend disabled after an earlier error").into());
         }
         let _prepare = PrepareTimer::start("msm.prepare", scalars.len());
         let address = bases.as_ptr() as usize;
@@ -274,7 +274,8 @@ impl Cache {
             for (i, entry) in self.entries.iter().enumerate() {
                 if entry.address == address
                     && scalars.len() <= entry.source.len()
-                    && same_prefix(&entry.source, &bases[..scalars.len()])?
+                    && same_prefix(&entry.source, &bases[..scalars.len()])
+                        .map_err(Failure::rejection)?
                 {
                     hit = Some(i);
                     break;
@@ -299,13 +300,13 @@ impl Cache {
             record("msm.prepare.miss", scalars.len(), 0);
             let validation = PrepareTimer::start("msm.prepare.validation", bases.len());
             #[cfg(feature = "cuda-srs-registry")]
-            let affine = validate(bases)?;
+            let affine = validate(bases).map_err(Failure::rejection)?;
             #[cfg(not(feature = "cuda-srs-registry"))]
             let affine = {
                 // Legacy validation stays serial: Rayon workers can be waiting
                 // for this backend while DEVICE/CACHE are held.
                 if bases.iter().any(|base| !bool::from(base.is_on_curve())) {
-                    return Err("invalid SRS base: off curve".into());
+                    return Err(Failure::new(FailureClass::InvalidInput, "invalid SRS base: off curve"));
                 }
                 let mut affine = vec![G1Affine::default(); bases.len()];
                 G1Projective::batch_normalize(bases, &mut affine);
@@ -313,20 +314,25 @@ impl Cache {
                     .iter()
                     .any(|base| !bool::from(base.is_torsion_free()))
                 {
-                    return Err("invalid SRS base: outside G1 subgroup".into());
+                    return Err(Failure::new(
+                        FailureClass::InvalidInput,
+                        "invalid SRS base: outside G1 subgroup",
+                    ));
                 }
                 affine
             };
             drop(validation);
             #[cfg(feature = "cuda-srs-registry")]
             let device_bytes = {
-                let bytes = resident_bytes(bases.len(), device_sm_count()?)?;
+                let sm_count = device_sm_count()?;
+                let bytes = resident_bytes(bases.len(), sm_count)
+                    .map_err(|e| Failure::new(FailureClass::Capacity, e))?;
                 let budget =
                     parse_budget(std::env::var("LOKI_GPU_SRS_BUDGET_BYTES").ok().as_deref());
                 if bytes > budget {
-                    return Err(format!(
+                    return Err(Failure::new(FailureClass::Capacity, format!(
                         "SRS resident needs {bytes} bytes, budget is {budget}"
-                    ));
+                    )));
                 }
                 // Replace stale capacities at this address, then evict LRU
                 // entries until the new persistent allocation fits the budget.
@@ -349,14 +355,14 @@ impl Cache {
             };
             #[cfg(not(feature = "cuda-srs-registry"))]
             if self.entries.len() == 2 {
-                let old = self.entries.pop_front().unwrap();
-                status(unsafe { loki_gpu_release(old.resident) })?;
+                self.release_entry(0, |resident| status(unsafe { loki_gpu_release(resident) }))?;
             }
             let wire: Vec<_> = affine.iter().map(convert::affine).collect();
             let mut resident = std::ptr::null_mut();
             // SAFETY: live, correctly sized/aligned arrays; C++ copies them.
             let upload = PrepareTimer::start("msm.prepare.upload", wire.len());
-            status(unsafe { loki_gpu_prepare(&mut resident, wire.as_ptr(), wire.len()) })?;
+            let prepared = status(unsafe { loki_gpu_prepare(&mut resident, wire.as_ptr(), wire.len()) });
+            self.track_prepare(prepared, resident)?;
             drop(upload);
             record(
                 "msm.prepare.upload_bytes",
@@ -364,7 +370,7 @@ impl Cache {
                 0,
             );
             if resident.is_null() {
-                return Err("GPU preparation returned a null handle".into());
+                return Err(String::from("GPU preparation returned a null handle").into());
             }
             Entry {
                 address,
@@ -385,11 +391,16 @@ impl Cache {
         // SAFETY: resident owns at least scalars.len() bases. Wire structs have
         // repr(C), and C++ asserts their sizes/alignments against kernel types.
         status(unsafe { loki_gpu_msm(resident, &mut output, scalars.as_ptr(), scalars.len()) })?;
-        convert::decode(&output)
+        Ok(convert::decode(&output)?)
     }
 }
 
 pub(super) fn msm(scalars: &[Fq], bases: &[G1Projective]) -> Result<G1Projective, String> {
+    classified_msm(scalars, bases).map_err(|failure| failure.message)
+}
+
+/// `msm` with the failure class kept: only device faults disable the cache.
+pub(super) fn classified_msm(scalars: &[Fq], bases: &[G1Projective]) -> Result<G1Projective, Failure> {
     // Preserve msm_specific's zip semantics.
     let n = scalars.len().min(bases.len());
     if n == 0 {
@@ -403,7 +414,7 @@ pub(super) fn msm(scalars: &[Fq], bases: &[G1Projective]) -> Result<G1Projective
     let result = cache.run(&scalars[..n], bases);
     #[cfg(not(feature = "cuda-srs-registry"))]
     let result = cache.run(&scalars[..n], &bases[..n]);
-    if result.is_err() {
+    if result.as_ref().is_err_and(Failure::is_device) {
         cache.failed = true;
     }
     #[cfg(test)]
@@ -422,13 +433,8 @@ pub(super) fn clear_cache() -> Result<(), String> {
     if cache.failed {
         return Err("GPU backend disabled".into());
     }
-    #[cfg(feature = "cuda-srs-registry")]
     while !cache.entries.is_empty() {
         cache.release_entry(0, |resident| status(unsafe { loki_gpu_release(resident) }))?;
-    }
-    #[cfg(not(feature = "cuda-srs-registry"))]
-    while let Some(entry) = cache.entries.pop_front() {
-        status(unsafe { loki_gpu_release(entry.resident) })?;
     }
     Ok(())
 }
@@ -448,7 +454,6 @@ mod upload_tests {
     use super::*;
     use ff::Field;
 
-    #[cfg(feature = "cuda-srs-registry")]
     #[test]
     fn registry_release_failure_retains_entry_and_disables_backend() {
         let mut cache = Cache::default();
@@ -456,6 +461,7 @@ mod upload_tests {
             address: 123,
             source: vec![G1Projective::default()],
             resident: std::ptr::null_mut(),
+            #[cfg(feature = "cuda-srs-registry")]
             device_bytes: 1,
         });
         let error = cache
@@ -470,17 +476,32 @@ mod upload_tests {
             .release_entry(0, |_| panic!("must never retry a quarantined handle"))
             .unwrap_err()
             .contains("disabled"));
-        assert!(cache
-            .run(&[Fq::ONE], &[G1Projective::default()])
-            .unwrap_err()
-            .contains("disabled"));
+        let disabled = cache.run(&[Fq::ONE], &[G1Projective::default()]).unwrap_err();
+        assert!(disabled.message.contains("disabled") && disabled.is_device());
+    }
+
+    /// quint-q4 F4: a handle returned with a preparation error stays
+    /// reachable; a clean preparation or a null handle records nothing.
+    #[test]
+    fn prepare_error_with_live_handle_is_retained() {
+        let mut cache = Cache::default();
+        let live = std::ptr::NonNull::<u8>::dangling().as_ptr().cast::<c_void>();
+        assert_eq!(cache.track_prepare(Err("sync failed".into()), live).unwrap_err(), "sync failed");
+        assert_eq!(cache.retained.len(), 1);
+        assert!(cache.track_prepare(Err("alloc failed".into()), std::ptr::null_mut()).is_err());
+        assert!(cache.track_prepare(Ok(()), live).is_ok());
+        assert_eq!(cache.retained.len(), 1);
+        // The error is a device fault: classified_msm disables the cache.
+        assert!(Failure::from(String::from("sync failed")).is_device());
     }
 
     #[cfg(feature = "cuda-srs-registry")]
     #[test]
     fn registry_workers_join_after_errors_and_panics() {
+        use crate::poly::kzg::msm::srs_validate::parallel_chunks;
         let bases = vec![G1Projective::default(); 4096];
-        let outcome = parallel_chunks(&bases, |start, _| -> Result<(), String> {
+        let worker_error = "worker".to_owned();
+        let outcome = parallel_chunks(&bases, worker_error, |start, _| -> Result<(), String> {
             if start == 0 {
                 return Err("first chunk rejected".into());
             }
@@ -517,14 +538,19 @@ mod upload_tests {
         assert!(!bool::from(corrupt.is_on_curve()));
         let mut cache = Cache::default();
         let error = cache.run(&[Fq::ONE], &[corrupt]).unwrap_err();
-        assert!(error.contains("invalid SRS base"), "{error}");
+        assert!(error.message.contains("invalid SRS base"), "{error}");
+        assert_eq!(error.class, FailureClass::InvalidInput, "quint-q2 L2");
         assert_eq!(cache.entries.len(), 0);
         // (0, 2) lies on y^2 = x^3 + 4 but has order 3, outside prime-order G1.
         use midnight_curves::CurveExt;
         let torsion = G1Projective::new_jacobian(Fp::ZERO, Fp::from(2), Fp::ONE).unwrap();
         assert!(bool::from(torsion.is_on_curve()));
         let error = cache.run(&[Fq::ONE], &[torsion]).unwrap_err();
-        assert!(error.contains("outside G1 subgroup"), "{error}");
+        assert!(error.message.contains("outside G1 subgroup"), "{error}");
+        assert_eq!(error.class, FailureClass::InvalidInput);
         assert_eq!(cache.entries.len(), 0);
+        assert!(!cache.failed, "run never sets the sticky flag for a request error");
+        // Unclassified failures convert conservatively as device faults.
+        assert!(Failure::from(String::from("cuda error")).is_device());
     }
 }

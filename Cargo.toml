@@ -71,6 +71,7 @@ loki-gpu-backend = [
     "dep:loki-gpu",
     "loki-gpu/cuda",
 ]
+loki-gpu-srs-registry = ["loki-gpu-backend"]
 loki-deterministic-lookup-order = []
 
 [lib]

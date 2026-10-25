@@ -20,6 +20,12 @@
 
 pub mod cpu;
 pub mod dispatch;
+/// P3 legacy sppark adapter (`loki-sppark`).
+#[cfg(feature = "loki-sppark")]
+pub mod sppark;
+/// P3 BLS12-381 G1 point codec for the new backend's SRS registry.
+#[cfg(feature = "loki-gpu-srs-registry")]
+pub mod gpu_srs;
 
 use std::any::TypeId;
 

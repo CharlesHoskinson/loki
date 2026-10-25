@@ -409,7 +409,8 @@ fn gpu_srs_mutation() {
     );
     assert_eq!(bases.as_ptr(), address);
     // A raw corrupted suffix stays unused by the prefix, but the full request
-    // must reject it before upload. This runs last: errors disable the backend.
+    // must reject it before upload. A rejected request is not a device fault,
+    // so the backend stays enabled (quint-q2 L2).
     let raw = blst::blst_p1 {
         x: Fp::ONE.into(),
         y: Fp::ONE.into(),
@@ -423,7 +424,7 @@ fn gpu_srs_mutation() {
     assert!(backend::msm(&scalars, &bases)
         .unwrap_err()
         .contains("off curve"));
-    assert!(backend::failed());
+    assert!(!backend::failed(), "request rejections are not sticky");
     proof.success = true;
     drop(proof);
     let report = crate::profile::take_report();
@@ -547,17 +548,19 @@ fn gpu_srs_budget_rejects_oversize() {
     assert!(backend::msm(&scalars, &bases)
         .unwrap_err()
         .contains("budget"));
-    assert!(backend::failed());
+    assert!(!backend::failed(), "a budget refusal is not sticky");
+    // The public path retries the GPU, is refused again, and falls back.
     assert_eq!(
         super::super::msm_specific::<G1Affine>(&scalars, &bases),
         bases[0]
     );
+    assert!(!backend::failed());
     assert_eq!(backend::gpu_calls(), 0);
     proof.success = true;
     drop(proof);
     let report = crate::profile::take_report();
     let counts = &report.proofs.last().unwrap().phases["other"].backends;
-    assert_eq!(counts["msm.prepare.miss"].calls, 1);
+    assert_eq!(counts["msm.prepare.miss"].calls, 2);
     assert!(!counts.contains_key("msm.prepare.upload"));
 }
 
@@ -582,7 +585,7 @@ fn gpu_srs_invalid_unused_suffix_fallback() {
         super::super::msm_specific::<G1Affine>(&[Fq::ONE], &bases),
         bases[0]
     );
-    assert!(backend::failed());
+    assert!(!backend::failed(), "an invalid SRS is not a device fault");
     assert_eq!(backend::gpu_calls(), 0);
     proof.success = true;
     drop(proof);
@@ -591,4 +594,48 @@ fn gpu_srs_invalid_unused_suffix_fallback() {
     assert_eq!(counts["msm.prepare.miss"].calls, 1);
     assert_eq!(counts["msm.prepare.validation"].calls, 1);
     assert!(!counts.contains_key("msm.prepare.upload"));
+}
+
+/// lean-w1 `KernelPrefixOk` (P3): an MSM with n scalars against a resident
+/// handle prepared from |S| >= n points equals the CPU MSM over S[..n].
+/// One upload of S serves every prefix; n spans 1, 2^k - 1, 2^k and |S|,
+/// under random, boolean and repeated scalar distributions.
+#[cfg(all(feature = "cuda-srs-registry", feature = "loki-profile"))]
+#[test]
+#[ignore = "registry kernel-prefix differential; run alone through gpu-runner"]
+fn gpu_srs_kernel_prefix_differential() {
+    use rand_chacha::rand_core::RngCore;
+    backend::clear_cache().unwrap();
+    let mut rng = ChaCha20Rng::from_seed([117; 32]);
+    let size = (1 << 15) + 5;
+    let bases: Vec<_> = (0..size).map(|_| G1Projective::random(&mut rng)).collect();
+    let random: Vec<_> = (0..size).map(|_| Fq::random(&mut rng)).collect();
+    let boolean: Vec<_> = (0..size)
+        .map(|_| if rng.next_u32() & 1 == 1 { Fq::ONE } else { Fq::ZERO })
+        .collect();
+    let constant = Fq::random(&mut rng);
+    let repeated = vec![constant; size];
+    let mut proof = crate::profile::ProofGuard::start(15, 1);
+    // The first call prepares the handle from all |S| points.
+    assert_eq!(backend::msm(&random, &bases).unwrap(), cpu(&random, &bases));
+    let mut cases = 1;
+    for (label, scalars) in [("random", &random), ("boolean", &boolean), ("repeated", &repeated)] {
+        for n in [1, 2, (1 << 14) - 1, 1 << 14, (1 << 15) - 1, 1 << 15, size] {
+            assert_eq!(
+                backend::msm(&scalars[..n], &bases).unwrap(),
+                cpu(&scalars[..n], &bases[..n]),
+                "{label} n={n}"
+            );
+            cases += 1;
+        }
+    }
+    proof.success = true;
+    drop(proof);
+    let report = crate::profile::take_report();
+    let counts = &report.proofs.last().unwrap().phases["other"].backends;
+    assert_eq!(counts["msm.prepare.upload"].calls, 1);
+    assert_eq!(counts["msm.prepare.upload_bytes"].elements, (size * 96) as u64);
+    assert_eq!(counts["msm.prepare.hit"].calls, cases - 1);
+    assert!(!backend::failed());
+    eprintln!("P3 kernel-prefix differential: {cases} MSMs on one resident handle of {size} points");
 }

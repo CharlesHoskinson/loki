@@ -166,7 +166,9 @@ pub fn msm_specific<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) ->
     #[cfg(feature = "loki-profile")]
     crate::profile::record_msm(coeffs.len().min(bases.len()));
 
-    #[cfg(feature = "cuda")]
+    // Legacy sppark arm. Under `loki-sppark` the same adapter is reached
+    // through the typed dispatcher instead (P3, `backend::sppark`).
+    #[cfg(all(feature = "cuda", not(feature = "loki-sppark")))]
     if let Some(result) = cuda::try_msm::<C>(coeffs, bases) {
         return result;
     }
@@ -416,4 +418,8 @@ where
 }
 
 #[cfg(any(test, feature = "cuda"))]
-mod cuda;
+pub(crate) mod cuda;
+
+#[cfg(any(feature = "cuda", feature = "loki-gpu-srs-registry"))]
+#[cfg_attr(not(any(feature = "cuda-srs-registry", feature = "loki-gpu-srs-registry")), allow(dead_code))]
+pub(crate) mod srs_validate;

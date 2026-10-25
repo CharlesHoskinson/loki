@@ -2,9 +2,11 @@
 //!
 //! The dispatcher validates each request before any backend entry, offers it
 //! to an accelerator only when that accelerator advertises the operation and
-//! the exact arithmetic ABI, and otherwise (or on any error) runs the stock
-//! CPU adapter. Inputs are borrowed host slices that Loki retains, so every
-//! accelerator error permits CPU recomputation. An error that poisons a
+//! the exact arithmetic ABI, and otherwise (or on an accelerator error) runs
+//! the stock CPU adapter. Inputs are borrowed host slices that Loki retains,
+//! so an accelerator error permits CPU recomputation, except `Cancelled`:
+//! cancellation never authorizes a CPU retry; the checked MSM entry
+//! (`try_msm`) and the transform entries return it to the caller. An error that poisons a
 //! session, or a contract violation such as a wrong-length result, disables
 //! the accelerator for the rest of the process (sticky). Backends never call
 //! back into the dispatcher, so fallback cannot recurse.
@@ -110,8 +112,10 @@ impl Dispatcher {
         }
     }
 
-    /// Account for a failed accelerator call. Inputs are retained host
-    /// slices, so CPU recomputation is always permitted.
+    /// Account for a failed (non-cancelled) accelerator call. Inputs are
+    /// retained host slices, so CPU recomputation is permitted. Both the
+    /// checked MSM entry and the transform arm return `Cancelled` before
+    /// reaching here.
     fn failed(&self, error: BackendError, fallback: &AtomicU64) {
         assert!(
             error.preserves_observable_state(),
@@ -127,12 +131,38 @@ impl Dispatcher {
 
     /// Stock `msm_specific` semantics: `min(coeffs.len(), bases.len())`
     /// pairs, zero scalars filtered, identity for an empty prefix.
+    ///
+    /// Non-cancellable synchronous shim over [`Self::try_msm`]: the stock
+    /// value-returning signature cannot report cancellation, so an
+    /// accelerator `Cancelled` unwinds here instead of being silently
+    /// recomputed on the CPU. Callers that expose cancellation must use the
+    /// checked entry.
     pub fn msm<C, B>(
         &self,
         accelerator: Option<(&B, &BackendCapabilities)>,
         coeffs: &[C::Scalar],
         bases: &[C::Curve],
     ) -> C::Curve
+    where
+        C: CurveAffine,
+        B: MsmBackend<C::Scalar, C::Curve> + ?Sized,
+    {
+        match self.try_msm::<C, B>(accelerator, coeffs, bases) {
+            Ok(point) => point,
+            Err(error) => panic!("non-cancellable MSM received {error:?}"),
+        }
+    }
+
+    /// Checked MSM entry. `Cancelled` is returned immediately with no CPU
+    /// recomputation and no CPU/fallback count (it still sticky-disables the
+    /// accelerator if its effect poisons); every other accelerator failure
+    /// is accounted and recomputed on the CPU, so `Err` is only `Cancelled`.
+    pub fn try_msm<C, B>(
+        &self,
+        accelerator: Option<(&B, &BackendCapabilities)>,
+        coeffs: &[C::Scalar],
+        bases: &[C::Curve],
+    ) -> Result<C::Curve, BackendError>
     where
         C: CurveAffine,
         B: MsmBackend<C::Scalar, C::Curve> + ?Sized,
@@ -146,16 +176,31 @@ impl Dispatcher {
                 && arithmetic_abi::<C>().is_some_and(|abi| caps.supports_arithmetic(abi));
             if admitted {
                 match backend.msm(request()) {
-                    Ok(result) => {
+                    // Recheck after return (quint-q2 B3): a result that
+                    // completes after another call poisoned the accelerator
+                    // is discarded and recomputed on the CPU.
+                    Ok(result) if !self.accelerator_disabled() => {
                         bump(&self.msm_accelerated);
-                        return result;
+                        return Ok(result);
+                    }
+                    Ok(_) => bump(&self.msm_fallback),
+                    // Cancellation never authorizes a CPU retry (quint-q2 B1).
+                    Err(error) if error.kind == ErrorKind::Cancelled => {
+                        assert!(
+                            error.preserves_observable_state(),
+                            "backend error without observable-state preservation"
+                        );
+                        if error.effect == FailureEffect::SessionPoisoned {
+                            self.poison();
+                        }
+                        return Err(error);
                     }
                     Err(error) => self.failed(error, &self.msm_fallback),
                 }
             }
         }
         bump(&self.msm_cpu);
-        cpu::msm_request::<C>(request()).expect("ZipTruncate never rejects")
+        Ok(cpu::msm_request::<C>(request()).expect("ZipTruncate never rejects"))
     }
 
     /// Validate `spec` against `values`, then compute it in place. On a CPU
@@ -329,7 +374,14 @@ pub(crate) fn msm_specific<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Cur
         let caps = <loki_gpu::LokiGpu as Backend<C::Scalar, C::Curve>>::capabilities(&gpu);
         GLOBAL.msm::<C, _>(Some((&gpu, &caps)), coeffs, bases)
     }
-    #[cfg(not(feature = "loki-gpu-backend"))]
+    // P3: legacy sppark through the typed adapter (exclusive with
+    // `loki-gpu-backend`, see `src/lib.rs`).
+    #[cfg(feature = "loki-sppark")]
+    {
+        let caps = super::sppark::SpparkBackend::capabilities_for(coeffs.len().min(bases.len()));
+        GLOBAL.msm::<C, _>(Some((&super::sppark::SpparkBackend, &caps)), coeffs, bases)
+    }
+    #[cfg(not(any(feature = "loki-gpu-backend", feature = "loki-sppark")))]
     GLOBAL.msm::<C, NoAccelerator>(None, coeffs, bases)
 }
 

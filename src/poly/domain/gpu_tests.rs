@@ -1,4 +1,7 @@
 use super::*;
+// Explicit: domain.rs imports `best_fft` only without `loki-backend-api`,
+// so `loki-sppark` (which enables it) needs this import for the oracle.
+use midnight_curves::fft::best_fft;
 use midnight_curves::Fq;
 
 // This guard must fail while the feature still executes the stock CPU FFT.
