@@ -1,0 +1,10 @@
+== depth 1 07:45:06
+[ok] No violation found (3227ms).
+You may increase --max-steps.
+Use --verbosity to produce more (or less) output.
+rc=0 07:45:11
+== depth 2 07:45:11
+}
+
+Node.js v26.10.0
+rc=0 07:54:50
