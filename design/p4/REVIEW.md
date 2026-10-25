@@ -10,12 +10,16 @@ coordinator at eb27233.
 |---|---|---|
 | loki-gpu `p4-ntt` | `3839e6b` | Add resident NTT launches with exact cosets and stock differential tests |
 | loki-gpu `p4-ntt` | `f716257` | Run the process-runtime trait entry test in its own binary |
-| loki-gpu `p4-ntt` | (this commit) | Record P4 gates, measurements and open risks (touches `design/p4/**` only) |
+| loki-gpu `p4-ntt` | `01bb197` | Record P4 gates, measurements and open risks |
+| loki-gpu `p4-ntt` | `eb0d299` | Propagate transform cleanup failures, gate the wire format by type, persist uncertain setup and restrict driver injection (N1, N2, L1, L2) |
+| loki-gpu `p4-ntt` | `4b2977a` | Check minted NTT handles, assert params offsets, classify probe failures and reject unnormalized inverses |
+| loki-gpu `p4-ntt` | `59464c4` | Refuse unminted NTT handles before native code and pin midnight-curves |
 | loki-lean `gpu-spec` | `88150ff` | Model the P4 resident launch pipeline and prove its stock contract |
+| loki-lean `gpu-spec` | `7d3e6a8` | Require exactly one normalization on inverse shapes in the P4 model |
 
-Every gate below ran on **f716257** with a clean `crates/` and `Cargo.lock`
-(the gate script refuses a dirty tree). The record commit changes only
-`design/p4/**`, so the binding holds for the merge commit.
+Gate logs name their source commit in their first line; the gate script
+refuses a dirty `crates/` or `Cargo.lock`. Record commits change only
+`design/p4/**`.
 
 `design/p4/shared-files.patch` (the held proposal for P2-owned files) was
 retired: after the handoff it was reapplied onto eb27233, reconciled with the
@@ -62,7 +66,23 @@ corrected helpers (below) and landed in 3839e6b.
 - Native tests use `GpuRuntime::native(cfg)` (per test, claim released on
   healthy drop) or `GpuRuntime::process()` (separate binary).
 
-## Gates (f716257)
+## Review dispositions (astra-gpu, coordinator, quint-q3, lean-w3)
+
+| Finding | Disposition | Evidence (tests) |
+|---|---|---|
+| N1 release failure hidden by transform helper | Fixed: `transform_host`/`transform_chain` propagate cleanup failures; a successful launch with failed cleanup returns the cleanup error and publishes nothing; when the operation already failed, its error stands unless cleanup poisoned and it had not (`with_cleanup`). | `chain_final_intermediate_release_failure_publishes_nothing`, `host_release_failures_fail_the_call`, `host_cleanup_poison_outranks_a_preserved_launch_error` |
+| alloc_fail cleanup kind | Fixed: the failed free's kind is reported. | `allocation_cleanup_failure_reports_the_cleanup_error` |
+| N2 representation sampling | Fixed: the gate is `TypeId::of::<F>() == TypeId::of::<midnight_curves::Fq>()` (crates.io `=0.3.1`, the release Loki resolves); the samples remain a regression guard only. | `wire_field_check_identifies_bls12_381_only` with `Impostor` (same modulus, width and samples, bytes 1/2 swapped) refused before device work |
+| L1 failed setup loses uncertainty | Fixed: `DeviceState.setup_failed` persists an uncertain setup (sticky cause, failed cleanup destroy, sticky/lost probe); `initialize` refuses without driver calls; `reinitialize` resets first; a failed rebuild or failed reset keeps it; `Drop` keeps the native claim. Probe `Unsupported` stays Unsupported, `Transient` is NotStarted and retryable. | `lifecycle_regressions` (7) |
+| L2 injected driver ownership | Fixed: `GpuRuntime::with_driver` is `unsafe` with an exclusive-lifecycle `# Safety` contract; safe `GpuRuntime::with_fake` returns a `FakeControl` that cannot call `DeviceDriver` methods. All tests migrated. | all fake suites |
+| ABI follow-up: minted-handle check | Fixed: `NativeDriver::launch_transform` checks `known(dst, src, scratch, stream)` first, before any native code. | `ffi::native_guard_tests::ntt_launch_refuses_unminted_handles_before_native_code` |
+| ABI follow-up: params layout | Fixed: C++ `offsetof`/`alignof` static_asserts for every field; Rust offsets checked with `addr_of!` (MSRV 1.76). | `ffi::ntt_layout_tests` |
+| ensure_device error preservation | Fixed (source); no native fault injection on the shared GPU. | source review ACK |
+| Dispatcher: unnormalized inverse | Fixed in loki-gpu: Inverse requires `DivideByLengthOnce`, Forward requires `None`; Lean `shapeExtent` matches. | `rejected_shapes_and_roots`, `inverse_normalization_is_applied_exactly_once`, Lean example |
+| Dispatcher: write-back canonicality | Holds: downloads decode via `Fq::from_repr`, which refuses residues ≥ r. | `non_canonical_transform_output_is_refused_on_write_back` |
+| Dispatcher: curve admission, CPU validator | Loki-side (P1 code in `dispatch.rs`/`cpu.rs`); out of the loki-gpu merge, tracked for the Loki branch. | — |
+
+## Gates (f716257, first round; superseded by the final-source rerun below)
 
 | Gate | Command | Result | Log |
 |---|---|---|---|
@@ -118,17 +138,22 @@ staging path (H2D event time includes chunked staging at ~2.7 GB/s effective;
 D2H ~25 GB/s). The win is in resident chains (one upload/download per chain),
 not single host calls.
 
-## Cargo.lock delta
+## Dependencies and Cargo.lock delta
 
-+854 lines, 90 new packages (14 → 104 `name =` entries), all reached only
-through `[dev-dependencies]` (`midnight-proofs =0.8.3`, `midnight-curves 0.3.1`).
-Checked with `cargo tree -p loki-gpu -e normal --features cuda`: no midnight
-crate in the normal tree.
++854 lines, 90 new packages (14 → 104 `name =` entries). Normal dependencies
+of `loki-gpu` (`cargo tree -p loki-gpu -e normal --features cuda --depth 1`):
+`ff 0.13.1`, `group 0.13.0`, `loki-backend-api`, `midnight-curves =0.3.1`
+(`default-features = false`; the wire-format type boundary), 67 unique crates
+in the normal tree, all already in Loki's graph. `midnight-proofs =0.8.3` is
+dev-only (0 occurrences in the normal tree). `loki-backend-api` stays
+CUDA- and curve-neutral.
 
 ## Open risks
 
-1. Header is additive with ABI version unchanged, contradicting P2's "header
-   unchanged" note; API owner (astra-gpu) must accept the additions.
+1. Header is additive with `LOKI_GPU_RT_ABI_VERSION` unchanged; astra-gpu
+   ACKed the additive shape (not merge approval). `with_driver` became
+   `unsafe` (L2): any out-of-tree injected-driver user must switch to
+   `with_fake` or justify the contract.
 2. `ensure_device` error-preservation fix has no native test.
 3. The process runtime holds pinned slots for the process lifetime (no public
    teardown); visible to leak checkers.
