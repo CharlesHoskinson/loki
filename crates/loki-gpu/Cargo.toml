@@ -48,5 +48,10 @@ path = "tests/ntt_differential.rs"
 required-features = ["cuda"]
 
 [[test]]
+name = "ntt_process_entry"
+path = "tests/ntt_process_entry.rs"
+required-features = ["cuda"]
+
+[[test]]
 name = "resident_ntt"
 path = "tests/resident_ntt.rs"

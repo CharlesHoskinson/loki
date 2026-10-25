@@ -23,15 +23,14 @@ use std::sync::{Mutex, MutexGuard};
 
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
 use loki_backend_api::{
-    ElementOrder, ErrorKind, FailureEffect, InverseNormalization, Operation, TransformBackend,
+    ElementOrder, ErrorKind, FailureEffect, InverseNormalization, Operation,
     TransformDirection, TransformSpec,
 };
 use loki_gpu::ntt::{
-    self, transform_chain, transform_host, validate_transform, wire_field_supported,
+    transform_chain, transform_host, validate_transform, wire_field_supported,
     DomainTransforms, MAX_TRANSFORM_LOG,
 };
-use loki_gpu::runtime::GpuRuntime;
-use loki_gpu::LokiGpu;
+use loki_gpu::runtime::{GpuRuntime, RuntimeConfig};
 use ntt_support::*;
 
 // ---------------------------------------------------------------------------
@@ -243,11 +242,13 @@ fn device_lock() -> MutexGuard<'static, ()> {
     DEVICE.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-/// The process runtime (the single native-driver owner in this binary, which
-/// the trait entry point also uses), or `None` when skipping is explicitly
-/// allowed. Every check below reads telemetry as deltas.
-fn native() -> Option<&'static GpuRuntime> {
-    let rt = GpuRuntime::process();
+/// A fresh native runtime (the process-unique driver claim; tests hold
+/// `DEVICE`, and a healthy drop frees its resources and releases the claim),
+/// or `None` when skipping is explicitly allowed. The trait entry point,
+/// which uses the never-dropped process runtime, is tested in
+/// `ntt_process_entry.rs`.
+fn native() -> Option<GpuRuntime> {
+    let rt = GpuRuntime::native(RuntimeConfig::default()).expect("native driver claim");
     match rt.initialize() {
         Ok(_) => Some(rt),
         Err(e) => {
@@ -529,24 +530,6 @@ fn k19_k20_base_and_extended_domains() {
             check_domain(&rt, &s, pattern, 4242 + k as u64, false);
         }
     }
-}
-
-#[test]
-fn trait_entry_point_uses_the_process_runtime() {
-    let _g = device_lock();
-    let Some(_rt) = native() else { return };
-    let gpu = LokiGpu;
-    gpu.initialize().expect("process runtime");
-    let s = Stock::new(3, 8);
-    let a = input(Pattern::Random, s.n(), 3);
-    let before = GpuRuntime::process().telemetry().transform_launches;
-    let got = TransformBackend::<Fr>::transform(&gpu, &a, s.spec_coeff_to_extended()).unwrap();
-    assert_vec_eq("trait", &got, &s.coeff_to_extended(&a));
-    assert_eq!(GpuRuntime::process().telemetry().transform_launches, before + 1);
-    let caps = loki_backend_api::Backend::<Fr, midnight_curves::G1Projective>::capabilities(&gpu);
-    assert!(caps.host_transform && caps.resident_transform);
-    assert_eq!(caps.max_transform_log, Some(MAX_TRANSFORM_LOG));
-    assert!(caps.supports_arithmetic(ntt::TRANSFORM_ARITHMETIC));
 }
 
 #[test]
