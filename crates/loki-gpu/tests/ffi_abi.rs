@@ -8,8 +8,8 @@
 //!
 //! Part 2 opens the GPU (run under the shared GPU lock). Device tests are
 //! serialized in-process because the native context epoch is process-global.
-//! Without a usable device they are skipped, unless
-//! `LOKI_GPU_REQUIRE_DEVICE=1`, which turns a missing device into a failure.
+//! A missing device fails the gate; set `LOKI_GPU_ALLOW_NO_DEVICE=1` to skip
+//! the device tests on a toolkit-only host.
 //! These tests are the native lifetime tests run under compute-sanitizer.
 
 mod support;
@@ -240,7 +240,7 @@ fn device_lock() -> MutexGuard<'static, ()> {
     DEVICE.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-/// Probe the device; `None` means skip (no device and not required).
+/// Probe the device; `None` means skip (no device and skipping allowed).
 fn probe() -> Option<DeviceInfoV1> {
     let mut info = DeviceInfoV1::default();
     let mut st = StatusV1::default();
@@ -249,8 +249,12 @@ fn probe() -> Option<DeviceInfoV1> {
     if code == ffi::OK {
         return Some(info);
     }
-    if std::env::var("LOKI_GPU_REQUIRE_DEVICE").as_deref() == Ok("1") {
-        panic!("device required but probe returned {code} (cuda error {})", st.cuda_error);
+    if std::env::var("LOKI_GPU_ALLOW_NO_DEVICE").as_deref() != Ok("1") {
+        panic!(
+            "device required (set LOKI_GPU_ALLOW_NO_DEVICE=1 to skip) but probe returned {code} \
+             (cuda error {})",
+            st.cuda_error
+        );
     }
     eprintln!("skipping device test: probe returned {code}");
     None

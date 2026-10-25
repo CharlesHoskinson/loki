@@ -103,5 +103,14 @@ mode dominates; no overlap or latency gain is claimed.
 - `BUILD.md`/`RUNTIME.md` (other owners) still describe the pre-P2 skeleton (only stubs, three
   `.cu` files); they need an owner update. `Cargo.lock` changed by two dev-dependency lines
   (`rand_core`, `subtle`, already locked transitively).
+- Checkpoint bytes leak across poison: a checkpointed handle cannot be released while poisoned
+  (`Poisoned`) or after reinit (`ContextLost`); only `recover_checkpoint` returns its
+  `checkpoint_bytes`. If Loki aborts without recovering, repeated poison cycles can exhaust
+  `checkpoint_budget_bytes`. Needs an explicit discard path (follow-up).
+- Pageable staging leaks after a native reset: `cudaDeviceReset` frees pinned slots but not the
+  `malloc`'d pageable ones, which the retired-context path never frees (bounded: ≤ 128 MiB per
+  poison/reset event).
+- `ffi_abi` now fails when no device is present unless `LOKI_GPU_ALLOW_NO_DEVICE=1`, so the
+  TEST-PLAN gate command cannot pass silently on a toolkit-only host.
 - Lean model abstracts bytes as element counts and does not prove staging/free lifetime
   (`runtime-lifetime` stays a test/sanitizer obligation).
