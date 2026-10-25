@@ -109,7 +109,14 @@ pub(crate) fn validate_transform<F: PrimeField>(
             }
             spec.output_log_size
         }
-        TransformDirection::Inverse => spec.source_log_size,
+        // Exactly one `1/n` on every inverse (the API contract): an
+        // unnormalized inverse is not an inverse transform.
+        TransformDirection::Inverse => {
+            if spec.inverse_normalization != InverseNormalization::DivideByLengthOnce {
+                return Err(invalid(op));
+            }
+            spec.source_log_size
+        }
     };
     if !has_exact_order(spec.root, transform_log) {
         return Err(invalid(op));

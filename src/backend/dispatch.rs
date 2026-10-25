@@ -173,7 +173,8 @@ impl Dispatcher {
         B: TransformBackend<F> + ?Sized,
     {
         let output_len = cpu::validate_transform(values.len(), &spec)?;
-        if let Some(output) = self.try_accelerated_transform(accelerator, values, spec, output_len)
+        if let Some(output) =
+            self.try_accelerated_transform(accelerator, values, spec, output_len)?
         {
             *values = output;
             return Ok(());
@@ -182,47 +183,110 @@ impl Dispatcher {
         cpu::transform_in_place(values, spec)
     }
 
-    /// Offer a validated transform to the accelerator only. `None` means the
-    /// caller must compute it on CPU (not admitted, or failed and accounted).
+    /// A whole coset conversion (`coeff_to_extended`, `extended_to_coeff`)
+    /// offered as one request. `Ok(None)`: not admitted; the caller runs its
+    /// stock body (whose inner NTTs are offered separately). Once offered,
+    /// the conversion is settled here: the accelerator result, or after a
+    /// failure one CPU computation of the same spec, so the inner NTTs are
+    /// never re-offered and the fallback is counted once. `Err` only for a
+    /// rejected spec or a cancellation (never retried on CPU).
+    pub fn coset_transform<F, B>(
+        &self,
+        accelerator: Option<(&B, &BackendCapabilities)>,
+        values: &[F],
+        spec: TransformSpec<F>,
+    ) -> Result<Option<Vec<F>>, BackendError>
+    where
+        F: PrimeField,
+        B: TransformBackend<F> + ?Sized,
+    {
+        let output_len = cpu::validate_transform(values.len(), &spec)?;
+        if !self.admits_transform(accelerator.map(|(_, caps)| caps), &spec) {
+            return Ok(None);
+        }
+        if let Some(output) = self.try_accelerated_transform(accelerator, values, spec, output_len)? {
+            return Ok(Some(output));
+        }
+        let mut output = values.to_vec();
+        bump(&self.transform_cpu);
+        cpu::transform_in_place(&mut output, spec)?;
+        Ok(Some(output))
+    }
+
+    /// Whether a validated transform may be offered: accelerator enabled,
+    /// host transforms and the extent advertised, and the exact arithmetic
+    /// ABI the capabilities were queried for (BLS12-381 scalar field with its
+    /// G1 curve), not merely a matching scalar field.
+    fn admits_transform<F: PrimeField>(
+        &self,
+        caps: Option<&BackendCapabilities>,
+        spec: &TransformSpec<F>,
+    ) -> bool {
+        let Some(caps) = caps else { return false };
+        let largest = spec.source_log_size.max(spec.output_log_size);
+        !self.accelerator_disabled()
+            && caps.host_transform
+            && caps.max_transform_log.is_some_and(|max| largest <= max)
+            && transform_abi::<F>().is_some_and(|abi| caps.supports_arithmetic(abi))
+    }
+
+    /// Offer a validated transform to the accelerator only. `Ok(None)` means
+    /// the caller must compute it on CPU (not admitted, or failed and
+    /// accounted). A cancellation is returned as `Err` with the host values
+    /// untouched, no CPU retry and no counter change; it sticky-disables the
+    /// accelerator only if it also poisoned the session.
     fn try_accelerated_transform<F, B>(
         &self,
         accelerator: Option<(&B, &BackendCapabilities)>,
         values: &[F],
         spec: TransformSpec<F>,
         output_len: usize,
-    ) -> Option<Vec<F>>
+    ) -> Result<Option<Vec<F>>, BackendError>
     where
         F: PrimeField,
         B: TransformBackend<F> + ?Sized,
     {
-        let (backend, caps) = accelerator?;
-        let largest = spec.source_log_size.max(spec.output_log_size);
-        let admitted = !self.accelerator_disabled()
-            && caps.host_transform
-            && caps.max_transform_log.is_some_and(|max| largest <= max)
-            && field_abi::<F>().is_some_and(|field| {
-                caps.supported_arithmetic.iter().any(|abi| abi.scalar_field == field)
-            });
-        if !admitted {
-            return None;
+        let Some((backend, caps)) = accelerator else { return Ok(None) };
+        if !self.admits_transform(Some(caps), &spec) {
+            return Ok(None);
         }
         match backend.transform(values, spec) {
             Ok(output) if output.len() == output_len => {
+                // A result that arrives after another call sticky-disabled the
+                // accelerator is not trusted (check-then-use window).
+                if self.accelerator_disabled() {
+                    bump(&self.transform_fallback);
+                    return Ok(None);
+                }
                 bump(&self.transform_accelerated);
-                Some(output)
+                Ok(Some(output))
             }
             Ok(_) => {
                 // Contract violation: discard the tentative output.
                 bump(&self.transform_fallback);
                 self.poison();
-                None
+                Ok(None)
+            }
+            Err(error) if error.kind == ErrorKind::Cancelled => {
+                if error.effect == FailureEffect::SessionPoisoned {
+                    self.poison();
+                }
+                Err(error)
             }
             Err(error) => {
                 self.failed(error, &self.transform_fallback);
-                None
+                Ok(None)
             }
         }
     }
+}
+
+/// The arithmetic ABI a scalar-field transform is admitted under: the scalar
+/// field's own ABI, paired with the curve the capabilities were queried for
+/// (BLS12-381 G1; see `run_transform`). `None` for any other field.
+fn transform_abi<F: 'static>() -> Option<super::api::ArithmeticAbi> {
+    let field = field_abi::<F>()?;
+    arithmetic_abi::<midnight_curves::G1Affine>().filter(|abi| abi.scalar_field == field)
 }
 
 static GLOBAL: Dispatcher = Dispatcher::new();
@@ -283,7 +347,10 @@ fn run_transform<F: PrimeField>(values: &mut Vec<F>, spec: TransformSpec<F>) {
     };
     #[cfg(not(feature = "loki-gpu-backend"))]
     let result = GLOBAL.transform::<F, NoAccelerator>(None, values, spec);
-    result.expect("stock domain transform request is valid");
+    // Stock-signature shim: requests are valid by construction and no caller
+    // can cancel (`LokiGpu` host transforms use a private, never-cancelled
+    // token) until P7 adds error plumbing to the stock call sites.
+    result.expect("stock domain transform request is valid and not cancellable");
 }
 
 fn plain_spec<F>(root: F, log_n: u32, direction: TransformDirection) -> TransformSpec<F> {
@@ -338,10 +405,12 @@ pub(crate) fn accelerated_coset<F: WithSmallOrderMulGroup<3>>(
     {
         use super::api::Backend;
         field_abi::<F>()?;
-        let output_len = cpu::validate_transform(values.len(), &spec).ok()?;
         let gpu = loki_gpu::LokiGpu;
         let caps = <loki_gpu::LokiGpu as Backend<midnight_curves::Fq, midnight_curves::G1Projective>>::capabilities(&gpu);
-        GLOBAL.try_accelerated_transform(Some((&gpu, &caps)), values, spec, output_len)
+        // See `run_transform`: stock-signature shim, valid and not cancellable.
+        GLOBAL
+            .coset_transform(Some((&gpu, &caps)), values, spec)
+            .expect("stock coset request is valid and not cancellable")
     }
     #[cfg(not(feature = "loki-gpu-backend"))]
     {
