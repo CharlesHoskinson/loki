@@ -80,12 +80,12 @@ All commands were run from the worktree with `--offline`. Proof runs held `~/.ca
 | Seam checks | `cargo check --locked --features loki-backend-api`, and the same plus `loki-deterministic-lookup-order` | exit 0, both |
 | Accelerator checks | `cargo check --locked --features loki-gpu-backend`; `... --features loki-sppark` | exit 0, both; sppark 0.1.16 compiled |
 | Exclusivity guard | `cargo check --locked --features loki-gpu-backend,{cuda-ntt,loki-sppark,cuda}` | exit 101, all three, with the "mutually exclusive" `compile_error!` |
-| New default test | `cargo test --release --locked --test backend_default_stock -- --test-threads=1` | 7/7 |
+| New default test | `cargo test --release --locked --test backend_default_stock -- --test-threads=1` | 8/8 (7/7 before the review fix below; re-run 8/8 in default and seam builds) |
 | New seam test | `cargo test --release --locked --features loki-backend-api --test backend_cpu_equivalence -- --test-threads=1` | 14/14 |
-| New tests under the new backend | `cargo test --release --locked --features loki-gpu-backend --test backend_cpu_equivalence --test backend_default_stock` | 14/14 and 7/7; skeleton advertises nothing, so 0 accelerated dispatches |
-| Opt-in order | `cargo test --release --features loki-deterministic-lookup-order --test backend_default_stock --test cpu` | 7/7 and 1/1; lookup proofs byte-repeatable |
-| Full CPU suite, default | `RAYON_NUM_THREADS=4 cargo test --release --locked` | lib 34 passed, 2 ignored; backend_default_stock 7; cpu 1; plonk_api 1; doctests 9; exit 0 |
-| Full CPU suite, seam | `RAYON_NUM_THREADS=4 cargo test --release --locked --features loki-backend-api` | lib 34 passed, 2 ignored; backend_cpu_equivalence 14; backend_default_stock 7; cpu 1; plonk_api 1; doctests 9; exit 0 |
+| New tests under the new backend | `cargo test --release --locked --features loki-gpu-backend --test backend_cpu_equivalence --test backend_default_stock` | 14/14 and 7/7 (pre-fix); skeleton advertises nothing, so 0 accelerated dispatches |
+| Opt-in order | `cargo test --release --features loki-deterministic-lookup-order --test backend_default_stock --test cpu` | 7/7 (pre-fix) and 1/1; lookup proofs byte-repeatable |
+| Full CPU suite, default | `RAYON_NUM_THREADS=4 cargo test --release --locked` | lib 34 passed, 2 ignored; backend_default_stock 7 (pre-fix); cpu 1; plonk_api 1; doctests 9; exit 0 |
+| Full CPU suite, seam | `RAYON_NUM_THREADS=4 cargo test --release --locked --features loki-backend-api` | lib 34 passed, 2 ignored; backend_cpu_equivalence 14; backend_default_stock 7 (pre-fix); cpu 1; plonk_api 1; doctests 9; exit 0 |
 | W2 gate, default | `./loki-harness/run.sh` (k10/k14/k17, `RAYON_NUM_THREADS=1`) | exit 0. Every k cross-verifies both ways with byte-equal VKs. No-lookup control is byte-equal (1136 bytes, 0 differing). Lookup bytes differ at offset 192, which is diagnostic: stock HashMap order. |
 | W2 gate, forwarded feature | `cargo run --release --locked --features loki-gpu-backend --bin gate` in `loki-harness/` (run.sh env) | exit 0, same results. `cargo tree -i loki-gpu` shows `loki-harness/loki-gpu-backend` → `midnight-proofs/loki-gpu-backend` → `loki-gpu/cuda`. Compile/forwarding gate only, not a GPU pass. |
 | W2 tests | `RAYON_NUM_THREADS=1 cargo test --release --locked [--features loki-gpu-backend] -- --test-threads=1` in `loki-harness/` | differential: 7 passed, 1 ignored (k20), in both configs |
@@ -101,6 +101,13 @@ Proof-level byte equality versus crates.io 0.8.3 (same SRS bytes through both re
 | Lookup with 192 distinct leftovers | cross-verifies; bytes differ, as stock-vs-stock also does (first difference at 144) | same |
 
 Each fixture also passes negative controls in the stock verifier: a wrong public input, an empty proof, a truncated proof, a trailing byte and a bit flip are all rejected, and the transcript must be fully consumed. `lookup_leftovers_follow_stock_hashmap_order` is the drift detector. On the default build, two in-process proofs with many leftovers must differ, as stock's do. Under `loki-deterministic-lookup-order` they must be identical. The pre-P1 sorted code fails the default assertion.
+
+Review fix (astra-gpu, read-only review of `be63386`): the original `default_feature_set_is_stock` skipped itself whenever a non-default flag was on. That meant a feature accidentally added to `default` would also have skipped it. It is replaced by:
+
+- `manifest_default_features_are_stock`, which runs regardless of build flags and requires exactly `default = ["committed-instances"]` in both `Cargo.toml` and `Cargo.toml.orig`. MEASURED: it fails when `loki-backend-api` is temporarily added to `default`.
+- `default_build_configuration_is_stock`, an explicitly labelled cfg report.
+
+The only change is to this test file. "(pre-fix)" counts above came from runs before this fix.
 
 Matched latency (MEASURED, single host, not a GPU or recursion claim). `cpu-bench 16 7` (CpuCircuit, k16, 4 Rayon threads) ran three interleaved rounds per binary, 21 samples each, under the heavy lock:
 

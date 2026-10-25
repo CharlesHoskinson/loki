@@ -39,16 +39,39 @@ fn is_default_build() -> bool {
     NON_DEFAULT.iter().all(|(_, on)| !on)
 }
 
+/// Manifest gate, independent of how this test binary was configured: both
+/// manifests must declare exactly stock's `default = ["committed-instances"]`.
+/// (A cfg-based check alone cannot catch a feature added to `default`, since
+/// that would also change this binary's own cfg.)
 #[test]
-fn default_feature_set_is_stock() {
-    if !is_default_build() {
-        // Byte tests below still run; this check only applies to `default`.
-        eprintln!("skipping: not a default-feature build");
-        return;
+fn manifest_default_features_are_stock() {
+    for name in ["Cargo.toml", "Cargo.toml.orig"] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(name);
+        let manifest = std::fs::read_to_string(&path).unwrap();
+        let defaults: Vec<_> = manifest
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.split_once('=').is_some_and(|(key, _)| key.trim() == "default"))
+            .collect();
+        assert_eq!(
+            defaults,
+            vec![r#"default = ["committed-instances"]"#],
+            "{name}: default feature set differs from stock 0.8.3"
+        );
     }
+}
+
+/// Configuration check: when this binary is built with Cargo's defaults, no
+/// backend, CUDA, ordering, profiling or CPU-budget feature is active. Under
+/// explicit `--features` it reports and skips; the manifest gate above is the
+/// enforced default-set check.
+#[test]
+fn default_build_configuration_is_stock() {
     assert!(cfg!(feature = "committed-instances"));
-    let enabled: Vec<_> = NON_DEFAULT.iter().filter(|(_, on)| *on).map(|(n, _)| *n).collect();
-    assert!(enabled.is_empty(), "default build enables {enabled:?}");
+    if !is_default_build() {
+        let enabled: Vec<_> = NON_DEFAULT.iter().filter(|(_, on)| *on).map(|(n, _)| *n).collect();
+        eprintln!("non-default configuration {enabled:?}: manifest gate enforces the default set");
+    }
 }
 
 #[test]
