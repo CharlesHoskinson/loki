@@ -116,10 +116,14 @@ fn check(
 }
 
 fn equality(log: u32) {
-    for factor_log in 0..=2 {
+    equality_cases(log, 0..3, 0..6);
+}
+
+fn equality_cases(log: u32, factors: std::ops::Range<u32>, patterns: std::ops::Range<usize>) {
+    for factor_log in factors {
         let domain = EvaluationDomain::<Fq>::new((1 << factor_log) + 1, log - factor_log);
         assert_eq!(domain.extended_k, log);
-        for pattern in 0..6 {
+        for pattern in patterns.clone() {
             let extended = input(log, pattern);
             let base = &extended[..domain.n as usize];
             check(
@@ -223,7 +227,39 @@ matrix! {
     gpu_ntt_equality_16: 16, gpu_ntt_equality_17: 17,
     gpu_ntt_equality_18: 18, gpu_ntt_equality_19: 19,
     gpu_ntt_equality_20: 20, gpu_ntt_equality_21: 21,
-    gpu_ntt_equality_22: 22, gpu_ntt_equality_23: 23,
+    gpu_ntt_equality_22: 22,
+}
+
+// At 2^23 each case holds several 256 MiB vectors. Separate tests allow the
+// runner to report an exit status per case and release process resources
+// between jobs, rather than losing an entire large matrix on interruption.
+macro_rules! largest_matrix {
+    ($($name:ident: $factor:literal, $pattern:literal);* $(;)?) => {$(
+        #[test]
+        #[ignore = "requires CUDA; largest CPU/GPU equality case"]
+        fn $name() { equality_cases(23, $factor..$factor + 1, $pattern..$pattern + 1); }
+    )*};
+}
+
+largest_matrix! {
+    gpu_ntt_equality_23_f1_random: 0, 0;
+    gpu_ntt_equality_23_f1_zero: 0, 1;
+    gpu_ntt_equality_23_f1_one: 0, 2;
+    gpu_ntt_equality_23_f1_max: 0, 3;
+    gpu_ntt_equality_23_f1_impulse: 0, 4;
+    gpu_ntt_equality_23_f1_mixed: 0, 5;
+    gpu_ntt_equality_23_f2_random: 1, 0;
+    gpu_ntt_equality_23_f2_zero: 1, 1;
+    gpu_ntt_equality_23_f2_one: 1, 2;
+    gpu_ntt_equality_23_f2_max: 1, 3;
+    gpu_ntt_equality_23_f2_impulse: 1, 4;
+    gpu_ntt_equality_23_f2_mixed: 1, 5;
+    gpu_ntt_equality_23_f4_random: 2, 0;
+    gpu_ntt_equality_23_f4_zero: 2, 1;
+    gpu_ntt_equality_23_f4_one: 2, 2;
+    gpu_ntt_equality_23_f4_max: 2, 3;
+    gpu_ntt_equality_23_f4_impulse: 2, 4;
+    gpu_ntt_equality_23_f4_mixed: 2, 5;
 }
 
 // Benchmark the real public entry points on both backends, with identical
