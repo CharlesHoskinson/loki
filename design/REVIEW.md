@@ -2,7 +2,7 @@
 
 CODE: the initial sections record the design-team review of the API, Unsupported skeleton and Lean specification. Later dated sections review implementation branches and their scoped evidence. They do not establish stock acceptance or end-to-end speedups for the new backend. Unless explicitly labeled otherwise, findings are CODE observations or proposed contracts.
 
-## Current implementation review status — 2026-10-25 10:15 UTC
+## Current implementation review status — 2026-10-25 10:23 UTC
 
 SOURCE: revisions below are branch-specific; source review is not a claim that
 all branches are merged or that the combined prover is qualified.
@@ -14,7 +14,7 @@ all branches are merged or that the combined prover is qualified.
 | P4 transform dispatch | CODE: Loki `7804fa6` propagates cancellation, admits the exact ABI, rejects results after sticky-disable and settles a failed coset offer once on CPU. MEASURED (P4): CPU-only suite 18 passed and stock-default suite 9 passed. OPEN QUESTION: combined P3/P4 merge gate and feature-on stock differential. |
 | P5 quotient | CODE: draft `9d7efb4` corrects Q1/Q3 and the subsequent local-query lock/poison and snapshot-charge findings. MEASURED (P5): fake suite 19 passed; native summary receipt reports the full CUDA suite and three explicit quotient cases passing. OPEN QUESTION: final sanitizer/integration gates and measured qualification of the local-memory estimate. |
 | P5 CPU compiler | CODE: Loki `3f964da` addresses domain coherence and enforced certificate validation. Source review found no well-formed term-order mismatch. MEASURED (P5): 11 tests passed, two ignored; final receipt/mutation gates remain separate. |
-| P7 scheduler/benchmark | CODE: `19637e3` corrects qualification status, stale completion and timing scope. Source approval is scoped to those items; per-stage operation evidence and bounded descendant cleanup need follow-up. Reservation redemption remains an explicitly unimplemented prototype integration. |
+| P7 scheduler/benchmark | CODE: source findings S1/S2/S3/S5/S6 addressed through `9eee2b0`/`fc4ddb2`; cleanup receipt `44cea53` inspected and its file hashes independently matched. Reservation redemption remains an explicitly unimplemented prototype integration. OPEN QUESTION: corrected-P4 rebase and actual GPU/stock-chain qualification. |
 | Lean | CODE: lead independently reviewed closure `0416b73` in components `2a9e9f6`; both original backend statements are retained with substantive proofs. SOURCE: components reports full build and zero `sorry`; this is a separate branch. OPEN QUESTION: reconcile with current gpu-spec modules and run the combined build/axiom audit. |
 | Lean SRS | CODE: `49fa4ca`/`ea839e5` specifies sequential prefix/lease refinement with explicit kernel, codec and concurrent-pinning obligations. MEASURED (P3): targeted module build and three-theorem standard-axiom audit passed. |
 
@@ -495,3 +495,35 @@ SOURCE: `bench/README.md` now records the adapted Moriarty source files and
 revision `f2ea193777897869c2e45c08601cc412e00c3897`. Lead inspected that
 revision's workspace Apache-2.0 declaration and root LICENSE; it has no root
 NOTICE. The review copied no implementation source.
+
+### P7 source-review closure — 9eee2b0 / fc4ddb2 / 44cea53
+
+CODE: `9eee2b0` requires both MSM and NTT success in each eligible recursion
+stage, checks subreaper setup, and bounds post-exit descendant cleanup with
+nonblocking reaping and EOF-conditional reader joining. Remaining descendants
+or missing EOF fail qualification. The post-exit deadline does not promise
+successful cleanup of an unkillable process; survivors are reported explicitly.
+
+CODE: the first deep-tree regression killed recorded PIDs before checking
+survival, masking a possible cleanup failure. At lead's request, `fc4ddb2`
+records and asserts the survivor verdict before fixture cleanup, with RAII
+cleanup on panic/timeout. MEASURED (P7 report): the targeted rerun passed 1/1;
+the preceding launcher suite passed 13 tests plus 10 unit tests, and dispatch
+qualification passed 7 tests. These are owner results, not lead executions.
+
+MEASURED: lead inspected `44cea53`'s
+`bench/campaign/receipts/sigkill-20261025T102035Z.txt` and independently matched
+all three current-file SHA-256 values to the receipt:
+
+| File | SHA-256 |
+|---|---|
+| Controller | `3b7b76a0b3c480b68d592be25c55ec8078dd44255ec7614ff24d485e3294baf3` |
+| L0 driver | `39b4e5c968a804c79043e4969cff09ee7957506069fd2120d949c5a5056dc6cf` |
+| Process-test script | `e8481d854a963dbc3aa8f9dd191d12da89315be87a7c36dcc7d85c39510b105c` |
+
+SOURCE/MEASURED (P7 receipt): the real driver plus its fake verifier worker
+both died after controller SIGKILL, exit 0; no proof or GPU work was performed
+by that case. Source findings S1/S2/S3/S5/S6 are addressed. S4 reservation
+redemption, the safe-fake API rebase on corrected P4, combined tests and actual
+GPU/stock-chain qualification remain separate gates. This is not full P7
+integration completion or an end-to-end performance result.
