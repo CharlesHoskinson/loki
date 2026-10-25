@@ -172,6 +172,8 @@ pub fn msm_specific<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) ->
     if let Some(result) = cuda::try_msm::<C>(coeffs, bases) {
         return result;
     }
+    #[cfg(all(feature = "loki-profile", not(feature = "cuda")))]
+    crate::profile::record_backend("msm.cpu_no_feature", coeffs.len().min(bases.len()));
     // P1 seam: typed request through the Loki dispatcher (stock CPU adapter
     // unless an advertised accelerator completes it).
     #[cfg(feature = "loki-backend-api")]

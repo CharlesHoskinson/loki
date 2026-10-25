@@ -3,6 +3,11 @@ use core::ops::{Add, Mul};
 use std::{fmt::Debug, hash::Hash};
 
 use ff::{FromUniformBytes, PrimeField};
+#[cfg(feature = "cuda-argument-commit")]
+use ff::WithSmallOrderMulGroup;
+
+#[cfg(feature = "cuda-argument-commit")]
+use crate::poly::EvaluationDomain;
 
 use crate::{
     plonk::{k_from_circuit, Circuit},
@@ -111,5 +116,114 @@ pub trait Params {
     ) {
         let k = k_from_circuit(circuit);
         self.downsize(k);
+    }
+}
+
+/// Reuse the coefficient polynomial needed for argument openings when the SRS
+/// and evaluation domain match. This assumes valid PCS parameters: for KZG,
+/// `g_lagrange` must be the inverse transform of `g` for this exact domain.
+/// Matching sizes does not validate arbitrary supplied or deserialized bases.
+/// With a larger SRS, preserve the original prefix-Lagrange commitment.
+#[cfg(feature = "cuda-argument-commit")]
+pub(crate) fn commit_argument<
+    F: WithSmallOrderMulGroup<3>,
+    CS: PolynomialCommitmentScheme<F>,
+>(
+    params: &CS::Parameters,
+    domain: &EvaluationDomain<F>,
+    values: Polynomial<F, LagrangeCoeff>,
+) -> (Polynomial<F, Coeff>, CS::Commitment) {
+    #[cfg(feature = "loki-profile")]
+    let size = values.len();
+    if params.max_k() == domain.k() {
+        let poly = domain.lagrange_to_coeff(values);
+        #[cfg(feature = "loki-profile")]
+        crate::profile::record_backend("argument_commit.coeff", size);
+        let commitment = CS::commit(params, &poly);
+        (poly, commitment)
+    } else {
+        #[cfg(feature = "loki-profile")]
+        crate::profile::record_backend("argument_commit.lagrange", size);
+        let commitment = CS::commit_lagrange(params, &values);
+        let poly = domain.lagrange_to_coeff(values);
+        (poly, commitment)
+    }
+}
+
+#[cfg(all(test, feature = "cuda-argument-commit"))]
+mod argument_commit_tests {
+    use ff::Field;
+    use midnight_curves::{Bls12, Fq};
+    use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
+
+    use super::*;
+    use crate::poly::{
+        kzg::{params::ParamsKZG, KZGCommitmentScheme},
+        EvaluationDomain,
+    };
+
+    type Scheme = KZGCommitmentScheme<Bls12>;
+
+    #[test]
+    fn argument_commit_matches_full_domain_lagrange_for_edge_and_random_values() {
+        let mut rng = ChaCha20Rng::from_seed([73; 32]);
+        for k in [1, 3, 4] {
+            let params = ParamsKZG::<Bls12>::unsafe_setup(k, &mut rng);
+            let domain = EvaluationDomain::new(1, k);
+            let n = 1 << k;
+            let wide = Fq::random(&mut rng);
+            let mut cases = vec![
+                vec![Fq::ZERO; n],
+                vec![Fq::ONE; n],
+                vec![-Fq::ONE; n],
+                (0..n).map(|i| Fq::from((i % 3) as u64)).collect(),
+                vec![wide; n],
+            ];
+            cases.extend((0..4).map(|_| (0..n).map(|_| Fq::random(&mut rng)).collect()));
+            for values in cases {
+                let values = domain.lagrange_from_vec(values);
+                let expected_poly = domain.lagrange_to_coeff(values.clone());
+                let expected_commitment = Scheme::commit_lagrange(&params, &values);
+                let (poly, commitment) = commit_argument::<Fq, Scheme>(&params, &domain, values);
+                assert_eq!(poly, expected_poly);
+                assert_eq!(poly.len(), n);
+                assert_eq!(commitment, expected_commitment);
+                assert_eq!(commitment, Scheme::commit(&params, &poly));
+            }
+        }
+    }
+
+    #[test]
+    fn argument_commit_preserves_prefix_lagrange_with_oversized_params() {
+        let mut rng = ChaCha20Rng::from_seed([74; 32]);
+        let params = ParamsKZG::<Bls12>::unsafe_setup(4, &mut rng);
+        let domain = EvaluationDomain::new(1, 3);
+        let values = domain.lagrange_from_vec(vec![Fq::ONE; 8]);
+        let expected_poly = domain.lagrange_to_coeff(values.clone());
+        let expected_commitment = Scheme::commit_lagrange(&params, &values);
+        let coefficient_commitment = Scheme::commit(&params, &expected_poly);
+        // A prefix of the larger Lagrange basis is not the smaller domain's basis.
+        assert_ne!(expected_commitment, coefficient_commitment);
+        let (poly, commitment) = commit_argument::<Fq, Scheme>(&params, &domain, values);
+        assert_eq!(poly, expected_poly);
+        assert_eq!(poly.len(), 8);
+        assert_eq!(commitment, expected_commitment);
+    }
+
+    #[test]
+    fn argument_commit_matches_lagrange_after_downsize_regenerates_basis() {
+        let mut rng = ChaCha20Rng::from_seed([75; 32]);
+        let mut params = ParamsKZG::<Bls12>::unsafe_setup(4, &mut rng);
+        params.downsize(3);
+        let domain = EvaluationDomain::new(1, 3);
+        assert_eq!(params.max_k(), domain.k());
+        let values = domain.lagrange_from_vec((0..8).map(|_| Fq::random(&mut rng)).collect());
+        let expected_poly = domain.lagrange_to_coeff(values.clone());
+        let expected_commitment = Scheme::commit_lagrange(&params, &values);
+        let (poly, commitment) = commit_argument::<Fq, Scheme>(&params, &domain, values);
+        assert_eq!(poly, expected_poly);
+        assert_eq!(poly.len(), 8);
+        assert_eq!(commitment, expected_commitment);
+        assert_eq!(commitment, Scheme::commit(&params, &poly));
     }
 }

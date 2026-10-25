@@ -19,6 +19,11 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 name = "loki-profile"
 required-features = ["loki-profile"]
 
+[[example]]
+name = "loki-w2-gpu"
+path = "examples/loki-w2-gpu.rs"
+required-features = ["cuda-argument-commit"]
+
 [[bench]]
 name = "commit_zk"
 harness = false
@@ -61,7 +66,7 @@ criterion = { version = "0.7", optional = true }
 # Developer tooling dependencies
 tabbycat = { version = "0.1", features = ["attributes"], optional = true }
 num-bigint = { workspace = true }
-blst = { version = "0.3.16", optional = true }
+blst = { version = "0.3.16" }
 sppark = { version = "=0.1.16", features = ["cuda"], optional = true }
 
 [build-dependencies]
@@ -91,7 +96,8 @@ midnight-curves = { version = "0.3.0", features = [
 cuda-ntt = ["dep:loki-cuda-ntt"]
 default = ["committed-instances"]
 circuit-params = []
-cuda = ["dep:sppark", "dep:blst", "dep:cc", "dep:loki-cuda-runtime"]
+cuda = ["dep:sppark", "dep:cc", "dep:loki-cuda-runtime"]
+cuda-argument-commit = ["cuda"]
 derive_serde = ["midnight-curves/serde"]
 dev-curves = ["midnight-curves/serde", "midnight-curves/dev-curves"]
 
@@ -100,6 +106,8 @@ truncated-challenges = []
 
 # Optional wall timing and arithmetic counts; no hooks are built by default.
 loki-profile = []
+# Clone-free, ordered parallel KZG multiopen polynomial work.
+loki-multiopen = []
 loki-cpu-budget = ["blst/no-threads"]
 loki-harden = []
 
@@ -130,6 +138,3 @@ bench-internal = ["criterion"]
 
 [lib]
 bench = false
-
-# Clone-free, ordered parallel KZG multiopen polynomial work.
-loki-multiopen = []

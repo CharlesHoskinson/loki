@@ -40,7 +40,8 @@ pub struct PhaseTiming {
     pub calls: u64,
     /// Exclusive elapsed wall time in nanoseconds.
     pub wall_ns: u64,
-    /// Backend outcomes and preparation counters for this phase.
+    /// Backend dispatch outcomes (for example `msm.gpu` or `ntt.cpu_forced`)
+    /// and preparation counters for this phase.
     #[serde(default)]
     pub backends: BTreeMap<String, OperationCounts>,
 }
@@ -74,6 +75,19 @@ pub struct ProofReport {
     pub k: u32,
     /// Number of circuits batched in this proof.
     pub circuits: usize,
+    /// Effective number of workers in the active Rayon pool.
+    #[serde(default)]
+    pub rayon_threads: usize,
+    /// Known BLST worker count when `loki-cpu-budget` enforces `blst/no-threads`.
+    /// Otherwise unknown; no inference is made from the active Rayon pool.
+    #[serde(default)]
+    pub blst_threads: Option<usize>,
+    /// Whether the MSM CUDA adapter was compiled in.
+    #[serde(default)]
+    pub cuda_msm: bool,
+    /// Whether the NTT CUDA adapter was compiled in.
+    #[serde(default)]
+    pub cuda_ntt: bool,
     /// Whether `create_proof` returned `Ok` (false also covers unwinding).
     pub success: bool,
     /// Total wall time in nanoseconds; equals the sum of exclusive phases.
@@ -89,6 +103,11 @@ pub struct ProofReport {
 }
 
 static COMPLETED: Mutex<Report> = Mutex::new(Report { proofs: Vec::new() });
+
+// Unit tests that drain the process-wide report must not consume each other's
+// completed records. This lock does not serialize proofs or production callers.
+#[cfg(test)]
+pub(crate) static TEST_REPORTS: Mutex<()> = Mutex::new(());
 
 /// Atomically drain completed proof attempts from the process-wide report.
 ///
@@ -132,8 +151,19 @@ impl ProofGuard {
         let mut report = ProofReport {
             k,
             circuits,
+            rayon_threads: rayon::current_num_threads(),
+            blst_threads: cfg!(feature = "loki-cpu-budget").then_some(1),
+            cuda_msm: cfg!(feature = "cuda"),
+            cuda_ntt: cfg!(feature = "cuda-ntt"),
             ..ProofReport::default()
         };
+        eprintln!(
+            "LOKI_PROFILE k={k} rayon_threads={} blst_threads={} loki_cpu_budget={} cuda_msm={} cuda_ntt={}",
+            report.rayon_threads,
+            report.blst_threads.map_or("unknown", |_| "1"),
+            cfg!(feature = "loki-cpu-budget"),
+            report.cuda_msm, report.cuda_ntt
+        );
         report.phases.insert(
             "other".into(),
             PhaseTiming {
@@ -226,6 +256,24 @@ pub(crate) fn record_fft(size: usize) {
     });
 }
 
+/// Record the selected backend at the arithmetic dispatch boundary. Calls are
+/// synchronous on the proof thread, so the active exclusive phase is unambiguous.
+pub(crate) fn record_backend(outcome: &'static str, size: usize) {
+    ACTIVE.with(|slot| {
+        if let Some(active) = slot.borrow_mut().as_mut() {
+            active
+                .report
+                .phases
+                .get_mut(&active.phase)
+                .unwrap()
+                .backends
+                .entry(outcome.into())
+                .or_default()
+                .record(size);
+        }
+    });
+}
+
 /// Record preparation counts and elapsed time on the calling proof thread.
 pub(crate) fn record_backend_timing(outcome: &'static str, size: usize, wall_ns: u64) {
     ACTIVE.with(|slot| {
@@ -292,6 +340,14 @@ fn append_jsonl(path: std::ffi::OsString, report: &ProofReport) -> io::Result<()
         write!(line, ",\"{}\":", name)?;
         write_counts(&mut line, counts)?;
     }
+    write!(
+        line,
+        ",\"rayon_threads\":{},\"blst_threads\":{},\"cuda_msm\":{},\"cuda_ntt\":{}",
+        report.rayon_threads,
+        report.blst_threads.map_or("null", |_| "1"),
+        report.cuda_msm,
+        report.cuda_ntt
+    )?;
     writeln!(line, ",\"jsonl_error\":null}}")?;
     OpenOptions::new()
         .create(true)
@@ -314,7 +370,28 @@ mod tests {
     }
 
     #[test]
+    fn blst_thread_metadata_matches_budget_policy() {
+        let _serial = TEST_REPORTS.lock().unwrap();
+        let _ = take_test_report();
+        drop(ProofGuard::start(1004, 1));
+        let proof = take_test_report().proofs.pop().unwrap();
+        let value = serde_json::to_value(&proof).unwrap();
+        #[cfg(feature = "loki-cpu-budget")]
+        assert_eq!(value["blst_threads"], serde_json::json!(1));
+        #[cfg(not(feature = "loki-cpu-budget"))]
+        assert_eq!(value["blst_threads"], serde_json::Value::Null);
+        let mut legacy = value;
+        legacy.as_object_mut().unwrap().remove("blst_threads");
+        let restored: ProofReport = serde_json::from_value(legacy).unwrap();
+        assert_eq!(
+            serde_json::to_value(restored).unwrap()["blst_threads"],
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
     fn isolate_threads_drain_completed_and_serialize() {
+        let _serial = TEST_REPORTS.lock().unwrap();
         assert!(take_test_report().proofs.is_empty());
         let barrier = Arc::new(Barrier::new(3));
         std::thread::scope(|scope| {
@@ -324,11 +401,15 @@ mod tests {
                     let mut proof = ProofGuard::start(k, 1);
                     let outer = PhaseGuard::start("compute_nu_poly");
                     record_msm(16);
+                    record_backend("msm.cpu_fallback", 16);
                     record_backend_timing("msm.prepare", 16, 123);
                     record_backend_timing("msm.prepare", 8, 77);
                     {
                         let _inner = PhaseGuard::start("quotient_evaluation");
                         record_fft(32);
+                        record_backend("ntt.gpu", 32);
+                        record_backend("ntt.gpu_error", 64);
+                        record_backend("ntt.cpu_forced", 8);
                     }
                     drop(outer);
                     barrier.wait();
@@ -356,6 +437,19 @@ mod tests {
             assert_eq!(proof.msm.sizes[&16], 1);
             assert_eq!(proof.fft.calls, 1);
             assert_eq!(proof.fft.sizes[&32], 1);
+            assert!(proof.rayon_threads > 0);
+            assert_eq!(
+                proof.blst_threads,
+                cfg!(feature = "loki-cpu-budget").then_some(1)
+            );
+            let outer = &proof.phases["compute_nu_poly"].backends;
+            assert_eq!(outer["msm.cpu_fallback"].sizes[&16], 1);
+            assert_eq!(outer.len(), 1);
+            let inner = &proof.phases["quotient_evaluation"].backends;
+            assert_eq!(inner["ntt.gpu"].sizes[&32], 1);
+            assert_eq!(inner["ntt.gpu_error"].sizes[&64], 1);
+            assert_eq!(inner["ntt.cpu_forced"].sizes[&8], 1);
+            assert_eq!(inner.len(), 3);
             assert_eq!(
                 proof.total_wall_ns,
                 proof.phases.values().map(|p| p.wall_ns).sum::<u64>()

@@ -10,10 +10,14 @@ publish = false
 default = []
 cuda = ["loki/cuda"]
 cuda-srs-registry = ["cuda", "loki/cuda-srs-registry"]
+cuda-ntt = ["loki/cuda-ntt"]
+cuda-argument-commit = ["cuda", "loki/cuda-argument-commit"]
+loki-profile = ["loki/loki-profile"]
 loki-multiopen = ["loki/loki-multiopen"]
 # P1 seam: new Apache-2.0 backend (forwards loki-gpu/cuda). Compiling this
 # feature is not a GPU pass; GPU gates must assert backend dispatch counters.
 loki-gpu-backend = ["loki/loki-gpu-backend"]
+loki-cpu-budget = ["loki/loki-cpu-budget"]
 
 [dependencies]
 loki = { package = "midnight-proofs", path = ".." }
