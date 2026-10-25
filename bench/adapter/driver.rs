@@ -110,6 +110,47 @@ fn now_unix_ms() -> u128 {
         .unwrap_or(0)
 }
 
+/// G0 acceptance (SUITE: production dispatch counters qualified): every
+/// stage has zero accelerator errors and zero CPU fallbacks; every stage
+/// published at least one accelerated operation; and across the chain both
+/// MSM and NTT were accelerated. A sample that fails this is not a GPU
+/// performance observation.
+#[cfg_attr(not(any(test, feature = "g0")), allow(dead_code))]
+fn g0_dispatch_qualification(stages: &[Value]) -> std::result::Result<Value, String> {
+    let get = |t: &Value, op: &str, k: &str| t[op][k].as_u64();
+    let (mut msm_ok, mut ntt_ok) = (0u64, 0u64);
+    let mut per_stage = serde_json::Map::new();
+    for s in stages {
+        let name = s["stage"].as_str().unwrap_or("?").to_string();
+        let t = &s["telemetry"];
+        let mut fields = Vec::new();
+        for op in ["msm", "ntt"] {
+            for k in ["attempted", "succeeded", "error", "fallback"] {
+                fields.push(get(t, op, k).ok_or_else(|| format!("stage {name}: telemetry {op}.{k} missing"))?);
+            }
+        }
+        let [_ma, ms, me, mf, _na, ns, ne, nf] = fields[..] else { unreachable!() };
+        if me + mf + ne + nf > 0 {
+            return Err(format!(
+                "stage {name}: accelerator error/fallback (msm error {me} fallback {mf}, ntt error {ne} fallback {nf})"
+            ));
+        }
+        if ms + ns == 0 {
+            return Err(format!("stage {name}: no accelerated MSM or NTT operation"));
+        }
+        msm_ok += ms;
+        ntt_ok += ns;
+        per_stage.insert(name, json!({"msm_succeeded": ms, "ntt_succeeded": ns}));
+    }
+    if msm_ok == 0 {
+        return Err("chain: no accelerated msm operation".into());
+    }
+    if ntt_ok == 0 {
+        return Err("chain: no accelerated ntt operation".into());
+    }
+    Ok(json!({"passed": true, "per_stage": per_stage, "msm_succeeded": msm_ok, "ntt_succeeded": ntt_ok}))
+}
+
 struct Args {
     out: PathBuf,
     srs: PathBuf,
@@ -176,11 +217,16 @@ impl Verifier {
         // The worker dies with this process (launcher cancellation kills the
         // process group; this also covers an abnormal driver exit).
         // SAFETY: prctl is async-signal-safe and touches no Rust state.
+        let parent = std::process::id() as libc::pid_t;
         unsafe {
             use std::os::unix::process::CommandExt;
-            cmd.pre_exec(|| {
+            cmd.pre_exec(move || {
                 if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
                     return Err(std::io::Error::last_os_error());
+                }
+                // If we died before prctl, no signal would ever arrive.
+                if libc::getppid() != parent {
+                    return Err(std::io::Error::other("driver exited before PDEATHSIG was armed"));
                 }
                 Ok(())
             });
@@ -362,6 +408,13 @@ fn run_chain(a: &Args) -> Result<()> {
         for s in &stages {
             create_proof_ms += s["create_proof_ms"].as_f64().unwrap_or(0.0);
         }
+        let production_chain_ms: f64 = stages.iter().map(|s| s["operational_ms"].as_f64().unwrap_or(0.0)).sum();
+        let stock_receipt_ms_sum: f64 = stages.iter().map(|s| s["stock_receipt_ms"].as_f64().unwrap_or(0.0)).sum();
+        let dispatch = if cfg!(feature = "g0") {
+            Some(g0_dispatch_qualification(&stages))
+        } else {
+            None
+        };
         let cpu_end = common::cpu_seconds();
         let receipt = json!({
             "schema": "loki-bench-chain-sample/1",
@@ -371,6 +424,12 @@ fn run_chain(a: &Args) -> Result<()> {
             "cache": cache,
             "started_unix_ms": started_unix_ms,
             "chain_ms": chain_ms,
+            "chain_ms_scope": "qualification-inclusive: SUITE CHAIN endpoint, wall from the first leaf to the last independent stock receipt (includes production stage checks and the extra stock-verifier round trips)",
+            "qualification_inclusive_chain_ms": chain_ms,
+            "production_chain_ms": production_chain_ms,
+            "production_chain_ms_scope": "sum of the three stage operational windows (production APIs and their own checks), excluding the extra stock-verifier requests",
+            "stock_receipt_ms_sum": stock_receipt_ms_sum,
+            "g0_dispatch": match &dispatch { None => Value::Null, Some(Ok(v)) => v.clone(), Some(Err(e)) => json!({"passed": false, "error": e}) },
             "create_proof_sum_ms": create_proof_ms,
             "create_proof_scope": "sum of the externally timed proof calls of the four stage proofs (A102+A80 as one nested call)",
             "stages": stages,
@@ -384,7 +443,10 @@ fn run_chain(a: &Args) -> Result<()> {
         });
         let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&receipts_path)?;
         writeln!(f, "{receipt}")?;
-        println!("{}", json!({"event": "sample", "arm": ARM, "cache": cache, "chain_ms": chain_ms, "create_proof_sum_ms": create_proof_ms}));
+        if let Some(Err(e)) = dispatch {
+            return Err(error(format!("G0 dispatch qualification failed ({cache}): {e}")));
+        }
+        println!("{}", json!({"event": "sample", "arm": ARM, "cache": cache, "chain_ms": chain_ms, "production_chain_ms": production_chain_ms, "create_proof_sum_ms": create_proof_ms}));
         std::io::stdout().flush()?;
     }
     let verifier_rusage = verifier.finish();
@@ -789,5 +851,66 @@ mod sherlock {
                 "public_lanes": public.len(),
             }),
         ))
+    }
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+
+    fn op(attempted: u64, succeeded: u64, error: u64, fallback: u64) -> Value {
+        json!({"calls": attempted + 3, "cpu": 3, "attempted": attempted, "succeeded": succeeded, "error": error, "fallback": fallback})
+    }
+    fn stage(name: &str, msm: Value, ntt: Value) -> Value {
+        json!({"stage": name, "telemetry": {"backend": "legacy-sppark:msm+srs-registry,ntt", "msm": msm, "ntt": ntt}})
+    }
+
+    #[test]
+    fn accelerated_chain_with_zero_errors_qualifies() {
+        let s = vec![
+            stage("children", op(0, 0, 0, 0), op(4, 4, 0, 0)),
+            stage("parent", op(9, 9, 0, 0), op(7, 7, 0, 0)),
+            stage("decider", op(5, 5, 0, 0), op(3, 3, 0, 0)),
+        ];
+        assert!(g0_dispatch_qualification(&s).is_ok());
+    }
+
+    #[test]
+    fn cpu_only_chain_is_rejected() {
+        let s = vec![
+            stage("children", op(0, 0, 0, 0), op(0, 0, 0, 0)),
+            stage("parent", op(0, 0, 0, 0), op(0, 0, 0, 0)),
+            stage("decider", op(0, 0, 0, 0), op(0, 0, 0, 0)),
+        ];
+        let e = g0_dispatch_qualification(&s).unwrap_err();
+        assert!(e.contains("no accelerated"), "{e}");
+    }
+
+    #[test]
+    fn any_fallback_or_error_is_rejected() {
+        let s = vec![
+            stage("children", op(0, 0, 0, 0), op(4, 4, 0, 0)),
+            stage("parent", op(9, 8, 1, 1), op(7, 7, 0, 0)),
+            stage("decider", op(5, 5, 0, 0), op(3, 3, 0, 0)),
+        ];
+        let e = g0_dispatch_qualification(&s).unwrap_err();
+        assert!(e.contains("parent") && e.contains("fallback"), "{e}");
+    }
+
+    #[test]
+    fn missing_msm_acceleration_across_the_chain_is_rejected() {
+        let s = vec![
+            stage("children", op(0, 0, 0, 0), op(4, 4, 0, 0)),
+            stage("parent", op(0, 0, 0, 0), op(7, 7, 0, 0)),
+            stage("decider", op(0, 0, 0, 0), op(3, 3, 0, 0)),
+        ];
+        let e = g0_dispatch_qualification(&s).unwrap_err();
+        assert!(e.contains("msm"), "{e}");
+    }
+
+    #[test]
+    fn missing_telemetry_is_rejected() {
+        let s = vec![json!({"stage": "children", "telemetry": null})];
+        assert!(g0_dispatch_qualification(&s).is_err());
     }
 }

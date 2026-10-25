@@ -24,6 +24,21 @@
 //!   reservation from an older device generation is reported as
 //!   [`ReleaseOutcome::Stale`]; the heavy slot is freed regardless.
 //!
+//! * [`HeavyPermit::complete`] publishes only if the reservation's device
+//!   generation is still current and healthy and the reservation releases
+//!   cleanly; otherwise the job is recorded `Failed` and the error returned.
+//!
+//! # Status: admission prototype (no reservation redemption)
+//!
+//! The permit's reservation is an admission hold only. The P2 runtime has no
+//! API to *redeem* it: uploads and launches inside the admitted job reserve
+//! their own allocations independently. A job must therefore NOT request its
+//! own workspace through [`JobSpec::gpu`] (that would double-count and can
+//! exclude the job's own allocations); request at most the headroom that
+//! must stay free for it, or zero. Closing this needs a P4-owned runtime
+//! hook (reservation-scoped allocation); until then the scheduler is not a
+//! device-memory accountant.
+//!
 //! The scheduler mutex is the outermost lock. Host locks and the P2 runtime's
 //! registry are only taken beneath it, never the other way round.
 
@@ -685,8 +700,31 @@ impl<S: ReservationSource, L: HostLocks> HeavyPermit<S, L> {
     }
 
     /// Publish the job's artifact identity and release.
+    ///
+    /// Completion requires the reservation's device generation to be current
+    /// and healthy at completion time, and the reservation to be released
+    /// cleanly. Otherwise the job is recorded as `Failed` (descendants become
+    /// unavailable), every resource is still released, and the error is
+    /// returned: a result produced across a device reset is never published.
     pub fn complete(mut self, identity: ArtifactIdentity) -> Result<ReleaseOutcome, ScheduleError> {
-        Ok(self.release(JobState::Completed(identity)))
+        if let Err(e) = self.check_current() {
+            self.release(JobState::Failed(format!("completion refused: {e}")));
+            return Err(e);
+        }
+        let reserved = self.token.as_ref().map(ReservationToken::generation);
+        let mut published = Some(JobState::Completed(identity));
+        let outcome = self.release_with(|outcome| match outcome {
+            ReleaseOutcome::Released => published.take().expect("once"),
+            other => JobState::Failed(format!("completion refused: reservation release {other:?}")),
+        });
+        match outcome {
+            ReleaseOutcome::Released => Ok(ReleaseOutcome::Released),
+            ReleaseOutcome::Stale(_) => Err(ScheduleError::StaleReservation {
+                reserved: reserved.expect("a stale release implies a reservation"),
+                current: self.inner.source.runtime_snapshot().ok().map(|s| s.generation),
+            }),
+            ReleaseOutcome::Retained(e) => Err(ScheduleError::Backend(e)),
+        }
     }
 
     /// Record a failure and release. Descendants become unavailable.
@@ -700,6 +738,11 @@ impl<S: ReservationSource, L: HostLocks> HeavyPermit<S, L> {
     }
 
     fn release(&mut self, state: JobState) -> ReleaseOutcome {
+        self.release_with(move |_| state)
+    }
+
+    /// Release everything; the final job state may depend on the outcome.
+    fn release_with(&mut self, state: impl FnOnce(&ReleaseOutcome) -> JobState) -> ReleaseOutcome {
         self.finished = true;
         let mut st = self.inner.state();
         let outcome = match self.token.take() {
@@ -713,6 +756,7 @@ impl<S: ReservationSource, L: HostLocks> HeavyPermit<S, L> {
         release_guards(std::mem::take(&mut self.guards));
         st.held_reservations = 0;
         st.held_host_locks = 0;
+        let state = state(&outcome);
         st.finish(self.job, state);
         outcome
     }

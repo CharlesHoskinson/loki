@@ -620,6 +620,36 @@ fn reservation_from_an_older_generation_is_rejected_as_stale_but_frees_the_slot(
 }
 
 #[test]
+fn completion_after_a_device_reset_is_refused_and_descendants_become_unavailable() {
+    let (fake, rt) = fake_runtime();
+    let s = HeavyScheduler::new(
+        device_source(&rt),
+        RecordingLocks::default(),
+        SchedulerConfig::default(),
+    );
+    s.submit(gpu_job(1, 128)).unwrap();
+    s.submit(JobSpec::new(JobId(2), Role::Parent).depends_on(Dependency::new(JobId(1), "child-vk")))
+        .unwrap();
+    let p = admitted(s.try_admit(JobId(1)));
+    fake.inject(
+        DriverCall::DeviceAlloc,
+        1,
+        Fault::Fail(DriverErrorClass::ContextLost),
+    );
+    assert!(ResidentBackend::<Toy, ToyPoint>::upload_scalars(&*rt, &scalars(4, 2)).is_err());
+    rt.reinitialize().unwrap();
+    // The caller does not call check_current(): completion itself must refuse.
+    match p.complete(identity("child-vk")) {
+        Err(ScheduleError::StaleReservation { .. }) => {}
+        other => panic!("completion on a stale generation must be refused, got {other:?}"),
+    }
+    assert!(matches!(s.state(JobId(1)), Some(JobState::Failed(_))));
+    assert!(matches!(s.state(JobId(2)), Some(JobState::Unavailable { .. })));
+    assert_eq!(s.snapshot().held_reservations, 0);
+    assert!(s.snapshot().active.is_none());
+}
+
+#[test]
 fn forged_reservation_metadata_is_rejected_by_the_runtime_source() {
     let (_fake, rt) = fake_runtime();
     let src = device_source(&rt);

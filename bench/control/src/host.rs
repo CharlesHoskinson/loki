@@ -257,6 +257,21 @@ pub fn proc_status(pid: i32) -> Option<(u64, u64, u64, u64)> {
     Some((kb("VmRSS:") * 1024, kb("VmHWM:") * 1024, kb("VmSwap:") * 1024, kb("Threads:")))
 }
 
+/// Direct children of `parent` (from /proc/PID/stat ppid).
+pub fn children_of(parent: i32) -> Vec<i32> {
+    let mut out = Vec::new();
+    if let Ok(rd) = fs::read_dir("/proc") {
+        for e in rd.flatten() {
+            if let Some(pid) = e.file_name().to_str().and_then(|s| s.parse::<i32>().ok()) {
+                if ppid_of(pid) == Some(parent) {
+                    out.push(pid);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// PIDs whose process group is `pgid`.
 pub fn group_members(pgid: i32) -> Vec<i32> {
     let mut out = Vec::new();

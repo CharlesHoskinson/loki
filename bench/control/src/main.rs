@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 
 use host::HostLock;
 use json::J;
-use manifest::{Arm, Budget, GpuLockMode, HeavyMode, IdleMode, Manifest};
+use manifest::{Arm, Budget, GpuLockMode, HeavyMode, IdleMode, Manifest, VkPolicy};
 
 const TASKSET: &str = "/usr/bin/taskset";
 
@@ -51,6 +51,12 @@ fn nvidia_smi() -> Option<PathBuf> {
 
 fn main() {
     host::install_cancel_handlers();
+    // Orphaned descendants of an arm are re-parented to us, so they can be
+    // detected, killed and reaped instead of outliving the reservation.
+    // SAFETY: prctl with integer arguments.
+    unsafe {
+        libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match run(&args) {
         Ok(code) => code,
@@ -414,7 +420,24 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
         let _ = c.wait();
     }
-    receipt.set("vk_comparison", vk_comparison(&run_dir, &block.arms));
+    let vk = vk_comparison(&run_dir, &block.arms);
+    let vk_equal = vk.render().contains("\"all_equal\":true");
+    let arm_statuses: Vec<(String, String)> = match &arms_out {
+        J::Obj(f) => f
+            .iter()
+            .map(|(k, v)| {
+                let st = match v {
+                    J::Obj(g) => g.iter().find(|(k, _)| k == "status").map(|(_, v)| v.render()).unwrap_or_default(),
+                    _ => String::new(),
+                };
+                (k.clone(), st.trim_matches('"').to_string())
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    let (qualification, q_reasons) = qualify(block_status, block.arms.len(), &arm_statuses, m.vk_policy, vk_equal);
+    receipt.set("vk_policy", if m.vk_policy == VkPolicy::RequireEqual { "require-equal" } else { "record" });
+    receipt.set("vk_comparison", vk);
     receipt.set("arms", arms_out);
     receipt.set("swap_after", swap_json(host::swap_counters()));
     receipt.set("host_after", host_record());
@@ -426,15 +449,95 @@ fn run(args: &[String]) -> Result<i32, String> {
     let _ = any_gpu;
     receipt.set("heavy_lock", heavy.release());
     receipt.set("status", block_status);
+    receipt.set("status_scope", "collection: whether every scheduled arm process ran; see qualification for usability");
+    receipt.set("qualification", qualification);
+    receipt.set("qualification_reasons", J::Arr(q_reasons.into_iter().map(J::from).collect()));
     receipt.set("finished_unix_ms", host::unix_ms());
     fs::write(run_dir.join("block.json"), receipt.render() + "\n").map_err(|e| e.to_string())?;
     ev.log("block", J::obj().with("status", block_status).with("receipt", run_dir.join("block.json").display().to_string()));
     println!("{}", run_dir.join("block.json").display());
-    Ok(match block_status {
-        "COMPLETE" => 0,
-        "CANCELLED" => 130,
+    Ok(match (block_status, qualification) {
+        ("CANCELLED", _) => 130,
+        ("COMPLETE", "PASS") => 0,
         _ => 1,
     })
+}
+
+/// Block qualification: PASS only if collection completed, every scheduled
+/// arm is ACCEPTED, and the declared VK policy holds.
+fn qualify(
+    collection: &str,
+    scheduled: usize,
+    arms: &[(String, String)],
+    policy: VkPolicy,
+    vk_equal: bool,
+) -> (&'static str, Vec<String>) {
+    let mut reasons = Vec::new();
+    if collection != "COMPLETE" {
+        reasons.push(format!("collection {collection}"));
+    }
+    if arms.len() != scheduled {
+        reasons.push(format!("{} of {scheduled} arms ran", arms.len()));
+    }
+    for (a, st) in arms {
+        if st != "ACCEPTED" {
+            reasons.push(format!("arm {a} {st}"));
+        }
+    }
+    if policy == VkPolicy::RequireEqual && !vk_equal {
+        reasons.push("vk_policy require-equal: verifying keys differ or are missing".into());
+    }
+    (if reasons.is_empty() { "PASS" } else { "FAIL" }, reasons)
+}
+
+/// Arm cell status from the observed process facts (pure; unit-tested).
+fn classify(
+    outcome: Option<&'static str>,
+    exit_code: Option<i32>,
+    samples_seen: u64,
+    expected: u64,
+    exit_seen: bool,
+    swapped: (u64, u64),
+    orphans: usize,
+) -> &'static str {
+    if let Some(o) = outcome {
+        return o;
+    }
+    if exit_code != Some(0) || samples_seen != expected || !exit_seen || orphans > 0 {
+        return "FAILED";
+    }
+    if swapped != (0, 0) {
+        return "INVALID";
+    }
+    "ACCEPTED"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_marks_swap_invalid_and_orphans_failed() {
+        assert_eq!(classify(None, Some(0), 2, 2, true, (0, 0), 0), "ACCEPTED");
+        assert_eq!(classify(None, Some(0), 2, 2, true, (1, 0), 0), "INVALID");
+        assert_eq!(classify(None, Some(0), 2, 2, true, (0, 3), 0), "INVALID");
+        assert_eq!(classify(None, Some(0), 2, 2, true, (0, 0), 1), "FAILED");
+        assert_eq!(classify(None, Some(0), 1, 2, true, (0, 0), 0), "FAILED");
+        assert_eq!(classify(None, Some(1), 2, 2, true, (0, 0), 0), "FAILED");
+        assert_eq!(classify(Some("TIMEOUT"), None, 0, 2, false, (0, 0), 0), "TIMEOUT");
+    }
+
+    #[test]
+    fn qualification_requires_every_arm_and_the_vk_policy() {
+        let ok = vec![("S0".to_string(), "ACCEPTED".to_string())];
+        assert_eq!(qualify("COMPLETE", 1, &ok, VkPolicy::RequireEqual, true).0, "PASS");
+        assert_eq!(qualify("COMPLETE", 1, &ok, VkPolicy::RequireEqual, false).0, "FAIL");
+        assert_eq!(qualify("COMPLETE", 1, &ok, VkPolicy::Record, false).0, "PASS");
+        assert_eq!(qualify("DEFERRED", 1, &ok, VkPolicy::Record, true).0, "FAIL");
+        assert_eq!(qualify("COMPLETE", 2, &ok, VkPolicy::Record, true).0, "FAIL");
+        let bad = vec![("S0".to_string(), "INVALID".to_string())];
+        assert_eq!(qualify("COMPLETE", 1, &bad, VkPolicy::Record, true).0, "FAIL");
+    }
 }
 
 fn finish_cancelled(run_dir: &Path, mut receipt: J, ev: &mut Events, why: &str) -> Result<i32, String> {
@@ -449,16 +552,46 @@ fn swap_json(c: (u64, u64)) -> J {
     J::obj().with("pswpin", c.0).with("pswpout", c.1).with("meminfo", host::meminfo())
 }
 
+/// Arm PDEATHSIG=SIGKILL in the child, then confirm the expected parent is
+/// still alive (if it died before prctl, no signal would ever be sent).
+/// The guarantee covers this direct child only; PDEATHSIG is not inherited.
 fn set_pdeathsig(c: &mut Command) {
-    // SAFETY: prctl is async-signal-safe.
+    let parent = std::process::id() as libc::pid_t;
+    // SAFETY: prctl and getppid are async-signal-safe.
     unsafe {
-        c.pre_exec(|| {
+        c.pre_exec(move || {
             if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
                 return Err(std::io::Error::last_os_error());
+            }
+            if libc::getppid() != parent {
+                return Err(std::io::Error::other("parent exited before PDEATHSIG was armed"));
             }
             Ok(())
         });
     }
+}
+
+/// Kill and reap every child of ours except `keep` (descendants of an arm
+/// that escaped its process group are re-parented here by the subreaper).
+fn sweep_children(keep: &[i32]) -> Vec<J> {
+    let me = std::process::id() as i32;
+    let mut swept = Vec::new();
+    for _ in 0..5 {
+        let kids: Vec<i32> = host::children_of(me).into_iter().filter(|p| !keep.contains(p)).collect();
+        if kids.is_empty() {
+            break;
+        }
+        for k in kids {
+            swept.push(J::obj().with("pid", k).with("cmd", host::cmdline(k)));
+            // SAFETY: signalling and reaping our own child.
+            unsafe {
+                libc::kill(k, libc::SIGKILL);
+                let mut st = 0;
+                libc::waitpid(k, &mut st, 0);
+            }
+        }
+    }
+    swept
 }
 
 struct ArmCtx<'a> {
@@ -695,8 +828,12 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
     };
     let wall_s = t0.elapsed().as_secs_f64();
     drop(stdin);
-    // Stragglers (e.g. a verifier worker) die with the group.
+    // Stragglers (e.g. a verifier worker) die with the group; anything that
+    // left the group was re-parented to us and is swept (and fails the arm).
+    let group_left = host::group_members(pid);
     kill_group(pid);
+    std::thread::sleep(Duration::from_millis(100));
+    let escaped = sweep_children(&ctx.nvml_pid.into_iter().collect::<Vec<_>>());
     stop.store(true, Ordering::SeqCst);
     let _ = sampler.join();
     let _ = reader.join();
@@ -712,7 +849,8 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
         }
     }
     std::thread::sleep(Duration::from_millis(200));
-    let orphans = host::group_members(pid);
+    let still_in_group = host::group_members(pid);
+    let orphan_count = group_left.len() + escaped.len() + still_in_group.len();
     let swap1 = host::swap_counters();
     let swapped = (swap1.0.saturating_sub(swap0.0), swap1.1.saturating_sub(swap0.1));
     let peaks = *peaks.lock().unwrap();
@@ -720,19 +858,18 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
     let exit_code = if libc::WIFEXITED(status) { Some(libc::WEXITSTATUS(status)) } else { None };
     let signal = if libc::WIFSIGNALED(status) { Some(libc::WTERMSIG(status)) } else { None };
     let mut reasons = Vec::new();
-    let status_str = if let Some(o) = outcome {
-        o
-    } else if exit_code != Some(0) || samples_seen != expected || !exit_seen {
+    let status_str = classify(outcome, exit_code, samples_seen, expected, exit_seen, swapped, orphan_count);
+    if exit_code != Some(0) || samples_seen != expected || !exit_seen {
         reasons.push(format!("exit {exit_code:?} signal {signal:?}, samples {samples_seen}/{expected}, exit record {exit_seen}"));
-        "FAILED"
-    } else if swapped != (0, 0) {
+    }
+    if swapped != (0, 0) {
         reasons.push(format!("host swap I/O during the arm process: pswpin +{} pswpout +{}", swapped.0, swapped.1));
-        "INVALID"
-    } else {
-        "ACCEPTED"
-    };
-    if !orphans.is_empty() {
-        reasons.push(format!("orphans in process group: {orphans:?}"));
+    }
+    if orphan_count > 0 {
+        reasons.push(format!(
+            "orphan processes after arm exit: group {group_left:?}, escaped {}, unkillable {still_in_group:?}",
+            escaped.len()
+        ));
     }
     let nvml = ctx.nvml_csv.map(|p| nvml_summary(p, nvml_from)).unwrap_or(J::Null);
     r.with("status", status_str)
@@ -771,7 +908,9 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
         )
         .with("gates_between_samples", gates)
         .with("driver_events", events)
-        .with("orphans_after_kill", J::Arr(orphans.into_iter().map(J::from).collect()))
+        .with("group_members_after_exit", J::Arr(group_left.into_iter().map(J::from).collect()))
+        .with("escaped_descendants_swept", J::Arr(escaped))
+        .with("orphans_after_kill", J::Arr(still_in_group.into_iter().map(J::from).collect()))
         .with("nvml", nvml)
         .with("stdout", stdout_path.display().to_string())
         .with("stderr", stderr_path.display().to_string())

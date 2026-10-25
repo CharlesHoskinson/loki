@@ -16,6 +16,7 @@
 //! idle_gate = record            # enforce | record | off
 //! idle_window_s = 60
 //! idle_max_wait_s = 900
+//! vk_policy = require-equal   # require-equal | record (cohort policy; see SUITE VK identity)
 //! heavy = dw                    # dw: assert an ancestor holds heavy.lock; own: take it
 //! gpu_lock = block              # block: hold across the block; gpu-arms: only around GPU arms
 //! nvml = on
@@ -57,6 +58,16 @@ pub enum HeavyMode {
     Dw,
     /// Take heavy.lock ourselves (blocking, queue time recorded).
     Own,
+}
+
+/// Cross-arm verifying-key policy for a block. `RequireEqual` fails
+/// qualification on any mismatch; `Record` only reports it. Never sort lookup
+/// order to make keys agree: equality must come from deterministic
+/// construction or a controlled shared key artifact.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VkPolicy {
+    RequireEqual,
+    Record,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,6 +114,7 @@ pub struct Manifest {
     pub idle: IdleMode,
     pub idle_window_s: u64,
     pub idle_max_wait_s: u64,
+    pub vk_policy: VkPolicy,
     pub heavy: HeavyMode,
     pub gpu_lock: GpuLockMode,
     pub nvml: bool,
@@ -216,6 +228,11 @@ impl Manifest {
         }
         let idle_window_s = num("idle_window_s", take("idle_window_s")?)?;
         let idle_max_wait_s = num("idle_max_wait_s", take("idle_max_wait_s")?)?;
+        let vk_policy = match take("vk_policy")?.as_str() {
+            "require-equal" => VkPolicy::RequireEqual,
+            "record" => VkPolicy::Record,
+            _ => return Err("vk_policy must be require-equal|record".into()),
+        };
         let heavy = match take("heavy")?.as_str() {
             "dw" => HeavyMode::Dw,
             "own" => HeavyMode::Own,
@@ -366,6 +383,7 @@ impl Manifest {
             idle,
             idle_window_s,
             idle_max_wait_s,
+            vk_policy,
             heavy,
             gpu_lock,
             nvml,
@@ -391,7 +409,7 @@ mod tests {
             "schema = loki-bench-launch/1\ncohort = t\ncollection = false\nout_root = /o\n\
              srs = /s\nsrs_sha256 = {H}\nparams_dir = /p\nstock_verifier = /v\n\
              stock_verifier_sha256 = {H}\ntimeout_s = 10\nidle_gate = record\n\
-             idle_window_s = 1\nidle_max_wait_s = 1\nheavy = own\ngpu_lock = block\n\
+             idle_window_s = 1\nidle_max_wait_s = 1\nvk_policy = record\nheavy = own\ngpu_lock = block\n\
              nvml = off\npass_env = PATH\nbudget.N4.mask = 0-3\nbudget.N4.workers = 4\n\
              arm.S0.binary = /b\narm.S0.sha256 = {H}\narm.S0.gpu = false\n\
              arm.S0.features = circuits\narm.S0.workspace = stock\nblock.B000 = N4: S0\n"

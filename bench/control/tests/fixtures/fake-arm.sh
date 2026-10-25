@@ -21,8 +21,9 @@ echo "$$" > "$here/pid"
 case "$mode" in
   fail) echo '{"schema":"loki-bench-error/1","error":"injected"}'; exit 1 ;;
   hang) sleep 1000 & echo $! > "$here/child"; wait ;;
+  escape) setsid sleep 1000 & echo $! > "$here/child" ;;
 esac
-echo vk-bytes > "$out/sample-0-cold/children/a.vk"
+cat "$here/vk" 2>/dev/null > "$out/sample-0-cold/children/a.vk" || echo vk-bytes > "$out/sample-0-cold/children/a.vk"
 echo '{"event":"sample","cache":"cold"}'
 echo '{"event":"gate","before":"warm"}'
 read go
