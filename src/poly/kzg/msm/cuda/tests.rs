@@ -1,7 +1,7 @@
 use ff::Field;
 use group::Group;
 use midnight_curves::{Fq, G1Affine, G1Projective};
-use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
+use rand_chacha::{rand_core::{RngCore, SeedableRng}, ChaCha20Rng};
 
 use super::backend;
 
@@ -591,4 +591,47 @@ fn gpu_srs_invalid_unused_suffix_fallback() {
     assert_eq!(counts["msm.prepare.miss"].calls, 1);
     assert_eq!(counts["msm.prepare.validation"].calls, 1);
     assert!(!counts.contains_key("msm.prepare.upload"));
+}
+
+/// lean-w1 `KernelPrefixOk` (P3): an MSM with n scalars against a resident
+/// handle prepared from |S| >= n points equals the CPU MSM over S[..n].
+/// One upload of S serves every prefix; n spans 1, 2^k - 1, 2^k and |S|,
+/// under random, boolean and repeated scalar distributions.
+#[cfg(all(feature = "cuda-srs-registry", feature = "loki-profile"))]
+#[test]
+#[ignore = "registry kernel-prefix differential; run alone through gpu-runner"]
+fn gpu_srs_kernel_prefix_differential() {
+    backend::clear_cache().unwrap();
+    let mut rng = ChaCha20Rng::from_seed([117; 32]);
+    let size = (1 << 15) + 5;
+    let bases: Vec<_> = (0..size).map(|_| G1Projective::random(&mut rng)).collect();
+    let random: Vec<_> = (0..size).map(|_| Fq::random(&mut rng)).collect();
+    let boolean: Vec<_> = (0..size)
+        .map(|_| if rng.next_u32() & 1 == 1 { Fq::ONE } else { Fq::ZERO })
+        .collect();
+    let constant = Fq::random(&mut rng);
+    let repeated = vec![constant; size];
+    let mut proof = crate::profile::ProofGuard::start(15, 1);
+    // The first call prepares the handle from all |S| points.
+    assert_eq!(backend::msm(&random, &bases).unwrap(), cpu(&random, &bases));
+    let mut cases = 1;
+    for (label, scalars) in [("random", &random), ("boolean", &boolean), ("repeated", &repeated)] {
+        for n in [1, 2, (1 << 14) - 1, 1 << 14, (1 << 15) - 1, 1 << 15, size] {
+            assert_eq!(
+                backend::msm(&scalars[..n], &bases).unwrap(),
+                cpu(&scalars[..n], &bases[..n]),
+                "{label} n={n}"
+            );
+            cases += 1;
+        }
+    }
+    proof.success = true;
+    drop(proof);
+    let report = crate::profile::take_report();
+    let counts = &report.proofs.last().unwrap().phases["other"].backends;
+    assert_eq!(counts["msm.prepare.upload"].calls, 1);
+    assert_eq!(counts["msm.prepare.upload_bytes"].elements, (size * 96) as u64);
+    assert_eq!(counts["msm.prepare.hit"].calls, cases - 1);
+    assert!(!backend::failed());
+    eprintln!("P3 kernel-prefix differential: {cases} MSMs on one resident handle of {size} points");
 }
