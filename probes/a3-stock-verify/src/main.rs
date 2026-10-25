@@ -1,6 +1,7 @@
 use ff::Field;
+use group::Group;
 use midnight_circuits::hash::poseidon::PoseidonState;
-use midnight_curves::{Bls12, Fq};
+use midnight_curves::{Bls12, Fq, G1Projective};
 use midnight_proofs::{
     plonk::prepare,
     poly::{
@@ -21,6 +22,7 @@ use std::{
 
 const EXPECTED_LANES: usize = 28;
 const EXPECTED_K: u32 = 20;
+const EXPECTED_TOTAL_VK_INSTANCE_COLUMNS: usize = 2;
 const SRS_BYTES: usize = 201_326_980;
 const SRS_SHA256: &str = "1cc62978558fdc1e445cd70cfd9a86ec3c2e2151b6d74811232d37faf9133ff1";
 const W10_MANIFEST_SHA256: &str =
@@ -111,8 +113,12 @@ fn verify_artifacts(
     if u32::from(vk.k()) != EXPECTED_K {
         return Err(format!("VK k={} differs from expected k20", vk.k()).into());
     }
-    if shape_k[0] != vk.k() || vk.vk().cs().num_instance_columns() != 1 {
-        return Err("A3 VK is not the expected one-column instance shape".into());
+    if shape_k[0] != vk.k()
+        || vk.vk().cs().num_instance_columns() != EXPECTED_TOTAL_VK_INSTANCE_COLUMNS
+    {
+        return Err(
+            "A3 VK must have one committed identity column and one public instance column".into(),
+        );
     }
 
     let srs_bytes = fs::read(&srs_path)?;
@@ -169,7 +175,7 @@ fn verify_artifacts(
     require_rejected(vk.vk(), &params, &appended, &instance, "appended proof byte")?;
 
     println!(
-        "stock_a3_verify=accepted circuit=mori-recursion::SherlockLinkRelation verifier=midnight-proofs-0.8.3 source=registry verifier_head={} verifier_source_sha256={} cargo_lock_sha256={} verifier_features=committed-instances,blst-no-threads k={} instance_columns=1 lanes={} proof_bytes={} transcript_fully_consumed=true negative_controls=28_lane_mutations+proof_byte+truncate+append all_rejected=true w10_loki_head={} w10_moriarty_head={} w10_mode=gpu-after prover_features={} prover_rayon=4 prover_blst=1 verifier_rayon={} verifier_blst=no-threads host=\"{}\" argv={:?} w10_manifest_sha256={} srs_sha256={} vk_sha256={} proof_sha256={} instance_sha256={}",
+        "stock_a3_verify=accepted circuit=mori-recursion::SherlockLinkRelation verifier=midnight-proofs-0.8.3 source=registry verifier_head={} verifier_source_sha256={} cargo_lock_sha256={} verifier_features=committed-instances,blst-no-threads k={} vk_total_instance_columns=2 committed_identity_columns=1 public_instance_columns=1 lanes={} proof_bytes={} transcript_fully_consumed=true negative_controls=28_lane_mutations+proof_byte+truncate+append all_rejected=true w10_loki_head={} w10_moriarty_head={} w10_mode=gpu-after prover_features={} prover_rayon=4 prover_blst=1 verifier_rayon={} verifier_blst=no-threads host=\"{}\" argv={:?} w10_manifest_sha256={} srs_sha256={} vk_sha256={} proof_sha256={} instance_sha256={}",
         git_head(),
         package_source_sha256()?,
         file_sha256(&PathBuf::from(X2_REPO).join("probes/a3-stock-verify/Cargo.lock"))?,
@@ -255,7 +261,9 @@ fn verify_once(
     instance: &[Fq],
 ) -> Result<(), String> {
     let mut transcript = CircuitTranscript::<PoseidonState<Fq>>::init_from_bytes(proof);
-    let guard = prepare::<Fq, Scheme, _>(vk, &[&[]], &[&[instance]], &mut transcript)
+    let committed_identity = [a3_committed_identity()];
+    let committed_instances = [&committed_identity[..]];
+    let guard = prepare::<Fq, Scheme, _>(vk, &committed_instances, &[&[instance]], &mut transcript)
         .map_err(|error| format!("prepare failed: {error:?}"))?;
     transcript
         .assert_empty()
@@ -263,6 +271,10 @@ fn verify_once(
     guard
         .verify(&params.verifier_params())
         .map_err(|error| format!("pairing verification failed: {error:?}"))
+}
+
+fn a3_committed_identity() -> G1Projective {
+    G1Projective::identity()
 }
 
 fn require_rejected(
@@ -388,5 +400,17 @@ mod manifest_tests {
             manifest[field] = value;
             assert!(validate_w10_manifest_identity(&manifest).is_err(), "{field}");
         }
+    }
+}
+
+#[cfg(test)]
+mod instance_shape_tests {
+    use group::Group;
+    use super::{EXPECTED_TOTAL_VK_INSTANCE_COLUMNS, G1Projective, a3_committed_identity};
+
+    #[test]
+    fn a3_vk_includes_the_committed_identity_and_public_instance_columns() {
+        assert_eq!(EXPECTED_TOTAL_VK_INSTANCE_COLUMNS, 2);
+        assert_eq!(a3_committed_identity(), G1Projective::identity());
     }
 }

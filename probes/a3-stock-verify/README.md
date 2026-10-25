@@ -7,7 +7,8 @@ It generates no keys or proofs and does not use CUDA. It checks the full Poseido
 transcript is consumed before the stock KZG guard verifies.
 The accepted-artifact gate also requires rejection of every public lane changed
 by canonical `+1`, one corrupted proof byte, a truncated proof, and an appended
-proof byte. It asserts the VK's 28 public-input metadata and one instance column.
+proof byte. It asserts the VK's 28 public-input metadata and its two PLONK
+instance columns: one committed identity plus one ordinary public-input column.
 
 Build and run parser tests through the host runner with `-j3`. For accepted A3
 verification, run the binary under the DoctorWatson heavy wrapper. The outer
