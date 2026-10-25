@@ -115,8 +115,10 @@ report its time and share alongside the end-to-end time. Every profile invocatio
 also verifies its proof locally. The profiler asserts its phase sum agrees with
 an external timer around `create_proof` to within 10%.
 
-Loki already sorts lookup leftovers at this baseline, so serial/feature lookup
-proofs can be compared directly at a pinned thread count. Unmodified registry
+At the W11 baseline Loki sorted lookup leftovers, so serial/feature lookup
+proofs could be compared directly at a pinned thread count. Since P1 (886a9fb)
+the default build uses stock HashMap order again; sorted leftovers require
+`loki-deterministic-lookup-order`, which byte comparisons must enable. Unmodified registry
 stock retains randomized HashMap iteration: W2 lookup equality is diagnostic,
 while cross-verification and VK/SRS identity are mandatory. W2's no-lookup control
 requires exact bytes. Pinning threads matters because proof RNG use depends on
