@@ -390,8 +390,7 @@ where
     // Sort input lookup expression values
     permuted_input_expression.par_sort();
 
-    // Count with hashing; sorting only the distinct leftovers below is much
-    // cheaper than comparing field elements for every BTreeMap insertion.
+    // A HashMap of each unique element in the table expression and its count
     let mut leftover_table_map = HashMap::<F, u32>::with_capacity(table_expression.len());
     table_expression.iter().take(usable_rows).for_each(|coeff| {
         *leftover_table_map.entry(*coeff).or_insert(0) += 1;
@@ -423,8 +422,16 @@ where
         .collect::<Result<Vec<_>, _>>()?;
 
     // Populate permuted table at unfilled rows with leftover table elements
-    let mut leftovers: Vec<_> = leftover_table_map.iter().collect();
-    leftovers.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+    #[cfg(not(feature = "loki-deterministic-lookup-order"))]
+    let leftovers = leftover_table_map.iter();
+    // Opt-in only: visit leftovers in field order instead of the stock
+    // `HashMap` order. This changes lookup proof bytes relative to stock.
+    #[cfg(feature = "loki-deterministic-lookup-order")]
+    let leftovers = {
+        let mut leftovers: Vec<_> = leftover_table_map.iter().collect();
+        leftovers.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+        leftovers
+    };
     for (coeff, count) in leftovers {
         for _ in 0..*count {
             permuted_table_coeffs[repeated_input_rows.pop().unwrap()] = *coeff;

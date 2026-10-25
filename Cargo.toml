@@ -60,6 +60,7 @@ loki-profile = []
 loki-multiopen = []
 loki-cpu-budget = ["blst/no-threads"]
 loki-harden = []
+loki-deterministic-lookup-order = []
 
 [lib]
 name = "midnight_proofs"

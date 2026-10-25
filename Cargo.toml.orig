@@ -92,6 +92,10 @@ loki-profile = []
 loki-cpu-budget = ["blst/no-threads"]
 loki-harden = []
 
+# Opt-in deterministic leftover-lookup placement. Changes lookup proof bytes
+# relative to stock; never enabled by a backend feature.
+loki-deterministic-lookup-order = []
+
 # This feature adds a new argument to prover and verifier functions, which
 # represents instances in committed form (e.g. in the form of a polynomial
 # commitment instead of a vector of scalars).
