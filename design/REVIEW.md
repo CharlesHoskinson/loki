@@ -192,3 +192,31 @@ runtime.rs/ffi.rs/native runtime/header ownership to P4 at this merge; P3 must
 send its point-wire seam through that owner or wait for explicit transfer.
 R9/R10 (repeated recovery leaks), reservation redemption and the abstraction
 limits remain open under their assigned package gates.
+
+
+## Subsequent lifecycle review — 2026-10-25 07:24 UTC
+
+CODE: these are additional findings after the 53-test correction pass; that
+pass closes its named reproductions and does not cover the cases below.
+P4 owns the shared runtime files and the corrections before resident-transform
+promotion. SOURCE: quint-q3 reported L1/L2 through the coordinator; astra-gpu
+confirmed the Rust paths independently. The requested Quint trace and model
+assumptions are pending, so no model-execution result is claimed here.
+
+| Finding | Source evidence and required gate |
+|---|---|
+| L1 — failed setup loses uncertainty | In `eb27233`, `initialize` and `reinitialize` store `device.current` only after `build_context` succeeds. Setup cleanup returns `NotStarted` even for sticky failure or failed cleanup. With `current == None`, recovery retries initialization without reset, and `Drop` releases the native claim. Retain an explicit failed/uncertain setup state, preserve the actual failure/effect, require reset before retry, and retain the claim on uncertain drop. Test initial setup failure, cleanup failure and failed rebuild after reset. |
+| L2 — injected driver ownership | Public safe `with_driver(Arc<dyn DeviceDriver>)` permits two runtimes to share one resettable driver; a retained alias can also call safe `reset` outside either coordinator. The private native constructor excludes this route for NativeDriver, but the injected-driver boundary does not enforce exclusivity. Constrain ownership or make raw injection an explicitly unsafe/internal hook with precise lifecycle preconditions and a safe restricted fake-control interface. An Arc-address duplicate check alone does not prevent external reset. |
+| N1 — release failure hidden by transform helper | In the P4 draft reviewed on this date, `transform_chain` ignores release of the previous intermediate after computing the next output. A failed final release can poison the context while the function returns `Ok` with a resident handle. `transform_host` also ignores final output release. Propagate cleanup failure on the success path; publish nothing after poisoning. Test final intermediate and final host-output release failures, including error precedence when the operation already failed. |
+| N2 — representation sampling is not a complete wire contract | The P4 draft infers canonical little-endian representation of arbitrary `PrimeField` implementations from modulus, width and four sentinel values. A different bijective representation can agree on those samples and differ elsewhere. Establish a supported concrete-type/codec boundary or a defined normalization codec before kernel submission. Keep sentinel checks as regression checks, not a universal representation proof. |
+
+CODE: the P4 draft correctly propagates `cudaGetDevice` failure immediately
+and binds the NTT entry to the selected device, resolving the narrow D5 source
+follow-up once that source is committed/integrated. A smaller error-precedence
+issue was also reported: transform allocation cleanup discarded a failed
+`device_free` error kind in favor of the earlier allocation error (while already
+reporting `SessionPoisoned`). P4 should preserve the cleanup error consistently.
+
+SOURCE: the coordinator paused new native/GPU jobs for W12's reserved window;
+CPU/fake-driver work may continue. Native results must identify the final
+integrated source, including these corrections and the P3 point-wire seam.
