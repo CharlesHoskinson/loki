@@ -318,6 +318,43 @@ mod tests {
         assert_eq!(c.accelerator_poisoned, 1);
     }
 
+    /// astra-gpu decision for quint-q2 B1: the checked entry returns
+    /// `Cancelled` with no CPU or fallback count, poisons only if the effect
+    /// says so, and the value-returning shim unwinds instead of retrying.
+    #[test]
+    fn dispatcher_never_retries_cancelled_msm() {
+        struct Cancels(FailureEffect);
+        impl MsmBackend<Fq, G1Projective> for Cancels {
+            fn msm(&self, _: MsmRequest<'_, Fq, G1Projective>) -> Result<G1Projective, BackendError> {
+                Err(BackendError { operation: Operation::Msm, kind: ErrorKind::Cancelled, effect: self.0 })
+            }
+        }
+        let n = min_len();
+        let s = vec![Fq::ONE; n];
+        let b = vec![G1Projective::generator(); n];
+        let caps = SpparkBackend::capabilities_for(n);
+        for (effect, sticky) in [
+            (FailureEffect::NotStarted, false),
+            (FailureEffect::InputsPreserved, false),
+            (FailureEffect::SessionPoisoned, true),
+        ] {
+            let d = Dispatcher::new();
+            let e = d.try_msm::<G1Affine, _>(Some((&Cancels(effect), &caps)), &s, &b).unwrap_err();
+            assert_eq!((e.kind, e.effect), (ErrorKind::Cancelled, effect));
+            let c = d.counters();
+            assert_eq!((c.msm_cpu, c.msm_fallback, c.msm_accelerated), (0, 0, 0), "{c:?}");
+            assert_eq!(d.accelerator_disabled(), sticky);
+            assert_eq!(c.accelerator_poisoned, u64::from(sticky));
+            if !sticky {
+                let shim = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    d.msm::<G1Affine, _>(Some((&Cancels(effect), &caps)), &s, &b)
+                }));
+                assert!(shim.is_err(), "the non-cancellable shim must not recompute");
+                assert_eq!(d.counters().msm_cpu, 0);
+            }
+        }
+    }
+
     /// Adapter output equals the legacy direct call and the stock CPU MSM,
     /// including prefixes, same-address mutation and zip truncation.
     #[test]

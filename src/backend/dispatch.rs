@@ -127,12 +127,38 @@ impl Dispatcher {
 
     /// Stock `msm_specific` semantics: `min(coeffs.len(), bases.len())`
     /// pairs, zero scalars filtered, identity for an empty prefix.
+    ///
+    /// Non-cancellable synchronous shim over [`Self::try_msm`]: the stock
+    /// value-returning signature cannot report cancellation, so an
+    /// accelerator `Cancelled` unwinds here instead of being silently
+    /// recomputed on the CPU. Callers that expose cancellation must use the
+    /// checked entry.
     pub fn msm<C, B>(
         &self,
         accelerator: Option<(&B, &BackendCapabilities)>,
         coeffs: &[C::Scalar],
         bases: &[C::Curve],
     ) -> C::Curve
+    where
+        C: CurveAffine,
+        B: MsmBackend<C::Scalar, C::Curve> + ?Sized,
+    {
+        match self.try_msm::<C, B>(accelerator, coeffs, bases) {
+            Ok(point) => point,
+            Err(error) => panic!("non-cancellable MSM received {error:?}"),
+        }
+    }
+
+    /// Checked MSM entry. `Cancelled` is returned immediately with no CPU
+    /// recomputation and no CPU/fallback count (it still sticky-disables the
+    /// accelerator if its effect poisons); every other accelerator failure
+    /// is accounted and recomputed on the CPU, so `Err` is only `Cancelled`.
+    pub fn try_msm<C, B>(
+        &self,
+        accelerator: Option<(&B, &BackendCapabilities)>,
+        coeffs: &[C::Scalar],
+        bases: &[C::Curve],
+    ) -> Result<C::Curve, BackendError>
     where
         C: CurveAffine,
         B: MsmBackend<C::Scalar, C::Curve> + ?Sized,
@@ -151,15 +177,26 @@ impl Dispatcher {
                     // is discarded and recomputed on the CPU.
                     Ok(result) if !self.accelerator_disabled() => {
                         bump(&self.msm_accelerated);
-                        return result;
+                        return Ok(result);
                     }
                     Ok(_) => bump(&self.msm_fallback),
+                    // Cancellation never authorizes a CPU retry (quint-q2 B1).
+                    Err(error) if error.kind == ErrorKind::Cancelled => {
+                        assert!(
+                            error.preserves_observable_state(),
+                            "backend error without observable-state preservation"
+                        );
+                        if error.effect == FailureEffect::SessionPoisoned {
+                            self.poison();
+                        }
+                        return Err(error);
+                    }
                     Err(error) => self.failed(error, &self.msm_fallback),
                 }
             }
         }
         bump(&self.msm_cpu);
-        cpu::msm_request::<C>(request()).expect("ZipTruncate never rejects")
+        Ok(cpu::msm_request::<C>(request()).expect("ZipTruncate never rejects"))
     }
 
     /// Validate `spec` against `values`, then compute it in place. On a CPU
