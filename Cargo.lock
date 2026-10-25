@@ -74,6 +74,8 @@ dependencies = [
  "ff",
  "group",
  "loki-backend-api",
+ "rand_core",
+ "subtle",
 ]
 
 [[package]]

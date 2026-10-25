@@ -1,0 +1,26 @@
+$ cd ~/repos/loki-lean-wt/gpu-spec && lake build LokiLean.Backend   # gpu-spec 21f208d
+warning: LokiLean/Backend.lean:1:1: * `-/`:
+Copyright too short!
+
+
+Build completed successfully (8930 jobs).
+exit=0
+
+$ lake build   # full project
+Build completed successfully (8939 jobs).
+
+$ lake env lean Axioms.lean   # #print axioms on P2 theorems
+'Loki.Backend.Runtime.roundTrip_contract' depends on axioms: [propext]
+'Loki.Backend.Runtime.roundTrip_dispatch_eq_host' depends on axioms: [propext]
+'Loki.Backend.Runtime.stale_after_reinit' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.Backend.Runtime.download_poisoned' depends on axioms: [propext]
+'Loki.Backend.Runtime.upload_download_roundtrip' depends on axioms: [propext]
+'Loki.Backend.Runtime.release_twice_rejected' depends on axioms: [propext]
+'Loki.Backend.Runtime.upload_new_identity' depends on axioms: [propext]
+'Loki.Backend.Runtime.upload_inv' depends on axioms: [propext, Quot.sound]
+'Loki.Backend.Runtime.release_inv' depends on axioms: [propext, Quot.sound]
+'Loki.Backend.Runtime.tryReserve_inv' depends on axioms: [propext, Quot.sound]
+'Loki.Backend.Runtime.reinit_inv' depends on axioms: [propext]
+'Loki.Backend.Runtime.download_failure_state' depends on axioms: [propext]
+'Loki.Backend.Runtime.release_keeps_poison' depends on axioms: [propext]
+'Loki.Backend.Runtime.forged_rejected' depends on axioms: [propext]

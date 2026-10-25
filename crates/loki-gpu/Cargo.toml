@@ -19,3 +19,18 @@ group = "0.13.0"
 [build-dependencies]
 cc = { version = "1", optional = true }
 
+
+[dev-dependencies]
+# Test-only arithmetic fixtures (tests/support). Both are already locked as
+# transitive dependencies of ff/group; no new crate enters the lockfile.
+rand_core = "0.6.4"
+subtle = "2.6.1"
+
+[[test]]
+name = "runtime_contract"
+path = "tests/runtime_contract.rs"
+
+[[test]]
+name = "ffi_abi"
+path = "tests/ffi_abi.rs"
+required-features = ["cuda"]

@@ -1,0 +1,13 @@
+$ LOKI_GPU_PINNED_PROBE_MAX_MIB=4096 flock heavy.lock flock gpu.lock target/debug/deps/ffi_abi-8057cfce0db49ac9 --ignored measure_pinned_budget --nocapture   # ba28793; kernel 6.18.33.1-microsoft-standard-WSL2; ulimit -l 65536
+exit=1
+
+NOTE: the logged rerun above did not start: `flock -w 120` on heavy.lock timed out
+(exit=1) because another job held the heavy lock. The probe was not run without the
+heavy lock because it briefly pins up to 4 GiB of host memory beside live proofs.
+
+Earlier runs of the same measure_pinned_budget code (tree identical except
+clippy-only edits in runtime.rs that do not touch the probe), heavy.lock + gpu.lock
+held, 2026-10-25, same host:
+  cap 1024 MiB: PINNED-PROBE: 1024 MiB pinned in 32 x 32 MiB chunks (cap 1024 MiB) in 467.055266ms; first failure None
+  cap 4096 MiB: PINNED-PROBE: 4096 MiB pinned in 128 x 32 MiB chunks (cap 4096 MiB) in 2.135656622s; first failure None
+Host: kernel 6.18.33.1-microsoft-standard-WSL2, CUDA runtime/driver 13040, ulimit -l 65536, 92 GB RAM.
