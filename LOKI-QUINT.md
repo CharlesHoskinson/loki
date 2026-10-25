@@ -5,16 +5,16 @@ Quint: 0.32.0. Rust: 1.99.1. Simulation seed: `20261024`, Rust backend,
 four simulator threads. Rust builds used `CARGO_BUILD_JOBS=4`; proof tests used
 `RAYON_NUM_THREADS=2` and ran serially.
 
-**Result:** all four models passed 10,000-sample safety campaigns and their
+All four models passed 10,000-sample safety campaigns and their
 reachability witnesses. The isolated Rust suite passed 15 tests, including real
 transcript replay, W4 host-cache replay and W6 PK-cache replay. This establishes
 bounded sampled safety and the listed implementation checks. It does not prove
 GPU arithmetic, scheduler liveness, or universal fixed-RNG proof-byte equality.
 
-A separate stock prover/verifier order audit deliberately fails for mixed
+A separate stock prover/verifier order audit finds a failure for mixed
 committed/plain columns with multiple proofs; the real Rust verifier rejects
-those cases. That stock defect is reproduced below, rather than hidden inside
-the passing safety campaigns.
+those cases. The audit reports that defect separately from the passing safety
+campaigns.
 
 No production source, root Cargo feature, manifest or lockfile changed.
 
@@ -113,7 +113,7 @@ quint run quint/mutations.qnt --main mutation_NAME --step mutantStep \
 
 Names: `transcript` (early squeeze), `gpu` (content validation bypass), `pk_build`
 (duplicate keygen), `pk_partial` (premature consumption), `scheduler` (over-admit).
-These are expected failures, not passing safety runs. The individual negative
+These runs returned the expected invariant violations. The individual negative
 scenario tests also reject early publication, changed key components, duplicate
 completion and admission of two heavy jobs.
 
@@ -167,6 +167,19 @@ prover would change stock transcript/proof bytes, so no production fix is made.
 
 ## Rust model-based tests
 
+### Lean theorem scope
+
+`Refinement.loki_proof_eq_stock` establishes event equality for the structural
+Lean `prove` model when its backend operations satisfy `Refines` and commitment
+events satisfy `SameOrder`. Both executions use the same parameters, proving key,
+circuit, witness, random stream, thread count and fixed lookup-map order `ord`.
+Byte equality additionally depends on using the same codec. The theorem does not
+bind the complete Rust or CUDA implementation to that model. The `prove` model
+omits behavior listed in `Implementation mismatches and remaining obligations`,
+and `stock-trace-faithful` and `quot-inputs` remain open. W2 and these Rust replay
+checks are empirical evidence for selected paths; they do not close those Lean
+obligations.
+
 The public `quint-connect` crate at commit
 `4f018f54fc7dd4cef341d10111427bab59d3b307` built successfully. The initial
 read-only registry download failure was resolved by the authorized host
@@ -193,8 +206,8 @@ See `quint/mbt/README.md` for pinned-source requirements.
   original W4 conversion tests passed. **No GPU kernel ran.** The model has one
   abstract cache entry; W4 has two LRU entries. The adapter projects the most
   recently selected key and permits W4's permanent-disable fallback refinement.
-  Error transitions probe failure handling before exposing a result, rather than
-  reproducing an asynchronous CUDA engine. The modeled/test dispatch threshold
+  Error transitions probe failure handling before exposing a result. They do not
+  reproduce an asynchronous CUDA engine. The modeled/test dispatch threshold
   is normalized to four, with lengths zero/three/four/five. W4's production
   default is 16,384, read once from `LOKI_GPU_MSM_MIN`; this campaign does not
   test environment reload semantics. W5's 1,024..2^28 eligibility range is also
@@ -222,7 +235,7 @@ measurements do not predict recl9 parent-proof performance.
 
 ## Implementation mismatches and remaining obligations
 
-1. **CRITICAL — mixed-instance multi-proof stock rejection.** Prover and
+1. **CRITICAL: mixed-instance multi-proof stock rejection.** Prover and
    verifier instance absorption disagree when multiple proofs contain both
    committed and plain columns. The model equality audit and real Rust matrix
    reproduce this; the exact source-order boundary is checked. Reported to
@@ -230,14 +243,18 @@ measurements do not predict recl9 parent-proof performance.
    to the coordinator. This is a pre-existing compatibility defect, not a GPU
    optimization introduced by W8. Changes require a protocol compatibility
    decision; no production source was changed.
-2. **CRITICAL — stock fixed-RNG proof bytes are not a universal oracle.** Stock
+2. **CRITICAL: stock fixed-RNG proof bytes are not a universal oracle.** Stock
    `src/plonk/lookup/prover.rs` constructs a randomized `HashMap` of leftover
    lookup table values and iterates it to place values in the permuted table
-   polynomial. A fixed proof RNG and fixed Rayon count do not fix this ordering.
-   In this run, every lookup-rich comparison differed, while both proofs verified.
-   W3 independently confirmed the mechanism and that its BTreeMap optimization
-   chooses a deterministic valid permutation, potentially changing proof bytes.
-   Reported to `#loki` as `CRITICAL W8 fixed-RNG byte oracle`; no production fix
+   polynomial. At the W8 baseline, fixed proof RNG and Rayon count did not fix
+   the randomized map iteration order. Every lookup-rich comparison in that run
+   differed, while both proofs verified. W3's BTreeMap optimization was a
+   historical deterministic-order experiment that could select a different valid
+   permutation and change proof bytes. In current main, the default keeps stock
+   `HashMap` iteration; `loki-deterministic-lookup-order` is opt-in and sorts the
+   leftovers. That feature changes lookup proof bytes relative to stock. The W8
+   measurements describe their recorded revision and do not test this current
+   feature setting. Reported to `#loki` as `CRITICAL W8 fixed-RNG byte oracle`; no production fix
    or protocol change was made here. Verifier acceptance, encoding and operation
    ordering remain mandatory. Full-family byte equality is **not established**.
 3. **At W8, W5 NTT errors lacked total fallback (addressed by W9).** W5's

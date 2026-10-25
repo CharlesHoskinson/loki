@@ -8,8 +8,8 @@ Worktree: `/home/charles/repos/loki-wt/w13-srs-registry`, branch
 Source: WP3, baseline §1 and risks §d of
 `/home/charles/repos/Moriarty-factory/wiki-llm/loki/gpu-lab/icicle-study/DESIGN.md`
 (2026-10-24). Implementation is based on the memo and Loki / Apache-2.0 sppark 0.1.16.
-Review also traced Loki's existing midnight-curves / BLST normalization calls;
-no files under `~/research/open-icicle-src` are consulted.
+The implementation uses Loki's existing midnight-curves / BLST normalization
+calls. No files under `~/research/open-icicle-src` were consulted.
 
 - [x] Instrument the existing two-slot cache with per-phase backend counters;
   measure three k17 fixture proofs and three synthetic cold/full/prefix/warm
@@ -23,7 +23,7 @@ no files under `~/research/open-icicle-src` are consulted.
   exact requested-prefix comparisons, and LRU eviction under
   `LOKI_GPU_SRS_BUDGET_BYTES` (default 4294967296). Account for sppark's
   persistent points, buckets and histogram, not just the 96-byte base payload.
-- [x] Validate upload candidates on a four native scoped workers; never use
+- [x] Validate upload candidates on up to four native scoped workers; never use
   Rayon cooperative waits while holding the device/cache locks.
 - [x] Repeat measurements; run W2 with the feature, stock verification,
   and every copied full-gate step. GPU commands go through gpu-runner with
@@ -31,10 +31,10 @@ no files under `~/research/open-icicle-src` are consulted.
 - [x] Document the exact-hit argument, notify `lean-speedups`, coordinate shared-file
   additions with W10, commit tested changes, and publish the handoff with remaining risks.
 
-The registry keeps the validated projective coordinate snapshot rather than
-only affine wire coordinates: this preserves the existing exact coordinate
-hit predicate without normalizing or trusting a mutable host pointer. It uses
-144 bytes per host point (versus 96 for affine); the device wire remains 96.
+The registry stores a validated projective coordinate snapshot. This preserves
+the exact-coordinate hit predicate without normalizing or trusting a mutable
+host pointer. The snapshot uses 144 bytes per host point; the affine device
+wire uses 96 bytes.
 A match checks all x/y/z limbs of the requested prefix; unused suffixes need
 not match. No digest, pinned host identity or generation assumption is used.
 
@@ -53,7 +53,7 @@ toolkit is the supplied 13.4.3; GPU jobs are submitted to `gpu-runner`, never
 executed directly in this sandbox. These are host-runner measurements, not
 lab DoctorWatson trace evidence. Admission, replies and queue durations are
 in the durable Loki AgentBus log. The baseline synthetic ran at
-05:04–05:07 UTC after 902.494 seconds queued; no A3 job was requested by W13.
+05:04 to 05:07 UTC after 902.494 seconds queued; W13 did not request an A3 job.
 
 Completed CPU checks on the instrumented legacy cache:
 
@@ -127,15 +127,15 @@ report it separately rather than describing all uploads as 235 ms.
 Commands and logs:
 
 - `cargo test --release --offline --features cuda,loki-profile,loki-cpu-budget --lib gpu_srs_prepare_measurement -- --ignored --nocapture --test-threads=1`
-  — exit 0, 203.255 s runner wall including compilation;
+  Result: exit 0, 203.255 s runner wall including compilation;
   `target/gpu-runs/20261024T224908-w13-before-synthetic.log`.
 - Three invocations of `cargo run --release --offline --features cuda,loki-profile,loki-cpu-budget --example loki-profile -- 17`
-  — exit 0 each, proof verified;
+  Result: exit 0 each, proof verified;
   `target/gpu-runs/20261024T224921-w13-before-k17-{0,1,2}.log`.
 - `cargo test --release --offline --features cuda,loki-profile,loki-cpu-budget --lib gpu_srs_prefix_reuses_upload -- --ignored --nocapture --test-threads=1`
-  at `c40bbf3` — expected exit 101: five misses versus one. This establishes
-  the regression detects the old behavior. In the final source that assertion
-  is gated by `cuda-srs-registry`, so legacy ignored-test runs stay compatible.
+  at `c40bbf3` returned expected exit 101: five misses versus one. The regression
+  detects the old behavior. In the final source that assertion is gated by
+  `cuda-srs-registry`, so legacy ignored-test runs stay compatible.
   `target/gpu-runs/20261024T225022-w13-prefix-red.log`.
 
 `target/w13/summarize.py` derives aggregates directly from JSON records and
@@ -175,7 +175,7 @@ affect that MSM; a later request consuming it must compare it and miss.
 The address is a search filter, never a soundness assumption. There is no
 digest, generation check, host pinning or immutable-address assumption.
 
-Pinned sppark 0.1.16 `pippenger.cuh:448–565` accepts n≤resident capacity and
+Pinned sppark 0.1.16 `pippenger.cuh:448 to 565` accepts n≤resident capacity and
 uses runtime n for digits, batches and point accesses. Combined with exact
 prefix equality this yields the stock zip-truncated sum. Empty input returns
 the identity. This is the prefix refinement of `stockHit_sound`,
@@ -212,7 +212,7 @@ rejected before upload. The projective snapshot costs 144 bytes per point;
 the device wire is 96 bytes. This trades host RAM for the existing exact
 coordinate test without per-hit normalization.
 
-## Verification and review progress
+## Verification progress
 
 The prefix regression passed with the feature enabled:
 `target/gpu-runs/20261024T230947-w13-prefix-green.log` (exit 0).
@@ -256,13 +256,12 @@ continued under the runner. The corrected proxy checks durable result messages
 and retries waits; the complete copied gate was rerun successfully. This is a transport
 wrapper failure, not a reported CUDA test failure.
 
-Read-only reviews by the lab lead, Luna3, Luna5 and the final review agent
-checked exact prefix identity, whole-capacity validation, LRU, conservative SM
-accounting and failure behavior. Changes from review: drain every worker join,
-quarantine failed releases, gate registry assertions on the registry feature,
-and keep BLST normalization below its worker-dispatch threshold. The final
-review found no remaining critical, important or minor code issues. The runtime
-gates and controlled measurements subsequently completed successfully.
+Checks covered exact prefix identity, whole-capacity validation, LRU,
+conservative SM accounting and failure behavior. The changes drain every worker
+join, quarantine failed releases, gate registry assertions on the registry
+feature, and keep BLST normalization below its worker-dispatch threshold. The
+final source check found no remaining critical, important or minor code issues.
+Runtime gates and controlled measurements later completed successfully.
 
 W10 coordination: it adds the phase `backends` map independently. Both sides
 agreed that the required `msm.prepare*` auxiliary metrics must be excluded from
@@ -319,7 +318,7 @@ The config is `[env] RAYON_NUM_THREADS={value="4",force=true}`. Logs:
 
 The complete driver includes SRS construction, key generation, proof creation,
 verification, and Cargo/runner overhead. Its median runner wall is
-18.625 → 9.394 seconds. The first process in each mode compiled: Cargo's
+from 18.625 to 9.394 seconds. The first process in each mode compiled: Cargo's
 `Finished` durations were 15.95 / 6.65 seconds; subsequent Cargo phases were
 1.39 / 1.39 and 1.44 / 1.45 seconds respectively. Thus the driver wall and
 `create_proof` timings have different scopes; neither is a chain proof timing.
@@ -406,11 +405,11 @@ boundary/proof checks and focused repeats used the final implementation bytes.
 
 Final runner logs, under `target/gpu-runs/`:
 
-- `20261024T232831-w13-full-1792906111721064626.log` — library
-- `20261024T233230-w13-full-1792906350752885782.log` — differential
-- `20261024T233532-w13-full-1792906532159321348.log` — large boundaries
-- `20261024T233842-w13-full-1792906722409893356.log` — GPU proof
-- `20261024T233846-w13-full-1792906726665506700.log` — NTT stock checks
+- `20261024T232831-w13-full-1792906111721064626.log`: library
+- `20261024T233230-w13-full-1792906350752885782.log`: differential
+- `20261024T233532-w13-full-1792906532159321348.log`: large boundaries
+- `20261024T233842-w13-full-1792906722409893356.log`: GPU proof
+- `20261024T233846-w13-full-1792906726665506700.log`: NTT stock checks
 
 Final stock-verified GPU proof artifact SHA256:
 
@@ -449,8 +448,8 @@ this evidence document remained dirty after the code commit.
 
 Commits before this evidence-only handoff:
 
-- `c40bbf34384bf46a5ad74b0234ad2da3f52bc762` — Instrument GPU SRS preparation and prefix regression
-- `b6af6f9108741c0fd1c4f02f6d3f90bedb357bf2` — Add opt-in exact-prefix GPU SRS registry
+- `c40bbf34384bf46a5ad74b0234ad2da3f52bc762`: Instrument GPU SRS preparation and prefix regression
+- `b6af6f9108741c0fd1c4f02f6d3f90bedb357bf2`: Add opt-in exact-prefix GPU SRS registry
 
 The assigned branch/worktree is preserved. Git metadata is read-only in the
 sandbox; the coordinator/authorized host runner created the commits.

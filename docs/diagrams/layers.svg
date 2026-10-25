@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 780" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Loki crates and modules</title>
+  <desc id="d">Loki modules and dependencies, with correctness harnesses beside them. The P1 backend seam and P2 runtime are on main; GPU arithmetic remains in progress.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8296b0"/></marker>
+    <marker id="planned-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a58bd9"/></marker>
+  </defs>
+  <rect x="0" y="0" width="1240" height="780" rx="12" fill="#0d1729"/>
+  <text x="30" y="42" font-size="18" font-weight="700" fill="#f4ecda">Loki crates and modules</text>
+
+  <!-- Connections are routed through the spaces between panels. -->
+  <g fill="none" stroke="#2a3a5a" stroke-width="1.5" stroke-linejoin="round" marker-end="url(#arrow)">
+    <path d="M415,148 V218"/>
+    <path d="M245,408 V454"/>
+    <path d="M615,408 V454"/>
+    <path d="M245,510 V558"/>
+    <path d="M615,510 V558"/>
+    <path d="M50,482 H40 V650 H100 V674"/>
+    <path d="M760,482 H780 V640 H160 V674"/>
+    <path d="M130,614 V674"/>
+    <path d="M790,408 V652 H400 V674"/>
+    <path d="M800,394 H810 V662 H685 V674"/>
+    <path d="M840,126 H812 V238 H800"/>
+    <path d="M840,200 H818 V264 H800"/>
+    <path d="M840,274 L800,290"/>
+    <path d="M840,348 H824 V328 H800"/>
+    <path d="M840,426 H830 V364 H800"/>
+  </g>
+  <g fill="none" stroke="#2fbf71" stroke-width="1.5" stroke-linejoin="round" marker-end="url(#arrow)">
+    <path d="M800,390 H820 V486 H1180 V534"/>
+    <path d="M1025,590 V614"/>
+    <path d="M1025,658 V682"/>
+  </g>
+  <rect x="430" y="170" width="270" height="26" rx="5" fill="#0d1729"/>
+  <text x="445" y="188" font-size="13" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">[patch.crates-io] drop-in</text>
+  <rect x="1028" y="462" width="164" height="24" rx="4" fill="#0d1729"/>
+  <text x="1110" y="478" text-anchor="middle" font-size="12" fill="#2fbf71">opt-in seam on main</text>
+
+  <rect x="30" y="78" width="770" height="70" rx="10" fill="#12203a" stroke="#2a3a5a" stroke-width="1.5"/>
+  <text x="415" y="106" text-anchor="middle" font-size="16" font-weight="600" fill="#f4ecda">Moriarty / Sherlock recursion</text>
+  <text x="415" y="130" text-anchor="middle" font-size="13" fill="#b9c3d4">caller: leaf, parent, decider</text>
+
+  <rect x="30" y="218" width="770" height="190" rx="10" fill="#12203a" stroke="#2fbf71" stroke-width="1.6"/>
+  <text x="50" y="246" font-size="15" font-weight="700" fill="#f4ecda" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">Loki: midnight-proofs 0.8.3 fork (src/)</text>
+  <g fill="#0d1729" stroke="#2a3a5a">
+    <rect x="50" y="266" width="230" height="50" rx="7"/>
+    <rect x="300" y="266" width="230" height="50" rx="7"/>
+    <rect x="550" y="266" width="230" height="50" rx="7"/>
+    <rect x="50" y="330" width="230" height="50" rx="7"/>
+    <rect x="300" y="330" width="230" height="50" rx="7"/>
+    <rect x="550" y="330" width="230" height="50" rx="7"/>
+  </g>
+  <g text-anchor="middle" font-size="13" fill="#f4ecda" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="165" y="296">plonk/</text>
+    <text x="415" y="296">poly/domain.rs</text>
+    <text x="665" y="296">poly/kzg/msm.rs</text>
+    <text x="165" y="360">poly/kzg/multiopen.rs</text>
+    <text x="415" y="360">transcript/</text>
+    <text x="665" y="360">profile.rs</text>
+  </g>
+
+  <g fill="#12203a" stroke="#2fbf71" stroke-width="1.5">
+    <rect x="50" y="454" width="390" height="56" rx="9"/>
+    <rect x="470" y="454" width="290" height="56" rx="9"/>
+    <rect x="50" y="558" width="710" height="56" rx="9"/>
+  </g>
+  <g text-anchor="middle" font-size="13" fill="#f4ecda" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="245" y="487">cuda/msm.cu + build.rs (feature cuda)</text>
+    <text x="615" y="487">loki-cuda-ntt (cuda-ntt/)</text>
+    <text x="405" y="591">loki-cuda-runtime (cuda-runtime/): one device mutex</text>
+  </g>
+
+  <g fill="#12203a" stroke="#2a3a5a" stroke-width="1.5">
+    <rect x="30" y="674" width="200" height="58" rx="9"/>
+    <rect x="250" y="674" width="300" height="58" rx="9"/>
+    <rect x="570" y="674" width="230" height="58" rx="9"/>
+  </g>
+  <g text-anchor="middle" font-size="12" fill="#8296b0">
+    <text x="130" y="694">external</text>
+    <text x="400" y="694">external</text>
+    <text x="685" y="694">external</text>
+  </g>
+  <g text-anchor="middle" font-size="13" fill="#f4ecda" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="130" y="718">sppark 0.1.16</text>
+    <text x="400" y="718">midnight-curves 0.3.1</text>
+    <text x="685" y="718">blst 0.3.16</text>
+  </g>
+
+  <text x="840" y="80" font-size="16" font-weight="700" fill="#f4ecda">Correctness</text>
+  <g fill="#12203a" stroke="#2fbf71" stroke-width="1.5">
+    <rect x="840" y="96" width="370" height="60" rx="9"/>
+    <rect x="840" y="170" width="370" height="60" rx="9"/>
+    <rect x="840" y="244" width="370" height="60" rx="9"/>
+    <rect x="840" y="318" width="370" height="60" rx="9"/>
+  </g>
+  <g font-size="13" fill="#f4ecda" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="856" y="120">loki-harness/</text>
+    <text x="856" y="194">tests-stock/</text>
+    <text x="856" y="268">fuzz/</text>
+    <text x="856" y="342">quint/</text>
+  </g>
+  <g font-size="13" fill="#b9c3d4">
+    <text x="856" y="143">W2 cross-verify vs stock 0.8.3</text>
+    <text x="856" y="217">stock verifier reads Loki proofs</text>
+    <text x="856" y="291">W7 differential fuzzing</text>
+    <text x="856" y="365">W8 state models</text>
+  </g>
+  <rect x="840" y="392" width="370" height="68" rx="9" fill="#12203a" stroke="#2a3a5a" stroke-width="1.5"/>
+  <text x="856" y="414" font-size="13" fill="#f4ecda" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">loki-lean (Lean spec)</text>
+  <rect x="1126" y="400" width="72" height="21" rx="5" fill="#0d1729" stroke="#2a3a5a"/>
+  <text x="1162" y="415" text-anchor="middle" font-size="12" fill="#8296b0">external</text>
+  <text x="856" y="443" font-size="12" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">Refinement.loki_proof_eq_stock</text>
+
+  <rect x="840" y="498" width="370" height="242" rx="10" fill="#12203a" stroke="#2fbf71"/>
+  <text x="852" y="520" font-size="14" font-weight="700" fill="#f4ecda">P1 and P2 components on main</text>
+  <g fill="#12203a" stroke="#2fbf71" stroke-width="1.4">
+    <rect x="852" y="534" width="346" height="56" rx="8"/>
+    <rect x="852" y="614" width="346" height="44" rx="8"/>
+    <rect x="852" y="682" width="346" height="44" rx="8"/>
+  </g>
+  <!-- Redraw these connectors over the opaque main group background. -->
+  <g fill="none" stroke="#2fbf71" stroke-width="1.5" marker-end="url(#arrow)">
+    <path d="M1180,499 V534"/>
+    <path d="M1025,590 V614"/>
+    <path d="M1025,658 V682"/>
+  </g>
+  <g text-anchor="middle" font-size="12" fill="#f4ecda" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="1025" y="557"><tspan x="1025">src/backend/</tspan><tspan x="1025" dy="18">(P1 on main, a256a9a)</tspan></text>
+    <text x="1025" y="640">loki-backend-api (P1 on main)</text>
+    <text x="1025" y="708">loki-gpu (P2 runtime; GPU ops pending)</text>
+  </g>
+
+  <text x="30" y="761" font-size="12"><tspan fill="#2fbf71">emerald = on main</tspan><tspan fill="#8296b0">, slate = external dependency</tspan><tspan fill="#a58bd9">, dashed violet = Planned / in progress.</tspan></text>
+</svg>

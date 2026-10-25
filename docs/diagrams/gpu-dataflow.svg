@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="640" viewBox="0 0 1240 640" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">GPU data flow for one MSM or NTT call</title>
+  <desc id="desc">Prover (CPU, Rust); Dispatch gate; Convert to Montgomery limbs; Device lock; Host to device copy; sppark kernels; Device to host copy; Validate and return. Resident SRS cache. The CPU verifier sees the same proof. Stock 0.8.3 accepts it.</desc>
+  <defs>
+    <marker id="steel-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#8296b0"/></marker>
+    <marker id="green-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#2fbf71"/></marker>
+    <marker id="ember-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#e85d2c"/></marker>
+  </defs>
+  <rect width="1240" height="640" rx="12" fill="#0d1729"/>
+  <text x="24" y="40" font-size="18" font-weight="700" fill="#f4ecda">GPU data flow for one MSM or NTT call</text>
+  <text x="24" y="66" font-size="14" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#8d9bb3">cuda and cuda-ntt features, RTX 5090 (sm_120), CUDA 13.4.3</text>
+
+  <!-- Main pipeline: both rows read from left to right. -->
+  <g fill="none" stroke-width="1.6" stroke-linejoin="round">
+    <path d="M216 199H242 M572 199H598" stroke="#8296b0" marker-end="url(#steel-arrow)"/>
+    <path d="M924 199H950" stroke="#8296b0" marker-end="url(#steel-arrow)"/>
+    <path d="M1216 199H1227V296Q1227 302 1221 302H170Q164 302 164 308V326" stroke="#2fbf71" marker-end="url(#green-arrow)"/>
+    <path d="M304 385H330 M690 385H716" stroke="#2fbf71" marker-end="url(#green-arrow)"/>
+    <path d="M926 385H952" stroke="#8296b0" marker-end="url(#steel-arrow)"/>
+  </g>
+
+  <text x="360" y="480" font-size="13" fill="#e85d2c">Below the threshold, or after a GPU error, the CPU path runs instead (see gpu-fallback).</text>
+
+  <g fill="#0a1222" stroke="#2a3a5a" stroke-width="1.4">
+    <rect x="24" y="122" width="192" height="154" rx="10"/>
+    <rect x="242" y="122" width="330" height="154" rx="10"/>
+    <rect x="598" y="122" width="326" height="154" rx="10"/>
+    <rect x="950" y="122" width="266" height="154" rx="10"/>
+    <rect x="24" y="326" width="280" height="118" rx="10"/>
+    <rect x="330" y="326" width="360" height="118" rx="10"/>
+    <rect x="716" y="326" width="210" height="118" rx="10"/>
+    <rect x="952" y="326" width="264" height="118" rx="10"/>
+    <rect x="24" y="500" width="1192" height="76" rx="10"/>
+  </g>
+  <!-- Color accents distinguish CPU work and CUDA work without extra labels. -->
+  <g fill="none" stroke-width="3" stroke-linecap="round">
+    <path d="M40 123H200 M258 123H556 M614 123H908 M968 327H1200" stroke="#8296b0"/>
+    <path d="M966 123H1200 M40 327H288 M346 327H674 M732 327H910 M40 501H1200" stroke="#2fbf71"/>
+  </g>
+
+  <g font-size="16" font-weight="700" fill="#f4ecda">
+    <text x="40" y="151">Prover (CPU, Rust)</text>
+    <text x="258" y="151">Dispatch gate</text>
+    <text x="614" y="151">Convert to Montgomery limbs</text>
+    <text x="966" y="151" fill="#2fbf71">Device lock</text>
+    <text x="40" y="355" fill="#2fbf71">Host to device copy</text>
+    <text x="346" y="355" fill="#2fbf71">sppark kernels</text>
+    <text x="732" y="355" fill="#2fbf71">Device to host copy</text>
+    <text x="968" y="355">Validate and return</text>
+    <text x="40" y="523" fill="#2fbf71">Resident SRS cache</text>
+  </g>
+  <g font-size="13" fill="#8d9bb3">
+    <text x="40" y="179">coefficients, SRS bases</text>
+    <text x="258" y="179"><tspan x="258">MSM: G1Affine and length &gt;=</tspan><tspan x="258" dy="20">LOKI_GPU_MSM_MIN (default 16384)</tspan></text>
+    <text x="258" y="231">NTT: field Fq and length 2^10 to 2^28</text>
+    <text x="614" y="179"><tspan x="614">public Fq / blst_fr conversions,</tspan><tspan x="614" dy="20">no struct casts</tspan></text>
+    <text x="614" y="231"><tspan x="614">scalars R = 2^256, coordinates R = 2^384</tspan></text>
+    <text x="966" y="179"><tspan x="966">loki-cuda-runtime mutex,</tspan><tspan x="966" dy="20">shared by MSM and NTT</tspan></text>
+    <text x="40" y="383"><tspan x="40">scalars every call; SRS bases</tspan><tspan x="40" dy="20">only on cache miss</tspan></text>
+    <text x="346" y="383" xml:space="preserve"><tspan x="346">MSM: Pippenger buckets   </tspan><tspan x="346" dy="20">NTT: natural order, 1/n on device</tspan></text>
+    <text x="968" y="383"><tspan x="968">MSM: reduced coords, on-curve,</tspan><tspan x="968" dy="20">subgroup check on the Rust side</tspan></text>
+    <text x="40" y="545">legacy cuda: 2 slots, LRU</text>
+    <text x="40" y="565">cuda-srs-registry: exact-prefix entries, LRU, budget LOKI_GPU_SRS_BUDGET_BYTES (4 GiB)</text>
+  </g>
+
+  <path d="M164 500V444" fill="none" stroke="#2fbf71" stroke-width="1.6" marker-end="url(#green-arrow)"/>
+  <text x="180" y="479" font-size="13" fill="#2fbf71">hit: skip upload</text>
+
+  <rect x="24" y="592" width="1192" height="32" rx="8" fill="#0a1222" stroke="#e3b84e" stroke-width="1.2"/>
+  <text x="40" y="613" font-size="15" font-weight="600" fill="#e3b84e">The CPU verifier sees the same proof. Stock 0.8.3 accepts it.</text>
+</svg>

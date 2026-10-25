@@ -1,8 +1,8 @@
 # W7: differential fuzzing of Loki against stock midnight-proofs 0.8.3
 
-Every check is differential. Loki (the parent path package) is compared with
-**unmodified crates.io `midnight-proofs =0.8.3`** (package-renamed `stock`, never
-patched) and, where that is cheap enough, with a naive mathematical definition.
+Every check compares Loki (the parent path package) with
+**unmodified crates.io `midnight-proofs =0.8.3`** (package-renamed `stock`) and,
+where practical, with a naive mathematical definition.
 The SRS, VK and proofs cross between the crates only as bytes.
 
 Fuzzed code: `loki/w7-fuzz` with `main` merged at `8eb0cee` (W1 profiling, W2
@@ -57,13 +57,16 @@ NTT), `truncated` (truncated-challenges in both crates), `truncated-loki-only`
    proof accepted by stock and stock proof accepted by Loki (and each by itself),
    transcript fully consumed; no-lookup proofs byte-identical for the same rng; prover
    errors identical. 
-4. **`soundness`** (= negative_cases). Same circuits. One of: a single advice cell of
-   the witness mutated (ported MutPlanner; Loki and stock MockProver must agree; if
-   MockProver rejects, both verifiers must reject Loki's and stock's proofs of the
-   mutant; if it accepts, they must accept), one proof byte xor-ed, truncation, a
-   changed (plain or committed) public input or an extra one, a VK with one fixed
-   coefficient changed, an appended byte (pairing passes, transcript not empty).
-   Any acceptance of the invalid cases is a release-blocking `BUG`.
+4. **`soundness`** (= negative_cases). Same circuits. Cases include a single advice
+   cell mutation using the ported MutPlanner. Loki and stock MockProver must agree
+   on whether the mutated witness satisfies the circuit. If MockProver rejects it,
+   both verifiers must reject Loki's and stock's mutant proofs. If MockProver accepts
+   it, both verifiers must accept them. A satisfying mutant may therefore be accepted;
+   the oracle checks agreement, not rejection of every mutation. Other cases change a
+   proof byte, truncate a proof, change or add a public input, change one VK fixed
+   coefficient, or append a byte (pairing passes, transcript not empty). `BUG` means
+   a verifier accepts a proof that MockProver rejects or Loki and stock disagree on
+   the verdict.
 5. **`proof_parse`** (`parse.rs`). Arbitrary bytes into `VerifyingKey::read`
    (RawBytes and Processed), `ParamsVerifierKZG::read`, `ParamsKZG::read_custom`
    (k <= 6), raw proofs, edited honest proofs and honest proofs under fuzzed VKs.
@@ -105,7 +108,7 @@ took up to 40 s.
 The CPU proof targets (`soundness`, `proof_roundtrip`) stayed at libFuzzer `lim: 4..6`
 bytes: every short input reseeds the ChaCha stream that fills the rest of the case,
 so new coverage kept coming from 4-byte inputs and libFuzzer never grew the length.
-These runs were therefore close to seeded random testing rather than mutation of the
+These runs mostly sampled seeded cases. They did not meaningfully mutate the
 structured bytes. `run-target.sh` now passes `-len_control=0` for future runs.
 
 Logs: `fuzz/logs/` (not committed). Commands:
@@ -155,7 +158,7 @@ stock 0.8.3 and Loki), each with a committed reproducer.
    reproducible across processes (as SPEC.md notes). The forgery check now applies
    to edits of this process's honest proofs only.
 
-Behaviour confirmed rather than found: `truncated-challenges` must match between
+Confirmed behavior: `truncated-challenges` must match between
 prover and verifier (both on or both off accept; Loki-only truncation is rejected in
 both cross directions); trailing bytes pass the pairing check and are caught only by
 `assert_empty` in both crates (the harness requires it).
@@ -178,6 +181,6 @@ mutant sets in Loki and stock) plus 10 real-proof mutation cases.
 - GPU MSM inside full proofs got only a partial run (128 inputs); with `cuda` the
   proof targets now set the threshold to 1 and fail on CPU fallback, so a later
   `fuzz/gpu-slices.sh proof_roundtrip ... --features cuda,cuda-ntt` continues it.
-- Circuits are small (k <= 10); large-k behaviour is covered by the W2 harness.
+- Circuits are small (k <= 10); large-k behavior is covered by the W2 harness.
 - `ParamsKZG::read_custom` is fuzzed only for k <= 6 (a garbage header requests 2^k
   points, an upstream unbounded allocation by design).

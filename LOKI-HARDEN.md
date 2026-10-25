@@ -1,14 +1,14 @@
 # W9 correctness and robustness
 
-W9 retains stock default BLST threading. Enable `loki-cpu-budget` to opt into
-serial BLST with Rayon MSM partitioning; measurements and feature-unification
-limits are in `LOKI-CPU.md`. Enable `loki-harden` for checked domain construction
-in key generation/key reading and widened rotation arithmetic. GPU corrections
-apply when their existing `cuda` / `cuda-ntt` features are enabled.
+W9 keeps stock BLST threading by default. `loki-cpu-budget` opts into serial
+BLST with Rayon MSM partitioning; measurements and feature-unification limits
+are in `LOKI-CPU.md`. `loki-harden` enables checked domain construction in key
+generation and key reading, plus widened rotation arithmetic. GPU corrections
+apply when `cuda` or `cuda-ntt` is enabled.
 
 The contracts are `/home/charles/repos/loki-lean/SPEC.md` and
-`LokiLean/{Ntt,Msm,Refinement,Plonk}.lean`. These runtime checks provide empirical
-evidence for component obligations; they do not complete the Lean proofs.
+`LokiLean/{Ntt,Msm,Refinement,Plonk}.lean`. Runtime checks give empirical
+evidence for component obligations. They do not complete the Lean proofs.
 
 ## GPU behavior
 
@@ -103,14 +103,14 @@ which passed separately. The table below uses the definitive batch logs.
 | Stage | Result |
 | --- | --- |
 | Default `cargo test --release --offline -- --test-threads=4` | 34 unit, two integration, nine documentation tests pass; two timing tests ignored |
-| `./loki-harness/run.sh` | k10/k14/k17 cross-verify and equal VKs; no-lookup proof bytes equal; documented lookup-order differences remain |
+| `./loki-harness/run.sh` | k10/k14/k17 cross-verify with equal VKs. No-lookup proof bytes match; lookup proof byte differences remain documented |
 | `cargo run --release --offline --example cpu-bench -- 16 3 target/cpu-fixture` | Three verified proofs with identical hashes |
 | `cargo test --release --offline --manifest-path tests-stock/Cargo.toml` | Registry stock verifier accepts the fixture and rejects corruption |
 | GPU library, `cuda,cuda-ntt,loki-profile` | 40 pass, 40 ignored; forced NTT fallback and invalid-SRS rejection pass |
 | GPU MSM differential | Pass, 210.93 s test time |
 | GPU MSM large boundaries | Pass, 508.43 s test time |
-| GPU MSM proof and separate stock verifier | Both accept the 416-byte proof and reject mutated public input |
-| k17 NTT with separate stock verifier | Three proofs accepted, mutations rejected; 17 completed GPU transforms per proof |
+| GPU MSM proof and separate stock verifier | Loki and the separate stock verifier accept the 416-byte proof and reject the mutated public input |
+| k17 NTT with separate stock verifier | Stock accepts three proofs and rejects the public-input mutations; each proof records 17 completed GPU transforms |
 | Four concurrent provers, `cuda,cuda-ntt,loki-harden` | Pass, 1.58 s; every proof verifies and both successful-dispatch counts match the reference |
 | GPU library, `cuda,cuda-ntt,loki-harden,loki-cpu-budget` | 45 pass, 40 ignored |
 | Four concurrent provers with CPU budget | Pass, 1.64 s; same verification and dispatch assertions |
@@ -123,16 +123,21 @@ NTT verifier lockfile now records the common runtime and restored BLST dependenc
 `cargo tree --offline --locked --manifest-path tests/ntt-stock/Cargo.toml
 --features gpu -i loki-cuda-runtime` checks that final lockfile without rebuilding.
 
-Curve/subgroup validation is serial on each new upload and has a cold-cache
-cost. The boundary regression includes CPU MSM oracles and does not isolate
-that cost; no GPU performance improvement is claimed here. Manual tests still
-ignored by the supplied gate were not implicitly run by the library suites.
+Each new upload gets serial curve and subgroup validation, which adds cold-cache
+cost. The boundary regression uses CPU MSM oracles and does not isolate that
+cost. It makes no GPU performance claim. The library suites did not run manual
+tests that the supplied gate still ignores.
 
-Existing stock limitations remain: mixed committed/plain multi-proof transcript
-ordering can cause stock rejection, and lookup-rich stock proofs are not a
-universal fixed-RNG byte oracle. See `LOKI-QUINT.md`. Rust 1.76 and 32-bit target
-builds have not been executed. The common GPU mutex covers these adapters in
-this Cargo dependency graph; it does not coordinate separate OS processes.
+The stock verifier rejects proofs for batches with multiple proofs and both
+committed and plain instance columns because the prover and verifier absorb
+instances in different orders. Loki preserves this behavior. On the default
+build, Loki and stock both use randomized `HashMap` iteration for leftover
+lookup rows. The opt-in `loki-deterministic-lookup-order` feature sorts those
+rows and can produce different lookup proof bytes. Both behaviors are
+documented in `LOKI-QUINT.md` and the P1 seam note. Rust 1.76 and 32-bit target
+builds have not been executed.
+The common GPU mutex covers these adapters within one Cargo dependency graph.
+It does not coordinate separate OS processes.
 
 Integration note from W10: profiler commit `0486f79` also edits `gpu_fft`.
 Resolve that merge by retaining W9's error-to-CPU path and recording CPU fallback

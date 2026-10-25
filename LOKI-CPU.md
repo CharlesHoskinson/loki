@@ -1,5 +1,10 @@
 # CPU work (W3)
 
+The measurements below document W3 at `1db6ab8`. At current main
+`a256a9a`, lookup leftovers use the stock `HashMap` iteration order by
+default. Field-order sorting is opt-in through the
+`loki-deterministic-lookup-order` feature.
+
 ## Design and implementation plan
 
 Preserve the 0.8.3 circuit, keys, transcript ordering, RNG consumption and proof
@@ -89,8 +94,8 @@ end-to-end samples fluctuate with host load.
 | 100% | 26.451 | 19.195 | 1.38x |
 
 Run with `CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 cargo test --offline --release --lib time_rational_conversion_k16 -- --ignored --nocapture --test-threads=1`.
-The original end-to-end sample series above remains recorded rather than
-presenting a slower shared-host sample as a demonstrated overall speedup.
+The original end-to-end sample series remains in the table. Those shared-host
+samples do not establish an overall speedup.
 
 ## Final end-to-end comparison
 
@@ -135,7 +140,7 @@ backend creates no additional workers. A separate arithmetic test compares
 against individual group multiplications at 1/2/4 workers, including empty and
 all-zero scalars, identity bases, ONE, minus ONE, random scalars and chunk edges.
 
-**Integration caveat (opt-in only):** Enabling `loki-cpu-budget` applies
+The opt-in `loki-cpu-budget` feature also applies
 `blst/no-threads` through Cargo feature unification to
 every user of the same resolved BLST instance, including direct G2 MSMs and
 aggregate operations outside this crate. Those operations remain correct but
@@ -192,10 +197,9 @@ also passes: 32 unit tests and the byte-reproducibility integration test, with
 the two manual timing tests ignored. Arithmetic differentials and the isolated
 CPU-budget regression are included in both runs.
 
-Independent code reviews found no actionable issues in preparation, sparse
-conversion, pool sharing, or sorted-hash-map placement.
-Rust 1.76 API availability was reviewed, but that toolchain was not installed
-for an actual MSRV build.
+No actionable issue remained in preparation, sparse conversion, pool sharing, or
+sorted-hash-map placement. Rust 1.76 API availability was checked by inspection,
+but that toolchain was not installed for an actual MSRV build.
 
 Generate a fresh public fixture and verify it without linking Loki into the
 verifier process:

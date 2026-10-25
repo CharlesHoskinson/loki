@@ -97,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.4.0
 ### Added
-* Add deserialisation function that directly takes as input the ConstraintSystem [#18](https://github.com/midnightntwrk/midnight-zk/pull/18/commits/973467fecd6c31c6b57d06c89dfa0c7dd00bef2b)
+* Add deserialization function that directly takes as input the ConstraintSystem [#18](https://github.com/midnightntwrk/midnight-zk/pull/18/commits/973467fecd6c31c6b57d06c89dfa0c7dd00bef2b)
 * Add an `update_value` fn, to allow mutating the value inside an `AssignedCell` [#103](https://github.com/midnightntwrk/midnight-zk/pull/103)
 
 ### Changed
@@ -111,7 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Implement TranscriptHash for u32 [#75](https://github.com/midnightntwrk/midnight-zk/pull/75)
 * Improvement on verifier allocation and use of blstrs MSM [#76](https://github.com/midnightntwrk/midnight-zk/pull/76)
 * Use HashMap instead of BTreeMap for computing shuffled tables [#61](https://github.com/midnightntwrk/midnight-zk/pull/61)
-* Verifier skis `left` MSM if its size and its scalar are one [#102](https://github.com/midnightntwrk/midnight-zk/pull/102)
+* Verifier skips `left` MSM if its size and its scalar are one [#102](https://github.com/midnightntwrk/midnight-zk/pull/102)
 * Add a string to `Error::Synthesis` for a descriptive message [#105](https://github.com/midnightntwrk/midnight-zk/pull/105)
 
 ### Removed

@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="680" viewBox="0 0 1240 680" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">CPU fallback: the GPU never decides the proof</title>
+  <desc id="desc">Two independent lanes: MSM (cuda) and NTT (cuda-ntt). In the tested cases, CPU and GPU paths produce proofs accepted by stock midnight-proofs 0.8.3.</desc>
+  <defs>
+    <marker id="arrow-steel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#8296b0"/></marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2fbf71"/></marker>
+    <marker id="arrow-ember" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#e85d2c"/></marker>
+  </defs>
+  <rect width="1240" height="680" rx="12" fill="#0d1729"/>
+  <text x="24" y="40" font-size="18" font-weight="700" fill="#f4ecda">CPU fallback: the GPU never decides the proof</text>
+  <text x="24" y="68" font-size="14" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#8d9bb3">W9 hardening. Two independent lanes: MSM (cuda) and NTT (cuda-ntt)</text>
+
+  <rect x="24" y="92" width="1192" height="244" rx="12" fill="#0a1222" stroke="#2a3a5a"/>
+  <text x="44" y="116" font-size="14" font-weight="700" fill="#2fbf71">MSM</text>
+  <!-- Main MSM chain and its two CPU bypasses. -->
+  <g fill="none" stroke-width="1.6" stroke-linejoin="round">
+    <path d="M272,171 H318" stroke="#2fbf71" marker-end="url(#arrow-green)"/>
+    <path d="M524,171 H570" stroke="#2fbf71" marker-end="url(#arrow-green)"/>
+    <path d="M744,171 H790" stroke="#2fbf71" marker-end="url(#arrow-green)"/>
+    <path d="M1022,171 H1068" stroke="#2fbf71" marker-end="url(#arrow-green)"/>
+    <path d="M158,214 V266" stroke="#8296b0" marker-end="url(#arrow-steel)"/>
+    <path d="M421,214 V238 H206 V266" stroke="#8296b0" marker-end="url(#arrow-steel)"/>
+    <path d="M657,214 V232 H906" stroke="#e85d2c"/>
+    <path d="M906,214 V260" stroke="#e85d2c" marker-end="url(#arrow-ember)"/>
+    <path d="M570,288 H272" stroke="#e85d2c" marker-end="url(#arrow-ember)"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="295" y="160" fill="#2fbf71">yes</text>
+    <text x="547" y="160" fill="#2fbf71">no</text>
+    <text x="1045" y="160" fill="#2fbf71">yes</text>
+    <text x="140" y="247" fill="#8296b0">no</text>
+    <text x="443" y="232" fill="#8296b0">yes</text>
+    <text x="785" y="250" fill="#e85d2c">error or invalid</text>
+  </g>
+  <g fill="#0f1a2c" stroke="#8296b0" stroke-width="1.3">
+    <rect x="44" y="128" width="228" height="86" rx="10"/>
+    <rect x="318" y="128" width="206" height="86" rx="10"/>
+    <rect x="44" y="266" width="228" height="44" rx="10"/>
+  </g>
+  <g fill="#0b231e" stroke="#2fbf71" stroke-width="1.3">
+    <rect x="570" y="128" width="174" height="86" rx="10"/>
+    <rect x="790" y="128" width="232" height="86" rx="10"/>
+    <rect x="1068" y="128" width="128" height="86" rx="10"/>
+  </g>
+  <rect x="570" y="260" width="452" height="56" rx="10" fill="#29170f" stroke="#e85d2c" stroke-width="1.3"/>
+  <g font-size="14" fill="#f4ecda" text-anchor="middle">
+    <text x="158" y="154"><tspan x="158">G1Affine and length</tspan><tspan x="158" dy="20">&gt;= LOKI_GPU_MSM_MIN?</tspan></text>
+    <text x="421" y="153"><tspan x="421">Backend disabled</tspan><tspan x="421" dy="20">by an earlier error?</tspan></text>
+    <text x="657" y="164"><tspan x="657">GPU MSM</tspan><tspan x="657" dy="20">(sppark Pippenger)</tspan></text>
+    <text x="906" y="153"><tspan x="906">Result valid?</tspan><tspan x="906" dy="20">(reduced, on curve,</tspan><tspan x="906" dy="20">in subgroup)</tspan></text>
+    <text x="1132" y="164"><tspan x="1132">Return GPU</tspan><tspan x="1132" dy="20">result</tspan></text>
+    <text x="158" y="293">CPU MSM (unchanged)</text>
+    <text x="796" y="283"><tspan x="796">warn once per process, disable GPU backend</tspan><tspan x="796" dy="20">for the rest of the process</tspan></text>
+  </g>
+
+  <rect x="24" y="354" width="1192" height="230" rx="12" fill="#0a1222" stroke="#2a3a5a"/>
+  <text x="44" y="378" font-size="14" font-weight="700" fill="#2fbf71">NTT</text>
+  <g fill="none" stroke-width="1.6" stroke-linejoin="round">
+    <path d="M340,433 H398" stroke="#2fbf71" marker-end="url(#arrow-green)"/>
+    <path d="M668,433 H744" stroke="#2fbf71" marker-end="url(#arrow-green)"/>
+    <path d="M192,476 V520" stroke="#8296b0" marker-end="url(#arrow-steel)"/>
+    <path d="M533,476 V510" stroke="#e85d2c" marker-end="url(#arrow-ember)"/>
+    <path d="M798,540 H866" stroke="#e85d2c" marker-end="url(#arrow-ember)"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="369" y="422" fill="#2fbf71">yes</text>
+    <text x="706" y="422" fill="#2fbf71">ok</text>
+    <text x="173" y="505" fill="#8296b0">no</text>
+    <text x="562" y="499" fill="#e85d2c">error</text>
+  </g>
+  <g fill="#0f1a2c" stroke="#8296b0" stroke-width="1.3">
+    <rect x="44" y="390" width="296" height="86" rx="10"/>
+    <rect x="44" y="520" width="296" height="44" rx="10"/>
+    <rect x="866" y="510" width="330" height="60" rx="10"/>
+  </g>
+  <g fill="#0b231e" stroke="#2fbf71" stroke-width="1.3">
+    <rect x="398" y="390" width="270" height="86" rx="10"/>
+    <rect x="744" y="390" width="452" height="86" rx="10"/>
+  </g>
+  <rect x="398" y="510" width="400" height="60" rx="10" fill="#29170f" stroke="#e85d2c" stroke-width="1.3"/>
+  <g font-size="14" fill="#f4ecda" text-anchor="middle">
+    <text x="192" y="415"><tspan x="192">Vec&lt;Fq&gt;, length 2^10 to 2^28,</tspan><tspan x="192" dy="20">LOKI_NTT_CPU not set?</tspan></text>
+    <text x="533" y="426"><tspan x="533">GPU NTT on a temporary</tspan><tspan x="533" dy="20">limb buffer</tspan></text>
+    <text x="970" y="426"><tspan x="970">Return GPU result</tspan><tspan x="970" dy="20">(1/n applied on device)</tspan></text>
+    <text x="192" y="547">best_fft (CPU)</text>
+    <text x="598" y="534"><tspan x="598">warn once per process; caller data intact;</tspan><tspan x="598" dy="20">next call tries the GPU again</tspan></text>
+    <text x="1031" y="534"><tspan x="1031">best_fft (CPU, applies its own 1/n)</tspan></text>
+  </g>
+
+  <rect x="24" y="604" width="1192" height="42" rx="10" fill="#241f10" stroke="#e3b84e" stroke-width="1.3"/>
+  <text x="44" y="631" font-size="16" font-weight="600" fill="#e3b84e">Both paths produce proofs accepted by stock midnight-proofs 0.8.3 in the tested cases.</text>
+  <text x="24" y="668" font-size="14" fill="#8d9bb3">Not covered: device reset and GPU out-of-memory injection were not run.</text>
+</svg>

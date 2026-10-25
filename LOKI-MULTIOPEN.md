@@ -20,24 +20,33 @@ MSM implementation, evaluation engine and domain implementation are unchanged.
 Run 2 skips unused evaluations stored only in the prover's intermediate grouping.
 
 The design follows rank 1 of the supplied `other-chains-plonk-kzg.md` research
-(axiom-crypto/halo2 PR #37 precedent) and the clone/parallelism findings in
-`kzg-multiopen.md`. The original run-1 measurements below precede product division
-and the unused-evaluation shortcut; the run-2 section measures their addition.
+and the clone/parallelism findings in `kzg-multiopen.md`. Axiom PR #37
+([parallel `compute_inner_product`](https://github.com/axiom-crypto/halo2/pull/37))
+is prior work on parallel inner products. Run 2 ports root-product division
+from Midnight PR #565, described below.
+
+The run-2 controlled comparison is the latest repeated-sample record. On the
+synthetic k17 fixture, three-sample medians show multiopen reductions of 12.83%
+at four threads and 19.00% at twenty threads against the serial control. Whole
+`create_proof` time is 2.74% lower at four threads and 0.11% higher at twenty
+threads. The run-1 measurements below remain historical results for the earlier
+feature. The one-sample run-3 compatibility check is not another performance
+comparison.
 
 The separate formal contract is being developed in
 `/home/charles/repos/loki-lean/LokiLean/Multiopen.lean` by `lean-speedups`.
-The Rust helper cites it. W11 confirmed the polynomial/power pairing,
-first-polynomial output length, padding, truncated powers, unchanged evaluations,
-and root order over AgentBus. Its presence is not a claim that the separate Lean
-file has been compiled or its intended theorems completed by this package.
+The Rust helper cites it. The differential tests cover the polynomial/power
+pairing, first-polynomial output length, padding, truncated powers, unchanged
+evaluations, and root order. This file has not been compiled as part of this
+package, and the intended theorems remain incomplete.
 
 ## Verification
 
 All commands use `CARGO_BUILD_JOBS=4`, CPU only. Logs and synthetic proof artifacts
-are under `target/w11/` (ignored by Git). Source review independently checked
-ordered scalar streams, stable set sorting, root order, padding, first-polynomial
-length and the unchanged default path. The length check was corrected and covered
-before final validation.
+are under `target/w11/` (ignored by Git). Source checks cover ordered scalar
+streams, stable set sorting, root order, padding, first-polynomial length and the
+unchanged default path. The length check was corrected and covered before final
+validation.
 
 Commands run successfully:
 
@@ -137,9 +146,9 @@ lock. Times below are milliseconds; end-to-end always means `create_proof`.
 The k17 median multiopen reduction is **10.0% at 4 threads** and **19.5% at
 20 threads**; corresponding end-to-end median reductions are **0.7% and 3.9%**.
 These are shared-host observations from three samples, not a confidence bound.
-End-to-end k17 ranges overlap: serial/feature 2608.726–2618.369 /
-2581.290–2628.570 ms at 4 threads, and 1551.782–1672.712 /
-1496.783–1570.242 ms at 20 threads. The small 4-thread end-to-end difference
+End-to-end k17 ranges overlap: serial/feature 2608.726 to 2618.369 /
+2581.290 to 2628.570 ms at 4 threads, and 1551.782 to 1672.712 /
+1496.783 to 1570.242 ms at 20 threads. The small 4-thread end-to-end difference
 should not be treated as an established improvement.
 
 All **eight** before/after whole-proof pairs are byte-identical (1,280 bytes
@@ -184,8 +193,8 @@ empty-proof rejection, and appended-byte rejection. The gate also ran its four
 broken-constraint MockProver controls. All three no-lookup controls (k10, repeated
 by the gate) matched exactly at 1,136 bytes. Lookup proofs were 1,280 bytes and
 first differed from registry stock at byte 192, as expected from stock's random
-lookup-table map ordering. This diagnostic does not weaken the separate strict
-Loki-serial/feature whole-proof equality checks.
+lookup-table map ordering. The Loki-serial/feature whole-proof equality checks
+are separate and strict.
 
 `W11-validation` completed with exit 0 in 141.507 seconds wall and 502,743,040
 bytes peak process-group RSS, including the feature/repeated profiles, setup,
@@ -201,7 +210,7 @@ write the linked worktree's Git metadata. No push was requested or performed.
 
 ## Run 2: root-product division and unused grouping evaluations
 
-The coordinator-approved extension ports the KZG division from
+The extension ports the KZG division from
 [midnight-zk #565](https://github.com/midnightntwrk/midnight-zk/pull/565) and the
 unused prover evaluation change from
 [#554's evaluation commit](https://github.com/midnightntwrk/midnight-zk/commit/6eb5d8727d3b05805f678aa9479faca3d85e816d).
@@ -233,8 +242,8 @@ and a concrete nonzero remainder. They also compare grouping metadata and points
 against the default entry point and verify its real evaluations are nonzero while
 the feature placeholders are zero. Existing independent coefficient/transcript
 comparisons still run at 1/4/20 workers and with truncated challenges. The tests
-first failed on the missing helpers; all targeted suites then passed. An
-independent source review found no correctness or scope issues.
+first failed on the missing helpers; all targeted suites then passed. Source
+checks found no correctness or scope issues.
 
 Run-2 logs and synthetic artifacts are in `target/w11-run2/`. Commands completed:
 
@@ -346,16 +355,16 @@ The shared host was substantially more variable than in run 1. Neither the small
 phase difference nor an end-to-end improvement is established by these samples.
 In particular, the twenty-thread end-to-end median regressed relative to run 1.
 Do not combine timings from the earlier measurement window with this table to
-estimate the run-2 increment. Observed minimum–maximum ranges:
+estimate the run-2 increment. Observed minimum-to-maximum ranges:
 
 | Threads | Path | Multiopen ms range | End-to-end ms range |
 |---:|---|---:|---:|
-| 4 | Serial | 682.961–762.944 | 3366.937–3894.662 |
-| 4 | Run 1 | 595.520–676.951 | 3184.614–3890.547 |
-| 4 | Run 2 | 540.291–762.821 | 3014.942–4218.968 |
-| 20 | Serial | 448.242–481.246 | 2255.236–2310.784 |
-| 20 | Run 1 | 344.958–393.228 | 2118.268–2450.620 |
-| 20 | Run 2 | 311.843–408.555 | 2098.284–2342.930 |
+| 4 | Serial | 682.961 to 762.944 | 3366.937 to 3894.662 |
+| 4 | Run 1 | 595.520 to 676.951 | 3184.614 to 3890.547 |
+| 4 | Run 2 | 540.291 to 762.821 | 3014.942 to 4218.968 |
+| 20 | Serial | 448.242 to 481.246 | 2255.236 to 2310.784 |
+| 20 | Run 1 | 344.958 to 393.228 | 2118.268 to 2450.620 |
+| 20 | Run 2 | 311.843 to 408.555 | 2098.284 to 2342.930 |
 
 All **18** profile reports passed local proof verification and exact phase-sum
 checks. All six serial/run1/run2 proof trios are byte-identical at 1,280 bytes;
@@ -384,8 +393,8 @@ behavior, out-of-domain empty quotient and prover evaluation callback were sent 
 Its run-2 sections O11.1 and O11.2 now contain `divideByRoots_contract`,
 `length_divideByRoots`, `toPoly_divideByRoots`, `divideByRoots_eq_kateFold` and
 `prover_evals_unused`. The product-division loop is modeled separately from the
-uniqueness contract. This lane read the source and answered the implementation
-questions; it did not run Lean or certify a Rust-to-Lean extraction.
+uniqueness contract. The source was checked against the implementation questions.
+No Lean build or Rust-to-Lean extraction check was run here.
 
 The feature stays opt-in. Dense root products still require O(n times number of
 roots) arithmetic and use a working remainder buffer; sparse-product gains do not
@@ -415,10 +424,10 @@ No changes were made to `evaluation.rs`, `domain.rs` or any `msm*` file.
 
 The source regression check in `target/w11-run3/check_stock_verifier.py` failed
 on both affected functions before restoration, then passed afterward. It compares
-the entire `multi_prepare` implementation, the entire original `utils.rs` prefix
+the entire `multi_prepare` implementation, the original `utils.rs` prefix
 (including grouping and shared types), and the full parameter/MSM files as bytes
-against `git show 8eb0cee:<path>`. An independent read-only review confirmed the
-source equality, callback-only difference and unchanged duplicate-query rejection.
+against `git show 8eb0cee:<path>`. Source comparison confirmed the equality,
+callback-only difference and unchanged duplicate-query rejection.
 `target/w11-run3/kzg-vs-stock.diff` saves the complete KZG diff for inspection.
 Lean coordination was notified that division/reordering semantics are unchanged
 and the verifier no longer shares the prover's callback helper. This run adds no
@@ -451,16 +460,15 @@ passed. The profile executables and W2 gate were rebuilt from this restored
 source; the Run-2 feature control is the saved `61bc758` executable whose hash
 is recorded above.
 
-The Lean owner subsequently reported that the Run-2 composition builds with zero
+The Lean owner reported that the Run-2 composition builds with zero
 `sorry` and auditor acceptance. The source contains `lokiOps_meets`,
 `loki_multiOpen_eq_stock`, `loki_multiOpen_zero_evals` and
-`divideByRoots_eq_kateFold` in `LokiLean/Multiopen.lean`. This lane checked those
-names in the source and notified the owner of the restored verifier/prover
-separation; it did not run the Lean build itself.
+`divideByRoots_eq_kateFold` in `LokiLean/Multiopen.lean`. Source inspection
+confirmed these names, but no Lean build was run for this work.
 
 Restoration implementation commit: **`8711224`** (`Restore stock KZG verifier
-source`), committed through the host runner after the targeted suites and source
-review passed. `target/w11-run3/metadata.json` records this commit, matching
+source`), committed through the host runner after the targeted suites passed and
+source comparison completed. `target/w11-run3/metadata.json` records this commit, matching
 committed source blobs and all three profile executable hashes. Its saved Run-2
 control hash matches the recorded Run-2 hash exactly.
 
@@ -527,5 +535,5 @@ all KZG suite summaries, the three profile reports, source and executable hashes
 proof equality and all W2 records. `git diff --check` passed. Only the report
 changed after implementation commit `8711224`. No push, GPU or k20 run occurred.
 The deliberate prover grouping copy can drift in future edits; its differential
-test remains the guard. Shared-host timings are single samples in this rerun,
-and Rust-to-Lean extraction is still outside this lane's verification.
+test remains the guard. This rerun uses single shared-host samples and does not
+verify Rust-to-Lean extraction.

@@ -12,8 +12,8 @@ sppark **0.1.16** builds and runs on the supplied RTX 5090 (sm_120), using CUDA
 13.4.92; `cuobjdump -lelf` confirms `msm.sm_120.cubin`. The adapter also embeds
 compute_120 PTX. Rust used for validation: 1.99.1.
 
-ICICLE was not attempted: sppark is usable on this GPU. Both the crate and its
-MSM templates are Apache-2.0.
+The GPU supports sppark, so ICICLE was not tried. Both the crate and its MSM
+templates are Apache-2.0.
 
 ## Dispatch and residency
 
@@ -62,8 +62,8 @@ Two build integration issues were found and fixed:
 2. sppark's host field arithmetic uses BLST internal assembly symbols. The
    build mirrors BLST's default ADX selection to select the matching symbols.
 
-Review also found that sppark's implicit `noexcept` MSM destructor calls throwing
-CUDA helpers. `build.rs` generates a shadow of the pinned `pippenger.cuh`, changing
+The sppark MSM destructor is implicitly `noexcept` but calls throwing CUDA
+helpers. `build.rs` generates a shadow of the pinned `pippenger.cuh`, changing
 only `~msm_t()` to `~msm_t() noexcept(false)`, with a unique-anchor assertion.
 The extern C boundaries catch CUDA, standard and unknown exceptions. After an
 error, device handles may be retained until process exit rather than destructed
@@ -150,7 +150,8 @@ cargo test --release --offline --features cuda --lib gpu_benchmark -- --ignored 
 # passed; every timed result equals the original CPU MSM
 ```
 
-Milliseconds, one CPU call, one cold call, mean of three warm calls:
+The table reports milliseconds for one CPU call, one cold GPU call, and the
+mean of three warm GPU calls:
 
 | log2(n) | n | CPU | GPU cold | GPU warm |
 |---:|---:|---:|---:|---:|
@@ -181,8 +182,7 @@ execution; 16.982 seconds runner wall time including Cargo).
 - No production k20 recursion proof or end-to-end proving speedup was measured.
   The correctness fixture is k8 with an explicitly lowered threshold.
 - No deliberate device-reset or GPU-OOM fault injection was run. No-device and
-  injected adapter-error fallback are tested; the native exception boundary and
-  destructor change were reviewed.
+  injected adapter-error fallback are tested.
 - Residency includes bases and buckets, with per-call temporary digit/scalar
   buffers. Fixed-base precomputation and commitment batching are future work.
 - Only the supplied sm_120/CUDA 13.4 host was tested. `LOKI_CUDA_ARCH` selects
@@ -192,12 +192,12 @@ execution; 16.982 seconds runner wall time including Cargo).
 - Git metadata is read-only in the sandbox. Commits use the coordinator's host
   `gpu-runner COMMIT` protocol and remain on `loki/w4-gpu-msm`; nothing is pushed.
 
-## Commits and review
+## Commits and final checks
 
 - `fdef4c4 Add resident sppark CUDA MSM with CPU fallback`
 - `21fecba Cover partial final batches in large CUDA MSMs`
-- Separate code review found the destructor issue above; the final committed
-  fix was reviewed again with no remaining important findings.
+- The committed fix resolves the destructor issue above. No important finding
+  remained after the final source check.
 - The results document is committed separately after final verification.
 
 ## Sources

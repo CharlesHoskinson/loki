@@ -1,9 +1,22 @@
 # Loki differential harness
 
-Independent Cargo workspace comparing the parent Loki path package with
-**unmodified crates.io `midnight-proofs =0.8.3`**. Cargo accepts the two sources
-with package renaming; no stock source was vendored. Do not patch crates.io
-`midnight-proofs` in this workspace: that would destroy the independent oracle.
+This independent Cargo workspace compares the Loki path package with unmodified
+crates.io `midnight-proofs =0.8.3`. Cargo accepts the two sources with package
+renaming; no stock source was vendored. Keep the registry dependency unpatched
+so it remains an independent verifier.
+
+Run the commands below from the Loki repository root. The recorded default gate
+covers k10, k14 and k17 with stock 0.8.3. G2 also lists k20 and stock 0.8.1,
+but no run for those cases is recorded. The Loki path package also resolves
+optional dependencies from the sibling `loki-gpu` checkout, even when the
+backend feature is off. See the checkout layout in [`README.md`](../README.md)
+and [`TODO.md`](../TODO.md).
+
+The recorded fixtures do not cover multiple proofs with mixed committed and
+plain instance columns. In that shape, the stock prover and verifier absorb
+instances in different orders, so the stock verifier rejects its own proof.
+This inherited limitation is documented in [`LOKI-QUINT.md`](../LOKI-QUINT.md)
+and tracked as TODO T03.
 
 ```sh
 ./loki-harness/run.sh
@@ -18,7 +31,7 @@ RAYON_NUM_THREADS=1 CARGO_BUILD_JOBS=4 cargo run --release --locked \
   --manifest-path loki-harness/Cargo.toml --bin bench -- 10 14 17
 ```
 
-`run.sh` runs k10, k14, k17 in sequence, sharing each proof pair between cross
+`run.sh` runs k10, k14 and k17 in sequence, sharing each proof pair between cross
 verification and determinism checks. Explicit numeric arguments override sizes.
 It exports one Rayon worker before startup and sends a process-group timeout
 after 292 seconds, with a three-second kill grace period (exit 124 on timeout,
@@ -33,23 +46,27 @@ gate, equality copies on every row, a public input, an 8-bit table lookup, and a
 second-phase column depending on a challenge drawn after first-phase advice.
 The table contains every 8-bit value twice, leaving many distinct leftover
 values so the fixture exercises stock's randomized lookup-table placement.
-Both backends independently keygen. The gate asserts byte-identical VKs,
-roundtrips full SRS bytes in both directions with checked `RawBytes` reads, and
-reads the other backend's VK/verifier parameters before verifying its proof.
+Both backends run key generation independently. The gate checks VK byte equality,
+round-trips full SRS bytes in both directions with checked `RawBytes` reads, and
+loads the other backend's VK and verifier parameters before verifying its proof.
 Wrong public inputs and empty proofs must be rejected by both verifiers.
 The harness also requires complete transcript consumption and rejects an
 otherwise valid proof with an appended byte in both cross directions.
 MockProver controls mutate each of the four constraint families independently.
+For a mutated witness, both MockProver implementations decide whether it
+satisfies the constraints. The verifiers must reject a failing mutant and accept
+a satisfying one.
 
-All witnesses and randomness are synthetic. Fixed ChaCha20 seeds are used for
-test-only `unsafe_setup` and proof generation. These SRS parameters are insecure
-and must never be used in production. No proof or witness artifacts are saved.
+All witnesses and randomness are synthetic. This harness uses fixed ChaCha20
+seeds for `unsafe_setup` and proof generation. The SRS parameters are insecure
+and must never be used in production. The harness saves no proofs or witnesses.
 
 `keygen_s` includes VK and PK generation, `prove_s` includes synthesis and proof
 creation, and `verify_s` includes checked VK/verifier-parameter decoding,
 transcript parsing and final pairing verification. SRS generation/serialization,
 full SRS reads, and extra cross/negative verification are outside these timings.
-These are single cold measurements, with Loki first; no speedup is implied.
+The harness takes one cold sample per backend, with Loki first. These timings do
+not establish a speed difference.
 
 ## Determinism policy
 
@@ -59,37 +76,45 @@ bytes. Lookup inequality alone is diagnostic. Stock
 `src/plonk/lookup/prover.rs:399-430` iterates a randomly seeded `HashMap` while
 placing leftover lookup table entries. A fixed proof RNG and one Rayon worker
 do not fix that map's iteration order, so even stock versus stock can differ.
-The first differing prefix is reported; a match before that offset is not
-automatically a claim about which transcript objects are deterministic.
+The first differing prefix is reported. A matching prefix alone does not show
+which transcript objects are deterministic.
 
 A no-lookup control retains the nonlinear gate, permutation, public input and
-challenge-dependent second phase. It must produce byte-identical proofs.
+challenge-dependent second phase. With the same seed and worker count, it must
+produce byte-identical proofs.
 Cross-verifier acceptance and VK/SRS identity are mandatory for every case.
 `LOKI_STRICT_LOOKUP_BYTES=1 ./loki-harness/run.sh 10` additionally fails on any
 lookup proof byte difference; this is intentionally likely to fail on stock.
-Unexpected differences still need investigation: lookup nondeterminism is not
-evidence that arbitrary prover changes are correct.
+Investigate byte differences outside the documented lookup nondeterminism.
+Lookup variation gives no evidence about unrelated prover changes.
 
-## CUDA handoff
+## Legacy sppark CUDA runs
 
-The harness reserves `cuda = []`, so `--features cuda` compiles before W4
-provides the parent feature. **It currently executes CPU code.** Once W4 lands,
-change exactly that line in this manifest to `cuda = ["loki/cuda"]` and refresh
-the lockfile if W4 adds dependencies. Stock stays on its default CPU features.
-Then the GPU runner can run the same `gate`, `bench`, and differential tests:
+The harness `cuda` feature enables the legacy `loki/cuda` MSM path; the stock
+dependency keeps its default CPU features. Set `LOKI_GPU_MSM_MIN=1` to route
+the small k10 fixture to the GPU. The build also needs the CUDA toolkit and
+`nvcc`; see the root README for adapter-specific toolkit variables.
 
 ```sh
-cargo run --release --manifest-path loki-harness/Cargo.toml --features cuda --bin gate -- 10
+RAYON_NUM_THREADS=1 LOKI_GPU_MSM_MIN=1 cargo run --release --manifest-path loki-harness/Cargo.toml --features cuda --bin gate -- 10
 ```
 
-GPU runs still need `RAYON_NUM_THREADS=1` for determinism; ensure the host runner
-exports it before running `gate` or `determinism` tests. A CUDA build alone does
-not prove GPU dispatch; confirm the W4 backend's dispatch telemetry separately.
+A CUDA build alone does not prove GPU dispatch; confirm the backend's dispatch
+telemetry separately.
+
+The separate `loki-gpu-backend` feature builds the P1 `loki-gpu` skeleton. Its
+current backend advertises no accelerated operations, so a passing harness gate
+with that feature checks compile and feature forwarding only. See
+[`LOKI-P1-SEAM.md`](../LOKI-P1-SEAM.md).
 
 ## Recorded validation (2026-10-24)
 
-The final `./loki-harness/run.sh` completed with exit 0 under DoctorWatson's
-global heavy lock: **72.78 seconds wall, 508,002,304 bytes peak RSS** (warm
+This record predates the P1 merge. The later default and seam gate results are
+in [`LOKI-P1-SEAM.md`](../LOKI-P1-SEAM.md). The P1 backend feature check is not
+a GPU proof run.
+
+The final `./loki-harness/run.sh` completed with exit 0 under the global heavy
+lock: 72.78 seconds wall, 508,002,304 bytes peak RSS (warm
 release build). All k10/k14/k17 proofs were accepted in both cross directions;
 full SRS roundtrips and independently generated VK bytes matched. All lookup
 proofs were 1,280 bytes, first differing at offset 192. All no-lookup controls
@@ -121,7 +146,8 @@ Additional commands actually run:
 - The same test command filtered to `reject_broken_constraints`: one test
   passed, exercising valid witnesses and four isolated mutations on each backend.
 - `CARGO_BUILD_JOBS=4 cargo check --offline --locked --manifest-path
-  loki-harness/Cargo.toml --features cuda --all-targets`: passed; CPU placeholder.
+  loki-harness/Cargo.toml --features cuda --all-targets`: passed as a compile
+  check; no GPU proof was run.
 - The benchmark command above with `-- 10`: exit 0; both JSON records validated
   for backend name, k, timing fields, and proof length.
 - `LOKI_STRICT_LOOKUP_BYTES=1 ./loki-harness/run.sh 10`: exit 1 as expected,
@@ -129,5 +155,4 @@ Additional commands actually run:
 - Formatting, `bash -n loki-harness/run.sh`, and `git diff --check`: passed.
 
 The appended-byte regression failed before the transcript fix and passed after
-it. A read-only review confirmed both transcript exhaustion and timeout child
-cleanup fixes; no remaining blockers were identified.
+it.

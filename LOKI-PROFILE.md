@@ -32,8 +32,8 @@ are all removed by `#[cfg(feature = "loki-profile")]`.
 
 All phase times are **exclusive wall time**, including waits for parallel work.
 The sum equals `total_wall_ns`; publication, mutex waiting at publication, and
-JSONL I/O occur after that measurement. `other` accounts for work outside the
-named phases, so a phase-table sum never silently omits orchestration time.
+JSONL I/O occur after that measurement. `other` records work outside the named
+phases, including orchestration.
 
 - `witness_synthesis.phase_N` includes witness allocation, floor-planner synthesis,
   rational inversion and blinding for phase N. `advice_commitments` times the

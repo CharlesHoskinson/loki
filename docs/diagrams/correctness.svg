@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 700" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Correctness checks and compatibility evidence</title>
+  <desc id="d">The documented compatibility cases, with the W2 harness, Lean specification, Quint models and W7 fuzzing around them.</desc>
+  <defs>
+    <marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#2fbf71"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1240" height="700" rx="12" fill="#0d1729"/>
+
+  <text x="40" y="46" font-size="18" font-weight="700" fill="#f4ecda">Correctness checks and compatibility evidence</text>
+
+  <g fill="none" stroke="#2fbf71" stroke-width="1.5" marker-end="url(#arrow-emerald)">
+    <path d="M420,220 L470,255"/>
+    <path d="M820,220 L770,255"/>
+    <path d="M420,470 L470,445"/>
+    <path d="M820,470 L770,445"/>
+  </g>
+  <g fill="none" stroke="#2a3a5a" stroke-width="1.2">
+    <path d="M560,445 L560,590 L440,590 L440,620"/>
+    <path d="M680,445 L680,590 L800,590 L800,620"/>
+  </g>
+
+  <rect x="400" y="255" width="440" height="190" rx="14" fill="#12203a" stroke="#e3b84e" stroke-width="2"/>
+  <g text-anchor="middle">
+    <text x="620" y="295" font-size="18" font-weight="700" fill="#e3b84e">Documented test cases</text>
+    <text x="620" y="334" font-size="13" fill="#f4ecda">Stock 0.8.3 accepts documented Loki fixtures</text>
+    <text x="620" y="368" font-size="14" fill="#f4ecda">Loki accepts the tested stock proofs</text>
+    <text x="620" y="402" font-size="14" fill="#f4ecda">W2 verifying-key bytes match</text>
+  </g>
+
+  <rect x="40" y="90" width="380" height="150" rx="12" fill="#12203a" stroke="#2fbf71" stroke-width="1.5"/>
+  <g text-anchor="middle">
+    <text x="230" y="123" font-size="16" font-weight="700" fill="#f4ecda">W2 cross-verify harness</text>
+    <text x="230" y="151" font-size="14" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">loki-harness/</text>
+    <text x="230" y="182" font-size="13" fill="#b9c3d4">Loki and crates.io 0.8.3 side by side</text>
+    <text x="230" y="207" font-size="13" fill="#8296b0">each verifies the other's proof</text>
+  </g>
+
+  <rect x="820" y="90" width="380" height="150" rx="12" fill="#12203a" stroke="#2fbf71" stroke-width="1.5"/>
+  <g text-anchor="middle">
+    <text x="1010" y="123" font-size="16" font-weight="700" fill="#f4ecda">Lean specification</text>
+    <text x="1010" y="151" font-size="14" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">~/repos/loki-lean</text>
+    <text x="1010" y="182" font-size="13" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">Refinement.loki_proof_eq_stock</text>
+    <text x="1010" y="207" font-size="13" fill="#8296b0">kernel correctness is not proved here</text>
+  </g>
+
+  <rect x="40" y="455" width="380" height="150" rx="12" fill="#12203a" stroke="#2fbf71" stroke-width="1.5"/>
+  <g text-anchor="middle">
+    <text x="230" y="488" font-size="16" font-weight="700" fill="#f4ecda">Quint models</text>
+    <text x="230" y="516" font-size="14" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">quint/</text>
+    <text x="230" y="547" font-size="13" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">transcript, gpu_dispatch</text>
+    <text x="230" y="572" font-size="13" fill="#8296b0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">pk_cache, scheduler</text>
+  </g>
+
+  <rect x="820" y="455" width="380" height="150" rx="12" fill="#12203a" stroke="#2fbf71" stroke-width="1.5"/>
+  <g text-anchor="middle">
+    <text x="1010" y="488" font-size="16" font-weight="700" fill="#f4ecda">W7 differential fuzzing</text>
+    <text x="1010" y="516" font-size="14" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">fuzz/</text>
+    <text x="1010" y="547" font-size="13" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">msm_diff, ntt_diff, proof_roundtrip</text>
+    <text x="1010" y="572" font-size="13" fill="#8296b0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">soundness, proof_parse</text>
+  </g>
+
+  <rect x="275" y="620" width="330" height="50" rx="9" fill="#12203a" stroke="#2a3a5a"/>
+  <rect x="635" y="620" width="330" height="50" rx="9" fill="#12203a" stroke="#2a3a5a"/>
+  <g text-anchor="middle">
+    <text x="440" y="641" font-size="13" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">tests-stock/</text>
+    <text x="440" y="660" font-size="12" fill="#8296b0">stock verifier reads Loki proofs</text>
+    <text x="800" y="641" font-size="13" fill="#b9c3d4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">probes/a3-stock-verify/</text>
+    <text x="800" y="660" font-size="12" fill="#8296b0">saved Sherlock A3 parent proof</text>
+  </g>
+
+</svg>

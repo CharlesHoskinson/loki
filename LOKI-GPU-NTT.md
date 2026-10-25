@@ -28,7 +28,7 @@ Execution checklist:
 - [x] Add optional sppark backend, checked roots, serialized FFI and feature dispatch.
 - [x] Compare all five domain conversion entry points on random, zero, one,
   maximum scalar, impulse and mixed edge inputs, transform logs 10 through 23,
-  including extension factors 1, 2 and 4. Check real GPU call counts.
+  with extension factors 1, 2 and 4. Check real GPU call counts.
 - [x] Run a k=17 proof through an unmodified crates.io 0.8.3 CPU verifier using
   serialized public SRS/VK and fresh proof randomness. Benchmark quotient spans
   and end-to-end proving against an explicitly selected CPU backend in the
@@ -37,9 +37,9 @@ Execution checklist:
 
 ## Result
 
-All 1260 entry-point comparisons passed for transform logs10..23, random and
-edge inputs, and extension factors1/2/4. The largest cases ran as 18 separate
-exit-0 jobs. Three GPU k17 proofs were accepted by the unmodified stock CPU
+All 1260 entry-point comparisons passed for transform logs 10 through 23, random
+and edge inputs, and extension factors 1, 2 and 4. The largest cases ran as 18
+separate jobs with exit 0. Three GPU k17 proofs were accepted by the unmodified stock CPU
 verifier; the feature-disabled regression also passed. Warm quotient/proving
 medians improved by 1.41x/1.11x on the synthetic fixture, with the limitations
 below. Device residency remains a later step.
@@ -116,7 +116,7 @@ secret is serialized. The serialized public SRS and VK are read by the
 **unmodified crates.io midnight-proofs 0.8.3** verifier with the same Blake2b
 transcript. Proof randomness is fresh `OsRng` on every invocation.
 
-Three CPU-mode proofs and three GPU-mode proofs were accepted by stock; every
+Three CPU-mode proofs and three GPU-mode proofs were accepted by stock. Every
 wrong-public-input mutation was rejected. Each GPU proof completed 17 NTTs;
 CPU-mode proofs completed zero. Each proof was 1344 bytes. This is verifier
 compatibility, not a claim of byte identity under fixed randomness.
@@ -198,10 +198,11 @@ has not been independently benchmarked.
   separate setup/SRS from the controlled paired benchmark).
 - The original monolithic log23 job also stopped without an exit result during
   its factor-one impulse case. The runner subsequently completed other jobs.
-  The largest matrix is now split into 18 independently runnable cases (six
+  The largest matrix is split into 18 independently runnable cases (six
   patterns times three extension factors); each still checks all five entry
-  points and exact successful GPU-call deltas. This is a test scheduling change,
-  with no arithmetic/backend change. Interrupted logs do not count as passes.
+  points and exact successful GPU-call deltas. The change affects test
+  scheduling; arithmetic and backend code are unchanged. Interrupted logs do
+  not count as passes.
 - All 18 independent log23 cases subsequently passed with explicit runner exit
   0 and passing test footers, completing the requested 1260 comparisons across
   all sizes. [LOKI-GPU-NTT-EQUALITY.csv](LOKI-GPU-NTT-EQUALITY.csv) records all 20
@@ -210,9 +211,8 @@ has not been independently benchmarked.
   The cause of the two interrupted combined jobs remains undiagnosed; no failure
   or mismatch output was returned for them. Long combined-job reliability
   remains unverified.
-- Independent read-only review found no critical or important defects. Its two
-  minor findings (exact call-count assertions and architecture configuration)
-  were addressed, followed by a fresh feature build.
+- No critical or important defect remained. The exact call-count assertions and
+  architecture configuration were corrected before a fresh feature build.
 
 Device-resident columns and `evaluate_numerator` fusion are deferred. Coset
 multiplications, numerator evaluation, vanishing division and all MSMs remain

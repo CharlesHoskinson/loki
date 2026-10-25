@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 640" width="1180" height="640" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">Loki platform map</title>
+  <desc id="desc">Loki has an implemented CPU path and opt-in sppark CUDA MSM and NTT. The loki-gpu P1 API seam and P2 runtime are implemented, and typed dispatch is integrated in Loki main. Backend arithmetic remains unsupported; P4 resident NTT is in progress. The wgpu / WGSL, Intel, AMD, Apple, Mobile, and WASM backends are planned. Tested Loki proofs are accepted by the stock midnight-proofs 0.8.3 verifier, and the W2 harness reports equal VK bytes. The lower planned row has no connectors.</desc>
+  <defs>
+    <marker id="arrow-gold" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#e3b84e"/>
+    </marker>
+    <marker id="arrow-emerald" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#2fbf71"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1180" height="640" fill="#0d1729"/>
+
+  <text x="30" y="36" font-size="14" font-weight="700" fill="#f4ecda">Loki platform map</text>
+  <text x="30" y="60" font-size="12.5" fill="#a9b6cc">Same proof. Any shape. Solid = implemented. Dashed violet = TODO.</text>
+
+  <g fill="none" stroke-width="1.5" stroke-linejoin="round">
+    <path d="M590,190 V144" stroke="#e3b84e" marker-end="url(#arrow-gold)"/>
+    <path d="M130,290 H1050 M130,290 V320 M590,290 V320 M1050,290 V320" stroke="#a9b6cc"/>
+    <path d="M590,290 V258" stroke="#2fbf71" marker-end="url(#arrow-emerald)"/>
+  </g>
+
+  <g text-anchor="middle">
+    <rect x="340" y="90" width="500" height="54" rx="12" fill="#2a3a5a" stroke="#e3b84e" stroke-width="1.5"/>
+    <text x="590" y="112" font-size="14" font-weight="700" fill="#f4ecda">Stock midnight-proofs 0.8.3 verifier</text>
+    <text x="590" y="132" font-size="12" fill="#a9b6cc">tested GPU proofs accepted; W2 VK bytes match</text>
+
+    <rect x="240" y="190" width="700" height="68" rx="14" fill="#2a3a5a" stroke="#2fbf71" stroke-width="1.5"/>
+    <text x="590" y="216" font-size="14" font-weight="700" fill="#f4ecda">Loki prover + backend API</text>
+    <text x="590" y="239" font-size="12.5" fill="#a9b6cc">CPU default; legacy sppark CUDA MSM/NTT; new GPU arithmetic unsupported</text>
+
+    <rect x="30" y="320" width="200" height="100" rx="14" fill="#2a3a5a" stroke="#2fbf71" stroke-width="1.5"/>
+    <text x="130" y="347" font-size="14" font-weight="700" fill="#f4ecda">CPU</text>
+    <text x="130" y="373" font-size="12" fill="#a9b6cc">stock algorithms, BLST</text>
+    <text x="130" y="397" font-size="12" fill="#2fbf71">implemented, reference</text>
+
+    <rect x="490" y="320" width="200" height="100" rx="14" fill="#2a3a5a" stroke="#2fbf71" stroke-width="1.5"/>
+    <text x="590" y="347" font-size="14" font-weight="700" fill="#f4ecda">NVIDIA CUDA</text>
+    <text x="590" y="373" font-size="12" fill="#a9b6cc">RTX 5090, sm_120</text>
+    <text x="590" y="397" font-size="12" fill="#2fbf71">implemented: MSM, NTT</text>
+
+    <rect x="950" y="320" width="200" height="100" rx="14" fill="#2a3a5a" stroke="#a58bd9" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="1050" y="347" font-size="14" font-weight="700" fill="#f4ecda">wgpu / WGSL</text>
+    <text x="1050" y="373" font-size="12" fill="#a9b6cc">32-bit limbs, no u64</text>
+    <text x="1050" y="397" font-size="12" fill="#a58bd9">TODO, portable baseline</text>
+
+    <text x="590" y="458" font-size="12.5" fill="#a9b6cc">loki-gpu: P1/P2 implemented; typed dispatch integrated; arithmetic unsupported; P4 in progress</text>
+
+    <g fill="#2a3a5a" stroke="#a58bd9" stroke-width="1.5" stroke-dasharray="6 4">
+      <rect x="30" y="480" width="200" height="80" rx="14"/>
+      <rect x="260" y="480" width="200" height="80" rx="14"/>
+      <rect x="490" y="480" width="200" height="80" rx="14"/>
+      <rect x="720" y="480" width="200" height="80" rx="14"/>
+      <rect x="950" y="480" width="200" height="80" rx="14"/>
+    </g>
+
+    <text x="130" y="503" font-size="14" font-weight="700" fill="#f4ecda">Intel</text>
+    <text x="130" y="525" font-size="11.5" fill="#a9b6cc">SYCL, Level Zero</text>
+    <text x="130" y="545" font-size="11.5" fill="#a9b6cc">Arc, Data Center GPU Max</text>
+
+    <text x="360" y="503" font-size="14" font-weight="700" fill="#f4ecda">AMD</text>
+    <text x="360" y="525" font-size="11.5" fill="#a9b6cc">ROCm / HIP</text>
+    <text x="360" y="545" font-size="11.5" fill="#a9b6cc">CDNA, RDNA</text>
+
+    <text x="590" y="503" font-size="14" font-weight="700" fill="#f4ecda">Apple</text>
+    <text x="590" y="525" font-size="11.5" fill="#a9b6cc">Metal, unified memory</text>
+    <text x="590" y="545" font-size="11.5" fill="#a9b6cc">M-series</text>
+
+    <text x="820" y="503" font-size="14" font-weight="700" fill="#f4ecda">Mobile</text>
+    <text x="820" y="525" font-size="11.5" fill="#a9b6cc">Metal iOS, Vulkan Android</text>
+    <text x="820" y="545" font-size="11.5" fill="#a9b6cc">leaf proofs, thermal limits</text>
+
+    <text x="1050" y="503" font-size="14" font-weight="700" fill="#f4ecda">WASM</text>
+    <text x="1050" y="525" font-size="11.5" fill="#a9b6cc">wasm32 CPU, WebGPU</text>
+    <text x="1050" y="545" font-size="11.5" fill="#a9b6cc">4 GiB memory limit</text>
+  </g>
+
+  <text x="30" y="600" font-size="12" fill="#a9b6cc">Every port passes the same gates as CUDA: arithmetic, W7 differential, stock verifier, failure injection, chain latency.</text>
+</svg>

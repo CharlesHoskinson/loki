@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="720" viewBox="0 0 1240 720" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Loki prover pipeline: create_proof</title>
+  <desc id="d">Prover phases in order, with CPU or GPU-capable placement.</desc>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8296b0"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1240" height="720" rx="12" fill="#0d1729"/>
+  <text x="30" y="48" font-size="18" font-weight="700" fill="#f4ecda">Loki prover pipeline: <tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">create_proof</tspan></text>
+
+  <!-- Consecutive phases; row transitions stay in the margins and row gutters. -->
+  <g fill="none" stroke="#2a3a5a" stroke-width="1.5" marker-end="url(#ah)">
+    <path d="M189,147 H231.8"/>
+    <path d="M393.8,147 H436.6"/>
+    <path d="M616.6,147 H659.4"/>
+    <path d="M855.4,147 H898.2"/>
+    <path d="M974.2,147 H1017"/>
+    <path d="M1213,147 H1224 V232 H16 V317 H27"/>
+    <path d="M147,317 H196.6"/>
+    <path d="M392.6,317 H442.2"/>
+    <path d="M622.2,317 H671.8"/>
+    <path d="M833.8,317 H883.4"/>
+    <path d="M1087.4,317 H1137"/>
+    <path d="M1213,317 H1224 V402 H16 V487 H27"/>
+    <path d="M189,487 H207"/>
+    <path d="M387,487 H405"/>
+    <path d="M609,487 H627"/>
+    <path d="M823,487 H841"/>
+    <path d="M907,487 H925"/>
+    <path d="M1047,487 H1065"/>
+  </g>
+
+  <!-- Row 1 -->
+  <g fill="#12203a" stroke-width="1.5">
+    <rect x="30" y="110" width="156" height="74" rx="9" stroke="#2a3a5a"/>
+    <rect x="234.8" y="110" width="156" height="74" rx="9" stroke="#4fc1b5"/>
+    <rect x="439.6" y="110" width="174" height="74" rx="9" stroke="#2a3a5a"/>
+    <rect x="662.4" y="110" width="190" height="74" rx="9" stroke="#4fc1b5"/>
+    <rect x="901.2" y="110" width="70" height="74" rx="9" stroke="#e3b84e"/>
+    <rect x="1020" y="110" width="190" height="74" rx="9" stroke="#4fc1b5"/>
+  </g>
+  <g font-size="14" font-weight="700" fill="#f4ecda" text-anchor="middle">
+    <text x="108" y="140">Setup</text>
+    <text x="312.8" y="140">Instances</text>
+    <text x="526.6" y="140">Witness synthesis</text>
+    <text x="757.4" y="140">Advice commitments</text>
+    <text x="936.2" y="152">theta</text>
+    <text x="1115" y="140">Lookup preparation</text>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" text-anchor="middle">
+    <text x="108" y="162" fill="#8296b0">CPU</text>
+    <text x="312.8" y="162" fill="#4fc1b5">CPU + GPU MSM</text>
+    <text x="526.6" y="162" fill="#8296b0">CPU</text>
+    <text x="757.4" y="162" fill="#4fc1b5">CPU + GPU MSM</text>
+    <text x="1115" y="162" fill="#4fc1b5">CPU + GPU MSM/NTT</text>
+  </g>
+
+  <!-- Row 2 -->
+  <g fill="#12203a" stroke-width="1.5">
+    <rect x="30" y="280" width="114" height="74" rx="9" stroke="#e3b84e"/>
+    <rect x="199.6" y="280" width="190" height="74" rx="9" stroke="#4fc1b5"/>
+    <rect x="445.2" y="280" width="174" height="74" rx="9" stroke="#4fc1b5"/>
+    <rect x="674.8" y="280" width="156" height="74" rx="9" stroke="#4fc1b5"/>
+    <rect x="886.4" y="280" width="198" height="74" rx="9" stroke="#4fc1b5"/>
+    <rect x="1140" y="280" width="95" height="74" rx="9" stroke="#e3b84e"/>
+  </g>
+  <g font-size="14" font-weight="700" fill="#f4ecda" text-anchor="middle">
+    <text x="87" y="322" font-size="13">beta, gamma</text>
+    <text x="294.6" y="310">Permutation products</text>
+    <text x="532.2" y="310">Lookup products</text>
+    <text x="752.8" y="310">Trash</text>
+    <text x="985.4" y="310">Vanishing random poly</text>
+    <text x="1187.5" y="312">y</text>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#4fc1b5" text-anchor="middle">
+    <text x="294.6" y="332">CPU + GPU MSM/NTT</text>
+    <text x="532.2" y="332">CPU + GPU MSM/NTT</text>
+    <text x="752.8" y="332">CPU + GPU MSM</text>
+    <text x="985.4" y="332">CPU + GPU MSM</text>
+    <text x="1187.5" y="341">CPU + GPU NTT</text>
+  </g>
+
+  <!-- Row 3: the x challenge immediately precedes Evaluations. -->
+  <g fill="#12203a" stroke-width="1.5">
+    <rect x="30" y="450" width="156" height="74" rx="9" stroke="#4fc1b5"/>
+    <rect x="210" y="450" width="174" height="74" rx="9" stroke="#2a3a5a"/>
+    <rect x="408" y="450" width="198" height="74" rx="9" stroke="#4fc1b5"/>
+    <rect x="630" y="450" width="190" height="74" rx="9" stroke="#4fc1b5"/>
+    <rect x="844" y="450" width="60" height="74" rx="9" stroke="#e3b84e"/>
+    <rect x="928" y="450" width="116" height="74" rx="9" stroke="#2a3a5a"/>
+    <rect x="1068" y="450" width="142" height="74" rx="9" stroke="#4fc1b5"/>
+  </g>
+  <g font-size="14" font-weight="700" fill="#f4ecda" text-anchor="middle">
+    <text x="108" y="480">Column extension</text>
+    <text x="297" y="480">Quotient numerator</text>
+    <text x="507" y="480">Quotient construction</text>
+    <text x="725" y="480" font-size="13">Quotient commitments</text>
+    <text x="874" y="492">x</text>
+    <text x="986" y="480">Evaluations</text>
+    <text x="1139" y="480">Multiopen</text>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" text-anchor="middle">
+    <text x="108" y="502" fill="#4fc1b5">CPU + GPU NTT</text>
+    <text x="297" y="502" fill="#8296b0">CPU only</text>
+    <text x="507" y="502" fill="#4fc1b5">CPU + GPU NTT</text>
+    <text x="725" y="502" fill="#4fc1b5">CPU + GPU MSM</text>
+    <text x="986" y="502" fill="#8296b0">CPU</text>
+    <text x="1139" y="502" fill="#4fc1b5">CPU + GPU MSM</text>
+  </g>
+
+  <rect x="30" y="574" width="1180" height="56" rx="9" fill="#12203a" stroke="#2a3a5a" stroke-width="1.5"/>
+  <text x="620" y="607" font-size="13" fill="#b9c3d4" text-anchor="middle">Fiat-Shamir transcript stays on CPU and follows stock order for tested supported shapes. No backend sees the transcript or RNG.</text>
+  <text x="620" y="649" font-size="11" fill="#8296b0" text-anchor="middle">The P1 seam is on main; loki-gpu MSM, NTT, quotient and SRS operations return Unsupported.</text>
+
+  <g font-size="12" fill="#b9c3d4">
+    <rect x="30" y="662" width="16" height="12" rx="3" fill="#12203a" stroke="#4fc1b5" stroke-width="1.5"/>
+    <text x="56" y="673">GPU path exists on main only with features <tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">cuda</tspan> (MSM) and <tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">cuda-ntt</tspan> (NTT)</text>
+    <rect x="850" y="662" width="16" height="12" rx="3" fill="#12203a" stroke="#2a3a5a" stroke-width="1.5"/>
+    <text x="876" y="673">CPU only</text>
+    <rect x="990" y="662" width="16" height="12" rx="3" fill="#12203a" stroke="#e3b84e" stroke-width="1.5"/>
+    <text x="1016" y="673">Fiat-Shamir challenge</text>
+  </g>
+</svg>
