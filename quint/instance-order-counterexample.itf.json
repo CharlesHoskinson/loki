@@ -1,0 +1,184 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+    "source": "quint/transcript.qnt",
+    "status": "violation",
+    "description": "Created by Quint on Sat Oct 24 2026 18:28:38 GMT-0600 (Mountain Daylight Time)",
+    "timestamp": 1792888118098
+  },
+  "vars": [
+    "audit"
+  ],
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "audit": {
+        "layout": {
+          "committedColumns": {
+            "#bigint": "1"
+          },
+          "plainColumns": {
+            "#bigint": "1"
+          },
+          "proofs": {
+            "#bigint": "2"
+          },
+          "values": {
+            "#bigint": "1"
+          }
+        },
+        "prover": [
+          {
+            "column": {
+              "#bigint": "0"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "commitment",
+            "proof": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "column": {
+              "#bigint": "1"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "length",
+            "proof": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "column": {
+              "#bigint": "1"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "value",
+            "proof": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "column": {
+              "#bigint": "0"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "commitment",
+            "proof": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "column": {
+              "#bigint": "1"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "length",
+            "proof": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "column": {
+              "#bigint": "1"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "value",
+            "proof": {
+              "#bigint": "1"
+            }
+          }
+        ],
+        "verifier": [
+          {
+            "column": {
+              "#bigint": "0"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "commitment",
+            "proof": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "column": {
+              "#bigint": "0"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "commitment",
+            "proof": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "column": {
+              "#bigint": "1"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "length",
+            "proof": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "column": {
+              "#bigint": "1"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "value",
+            "proof": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "column": {
+              "#bigint": "1"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "length",
+            "proof": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "column": {
+              "#bigint": "1"
+            },
+            "index": {
+              "#bigint": "0"
+            },
+            "kind": "value",
+            "proof": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

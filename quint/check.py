@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -53,6 +54,10 @@ def main():
             if phase == "simulation" and any(counts.get(w, 0) == 0 for w in witnesses):
                 raise SystemExit(f"Missing reachable witness: {log}; {counts}")
             print(f"  passed in {record['seconds']}s {counts}", flush=True)
+
+    if args.model is None or "transcript" in args.model:
+        subprocess.run([sys.executable, str(ROOT / "quint/check_instances.py"),
+                        "--samples", str(args.samples)], cwd=ROOT, check=True)
 
 
 if __name__ == "__main__":

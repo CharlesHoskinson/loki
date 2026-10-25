@@ -117,3 +117,52 @@ module transcript {
   val multiopenReached = state.log.foldl(false, (yes, e) => yes or e.label == "multiopen_x4")
   val phased = state.log.foldl(false, (yes, e) => yes or e.label == "phase0")
 }
+
+// Independent audit of stock prover vs stock verifier instance absorption.
+// Source: prover.rs compute_instances (proof-major), verifier.rs parse_trace
+// (all commitments globally, then all plain instances). Mirrors Lean stockTrace.
+module transcript_instances {
+  type Layout = { proofs: int, committedColumns: int, plainColumns: int, values: int }
+  type Absorption = { kind: str, proof: int, column: int, index: int }
+  type Audit = { layout: Layout, prover: List[Absorption], verifier: List[Absorption] }
+  var audit: Audit
+  val layout = audit.layout
+  pure def committedFor(l: Layout, p: int): List[Absorption] =
+    range(0, l.committedColumns).foldl(List(), (acc, c) =>
+      acc.append({ kind: "commitment", proof: p, column: c, index: 0 }))
+  pure def plainFor(l: Layout, p: int): List[Absorption] =
+    range(l.committedColumns, l.committedColumns + l.plainColumns)
+      .foldl(List(), (acc, c) => acc
+        .append({ kind: "length", proof: p, column: c, index: 0 })
+        .concat(range(0, l.values).foldl(List(), (values, i) =>
+          values.append({ kind: "value", proof: p, column: c, index: i }))))
+  pure def stockInstanceOrder(l: Layout): List[Absorption] =
+    range(0, l.proofs).foldl(List(), (acc, p) =>
+      acc.concat(committedFor(l, p)).concat(plainFor(l, p)))
+  pure def verifierInstanceOrder(l: Layout): List[Absorption] =
+    range(0, l.proofs).foldl(List(), (acc, p) => acc.concat(committedFor(l, p)))
+      .concat(range(0, l.proofs).foldl(List(), (acc, p) => acc.concat(plainFor(l, p))))
+  pure def mixedBatch(l: Layout): bool =
+    l.proofs > 1 and l.committedColumns > 0 and l.plainColumns > 0
+  pure def ordersAgree(l: Layout): bool = stockInstanceOrder(l) == verifierInstanceOrder(l)
+  action initCase(l: Layout): bool = audit' = { layout: l,
+    prover: stockInstanceOrder(l), verifier: verifierInstanceOrder(l) }
+  action init = {
+    nondet proofs = 1.to(3).oneOf()
+    nondet committedColumns = 0.to(2).oneOf()
+    nondet plainColumns = 0.to(2).oneOf()
+    nondet values = 0.to(2).oneOf()
+    initCase({ proofs: proofs, committedColumns: committedColumns,
+      plainColumns: plainColumns, values: values })
+  }
+  action mixedCounterexample = initCase({ proofs: 2, committedColumns: 1,
+    plainColumns: 1, values: 1 })
+  // This is a configuration audit, not another execution of the prover.
+  action step = audit' = audit
+  val proverEqualsVerifier = audit.prover == audit.verifier
+  val mismatchExactlyMixedBatch = proverEqualsVerifier iff not(mixedBatch(layout))
+  val allPlain = layout.committedColumns == 0 and layout.plainColumns > 0
+  val allCommitted = layout.plainColumns == 0 and layout.committedColumns > 0
+  val singleMixed = layout.proofs == 1 and layout.committedColumns > 0 and layout.plainColumns > 0
+  val multiMixed = mixedBatch(layout) and not(proverEqualsVerifier)
+}

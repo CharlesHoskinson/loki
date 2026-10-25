@@ -6,10 +6,15 @@ four simulator threads. Rust builds used `CARGO_BUILD_JOBS=4`; proof tests used
 `RAYON_NUM_THREADS=2` and ran serially.
 
 **Result:** all four models passed 10,000-sample safety campaigns and their
-reachability witnesses. The isolated Rust suite passed 14 tests, including real
+reachability witnesses. The isolated Rust suite passed 15 tests, including real
 transcript replay, W4 host-cache replay and W6 PK-cache replay. This establishes
 bounded sampled safety and the listed implementation checks. It does not prove
 GPU arithmetic, scheduler liveness, or universal fixed-RNG proof-byte equality.
+
+A separate stock prover/verifier order audit deliberately fails for mixed
+committed/plain columns with multiple proofs; the real Rust verifier rejects
+those cases. That stock defect is reproduced below, rather than hidden inside
+the passing safety campaigns.
 
 No production source, root Cargo feature, manifest or lockfile changed.
 
@@ -34,8 +39,11 @@ The model separates evaluation groups and per-proof query indexes. The fixtures
 cover four circuit families: plain, lookup/permutation, second-phase advice, and
 additive-selector trash. One/two proofs and committed/plain instances are varied.
 The type supports three advice phases, but the concrete Rust fixtures exercise
-the first two. Instance fixtures have one column; mixed committed/plain columns,
-arbitrary query rotations, and arbitrary circuit shapes need additional fixtures.
+the first two. The original random fixtures have one instance column. The additional
+`transcript_instances` module in the same file models multiple committed/plain
+columns and **both** stock loops. A separate Rust two-column fixture confirms
+the mismatch. Arbitrary query rotations and arbitrary circuit shapes still need
+additional fixtures.
 The model does not establish equality of every commitment payload by itself;
 the real stock-verifier comparison supplies that check for these fixtures.
 
@@ -72,8 +80,9 @@ quint run quint/MODEL.qnt --backend rust --n-threads 4 --seed 20261024 \
 Steps are 180 for transcript, 120 for dispatch/cache, and 1,000 for scheduler.
 The `safety` conjunction checks every named safety invariant together. Test
 selection deliberately ends in `Test$`: Quint's `--match '.*'` also selects
-imported non-test definitions. All 27 intended scenario tests ran: 5 transcript,
-8 dispatch, 7 cache, 7 scheduler. Machine-readable commands, results and counts
+imported non-test definitions. All 27 main scenario tests ran: 5 transcript,
+8 dispatch, 7 cache, 7 scheduler. Six additional instance-order audit tests also
+ran, including a finite exhaustive check of all 81 layouts in the audit bounds. Machine-readable commands, results and counts
 are in `quint/results.json`; local full logs are under `.artifacts/w8/`.
 
 ## Nonvacuity and fault controls
@@ -107,6 +116,54 @@ Names: `transcript` (early squeeze), `gpu` (content validation bypass), `pk_buil
 These are expected failures, not passing safety runs. The individual negative
 scenario tests also reject early publication, changed key components, duplicate
 completion and admission of two heavy jobs.
+
+## Stock prover/verifier instance-order counterexample
+
+The coordinator supplied the Lean `stockTrace`/`verifierTrace` finding from
+`LokiLean/Transcript.lean`. Source inspection and real Rust tests confirm it:
+`compute_instances` processes committed then plain columns **within each proof**;
+`parse_trace` absorbs committed columns **across all proofs first**, followed by
+all plain lengths/values. For two proofs with one column of each kind:
+
+```text
+prover:   VK, C0, length(P0), P0, C1, length(P1), P1
+verifier: VK, C0, C1, length(P0), P0, length(P1), P1
+```
+
+Run the complete audit with `python3 quint/check_instances.py` (also invoked by
+`check.py` for transcript runs). Its checks are:
+
+```sh
+quint test quint/transcript_instances_test.qnt --match '.*Test$' --max-samples 1
+quint run quint/transcript.qnt --main transcript_instances \
+  --invariant mismatchExactlyMixedBatch --max-samples 10000 --max-steps 1 \
+  --seed 20261024 --n-threads 4 \
+  --witnesses allPlain allCommitted singleMixed multiMixed --verbosity 1
+quint run quint/transcript.qnt --main transcript_instances \
+  --init mixedCounterexample --invariant proverEqualsVerifier \
+  --max-samples 10000 --max-steps 1 \
+  --seed 20261024 --n-threads 4 \
+  --out-itf .artifacts/w8/instance-order-counterexample.itf.json --verbosity 1
+```
+
+The classification invariant passes 10,000 samples and the equality invariant
+returns **exit 1, expected**. The mismatch is exactly
+`proofs > 1 && committedColumns > 0 && plainColumns > 0` within the checked symbolic layout
+bounds, including empty plain columns (their length is still absorbed). Six
+deterministic tests check controls and all 81 combinations of proofs 1..3,
+committed/plain columns 0..2, and values per plain column 0..2. The checked ITF
+counterexample is retained at `quint/instance-order-counterexample.itf.json` and
+contains only symbolic public event identities. Use `check_instances.py
+--update-counterexample` to refresh that fixture explicitly; ordinary checks write
+new traces only under `.artifacts/w8`. Configuration-coverage counts,
+not execution-progress witnesses, are recorded separately in `quint/results.json`.
+
+`diagnose_stock_mixed_instance_order` checks the real stock Rust matrix of 1..3
+proofs and committed prefix 0..2 for a two-column circuit. Seven controls are
+accepted. The two mixed multi-proof cases differ at absorption index 2 and are
+rejected by the unchanged stock verifier. The test passes by observing this
+known defect; it does not fix it. Grouping all commitments globally in the
+prover would change stock transcript/proof bytes, so no production fix is made.
 
 ## Rust model-based tests
 
@@ -150,20 +207,30 @@ See `quint/mbt/README.md` for pinned-source requirements.
   including disk reuse, cross-process cold fill, identity separation, corruption
   rejection and eviction with caller-owned keys. The public setup API reused its
   key. Temporary files contain only generated public proving material.
+- **Mixed-instance diagnostic:** nine real two-column cases reproduce the
+  seven accepted controls and two expected stock rejections described above.
 - **Scheduler:** executable proposal and scenario tests only; there is no
   production scheduler implementation to replay.
 
-The combined suite passed **14 tests in 16.65 seconds**, without compiler
+The combined suite passed **15 tests in 15.00 seconds**, without compiler
 warnings. The unchanged default `cargo check --locked` passed, and stock
 `plonk_api` passed its one test. These are validation timings, not prover or GPU
 performance benchmarks. In the tiny imported W6 k8 fixture, cold cache fill was
-16.421 ms, four memory hits 0.313 ms, disk reload 17.625 ms, and keygen count one;
-its two 2,528-byte proofs were generated and checked in 43.164 ms and 41.371 ms. These small-fixture
+15.701 ms, four memory hits 0.393 ms, disk reload 14.548 ms, and keygen count one;
+its two 2,528-byte proofs were generated and checked in 37.463 ms and 33.927 ms. These small-fixture
 measurements do not predict recl9 parent-proof performance.
 
 ## Implementation mismatches and remaining obligations
 
-1. **CRITICAL — stock fixed-RNG proof bytes are not a universal oracle.** Stock
+1. **CRITICAL — mixed-instance multi-proof stock rejection.** Prover and
+   verifier instance absorption disagree when multiple proofs contain both
+   committed and plain columns. The model equality audit and real Rust matrix
+   reproduce this; the exact source-order boundary is checked. Reported to
+   `#loki` as `CRITICAL W8 mixed-instance stock rejection`, with acknowledgment
+   to the coordinator. This is a pre-existing compatibility defect, not a GPU
+   optimization introduced by W8. Changes require a protocol compatibility
+   decision; no production source was changed.
+2. **CRITICAL — stock fixed-RNG proof bytes are not a universal oracle.** Stock
    `src/plonk/lookup/prover.rs` constructs a randomized `HashMap` of leftover
    lookup table values and iterates it to place values in the permuted table
    polynomial. A fixed proof RNG and fixed Rayon count do not fix this ordering.
@@ -173,13 +240,13 @@ measurements do not predict recl9 parent-proof performance.
    Reported to `#loki` as `CRITICAL W8 fixed-RNG byte oracle`; no production fix
    or protocol change was made here. Verifier acceptance, encoding and operation
    ordering remain mandatory. Full-family byte equality is **not established**.
-2. **W5 NTT error policy differs from the requested total fallback.** W5's
+3. **W5 NTT error policy differs from the requested total fallback.** W5's
    `8e1a33c` adapter preserves input on error but the domain adapter panics on an
    eligible GPU failure. Its owner confirmed this deliberate fail-stop policy.
    The model specifies total CPU fallback; W8 does not claim W5 satisfies it.
    No NTT implementation MBT or GPU arithmetic differential ran in this package.
    A coordinator decision or a fallback/strict-mode integration change is needed.
-3. **W6 use requires matching immutable relation/params.** The cache validates
+4. **W6 use requires matching immutable relation/params.** The cache validates
    the full key and loaded PK/VK binding, including more identity fields than the
    model (source/type/relation/VK). Its public `prove` preserves stdlib's caller
    assumption that the relation and parameters match the key; it does not reject
@@ -187,7 +254,7 @@ measurements do not predict recl9 parent-proof performance.
    matching values. At-most-once assumes a successful retained disk publication;
    crashes, failed writes, manual deletion and eviction of disk files are outside
    this guarantee. Hash collisions are excluded by the model.
-4. **Scheduler liveness has no temporal proof.** Apalache 0.56.1 is installed.
+5. **Scheduler liveness has no temporal proof.** Apalache 0.56.1 is installed.
    `quint verify quint/scheduler.qnt --temporal admittedEventuallyFinish
    --max-steps 24` failed before checking with
    `Handling fairness is not supported yet!`. The specification retains explicit

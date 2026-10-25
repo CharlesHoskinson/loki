@@ -18,8 +18,8 @@
       "RAYON_NUM_THREADS": "2"
     },
     "exit": 0,
-    "tests": 14,
-    "seconds": 16.65,
+    "tests": 15,
+    "seconds": 15.0,
     "transcriptTraces": 24,
     "transcriptOperations": 1022,
     "noLookupByteEqual": 9,
@@ -28,7 +28,81 @@
     "w4ConcurrentCallers": 8,
     "w6MbtTraces": 4,
     "w6ColdCallersPerBuild": 3,
-    "gpuKernelsExecuted": false
+    "gpuKernelsExecuted": false,
+    "instanceOrderCases": [
+      {
+        "proofs": 1,
+        "committed": 0,
+        "plain": 2,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 1,
+        "committed": 1,
+        "plain": 1,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 1,
+        "committed": 2,
+        "plain": 0,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 2,
+        "committed": 0,
+        "plain": 2,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 2,
+        "committed": 1,
+        "plain": 1,
+        "absorbedEqual": false,
+        "stockAccepted": false,
+        "firstDifference": 2
+      },
+      {
+        "proofs": 2,
+        "committed": 2,
+        "plain": 0,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 3,
+        "committed": 0,
+        "plain": 2,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 3,
+        "committed": 1,
+        "plain": 1,
+        "absorbedEqual": false,
+        "stockAccepted": false,
+        "firstDifference": 2
+      },
+      {
+        "proofs": 3,
+        "committed": 2,
+        "plain": 0,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      }
+    ]
   },
   "seed": "20261024",
   "results": [
@@ -41,7 +115,7 @@
         "quint/transcript.qnt"
       ],
       "exit": 0,
-      "seconds": 2.087,
+      "seconds": 0.63,
       "witnesses": {},
       "log": ".artifacts/w8/transcript-typecheck.log"
     },
@@ -58,7 +132,7 @@
         "1"
       ],
       "exit": 0,
-      "seconds": 2.055,
+      "seconds": 0.788,
       "witnesses": {},
       "log": ".artifacts/w8/transcript-test.log"
     },
@@ -91,7 +165,7 @@
         "1"
       ],
       "exit": 0,
-      "seconds": 198.101,
+      "seconds": 153.366,
       "witnesses": {
         "complete": 10000,
         "batched": 9674,
@@ -462,5 +536,104 @@
     "w4": "fdef4c4d70b6a5ea040a8bc94638a57ecc1eb3b2",
     "w6": "abe97019b099026698d10c97f57d490a9554018f"
   },
-  "rustVersion": "1.99.1"
+  "rustVersion": "1.99.1",
+  "modelScenarioTests": 27,
+  "instanceOrderScenarioTests": 6,
+  "instanceOrderExhaustiveLayouts": 81,
+  "instanceOrderAudit": [
+    {
+      "phase": "typecheck",
+      "command": [
+        "quint",
+        "typecheck",
+        "quint/transcript.qnt"
+      ],
+      "exit": 0,
+      "expectedExit": 0,
+      "seconds": 0.6,
+      "witnesses": {}
+    },
+    {
+      "phase": "tests",
+      "command": [
+        "quint",
+        "test",
+        "quint/transcript_instances_test.qnt",
+        "--match",
+        ".*Test$",
+        "--max-samples",
+        "1"
+      ],
+      "exit": 0,
+      "expectedExit": 0,
+      "seconds": 0.713,
+      "witnesses": {}
+    },
+    {
+      "phase": "classification",
+      "command": [
+        "quint",
+        "run",
+        "quint/transcript.qnt",
+        "--main",
+        "transcript_instances",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "1",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1",
+        "--invariant",
+        "mismatchExactlyMixedBatch",
+        "--witnesses",
+        "allPlain",
+        "allCommitted",
+        "singleMixed",
+        "multiMixed"
+      ],
+      "exit": 0,
+      "expectedExit": 0,
+      "seconds": 0.867,
+      "witnesses": {
+        "allPlain": 2273,
+        "allCommitted": 2184,
+        "singleMixed": 1480,
+        "multiMixed": 2957
+      }
+    },
+    {
+      "phase": "counterexample",
+      "command": [
+        "quint",
+        "run",
+        "quint/transcript.qnt",
+        "--main",
+        "transcript_instances",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "1",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1",
+        "--init",
+        "mixedCounterexample",
+        "--invariant",
+        "proverEqualsVerifier",
+        "--out-itf",
+        ".artifacts/w8/instance-order-counterexample.itf.json"
+      ],
+      "exit": 1,
+      "expectedExit": 1,
+      "seconds": 0.604,
+      "witnesses": {}
+    }
+  ]
 }

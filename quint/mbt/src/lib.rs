@@ -2,6 +2,8 @@
 #[cfg(test)]
 mod circuit;
 #[cfg(test)]
+mod instance_order;
+#[cfg(test)]
 mod logging;
 #[cfg(test)]
 mod proof;

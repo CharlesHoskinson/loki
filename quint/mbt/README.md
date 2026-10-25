@@ -31,6 +31,11 @@ exercise cache identity without generating production cache entries.
   also compared byte for byte with the stock verifier's corresponding absorption.
   Fixed-RNG proof equality is asserted for the no-lookup circuit family. Stock
   lookup nondeterminism is reported in `LOKI-QUINT.md`.
+- A separate two-instance-column diagnostic checks nine real stock cases and
+  expects rejection exactly for multiple proofs with a mixed committed/plain
+  layout. It demonstrates the existing prover/verifier absorption-order bug;
+  it does not fix that bug. The symbolic audit and its counterexample are in
+  `transcript.qnt`'s `transcript_instances` module and `check_instances.py`.
 - `w4-source` compiles the actual W4 Rust dispatch, conversion and resident-cache
   code against **CPU-backed FFI functions**. It does not link CUDA, run a GPU
   kernel, or claim a GPU arithmetic differential. The fixture's `cuda` feature

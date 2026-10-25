@@ -129,3 +129,53 @@ impl Circuit<Fq> for RandomCircuit {
         Ok(())
     }
 }
+
+#[derive(Clone)]
+pub struct MixedCircuit {
+    pub values: [Fq; 2],
+}
+#[derive(Clone)]
+pub struct MixedConfig {
+    advice: [Column<Advice>; 2],
+    selector: Selector,
+}
+impl Circuit<Fq> for MixedCircuit {
+    type Config = MixedConfig;
+    type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
+    fn without_witnesses(&self) -> Self {
+        self.clone()
+    }
+    fn configure(meta: &mut ConstraintSystem<Fq>) -> MixedConfig {
+        let advice = [meta.advice_column(), meta.advice_column()];
+        let instances = [meta.instance_column(), meta.instance_column()];
+        let selector = meta.selector();
+        meta.create_gate("two public columns", |meta| {
+            let constraints: Vec<_> = advice
+                .iter()
+                .zip(instances)
+                .map(|(a, i)| {
+                    meta.query_advice(*a, Rotation::cur()) - meta.query_instance(i, Rotation::cur())
+                })
+                .collect();
+            Constraints::with_selector(selector, constraints)
+        });
+        MixedConfig { advice, selector }
+    }
+    fn synthesize(
+        &self,
+        config: MixedConfig,
+        mut layouter: impl Layouter<Fq>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "two public columns",
+            |mut region| {
+                config.selector.enable(&mut region, 0)?;
+                for (column, value) in config.advice.iter().zip(self.values) {
+                    region.assign_advice(|| "public value", *column, 0, || Value::known(value))?;
+                }
+                Ok(())
+            },
+        )
+    }
+}

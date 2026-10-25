@@ -58,3 +58,14 @@ controls, and 14 combined Rust tests passed their expected outcomes. Default
 Cargo checks passed. Source-pinned W4 host and W6 cache adapters are implemented.
 Known limitations and the stock byte-oracle CRITICAL are recorded in LOKI-QUINT.md.
 Apalache cannot handle the fairness property; no temporal proof is claimed.
+
+## Coordinator follow-up: mixed instance columns
+
+The Lean stockTrace/verifierTrace comparison exposed a stock loop-order mismatch
+missed by the original single-column fixtures. Added a configuration audit in
+transcript.qnt, six deterministic boundary tests (81 layouts), a 10000-sample
+classification campaign, an expected-failing equality check and retained ITF
+counterexample. The real Rust two-column matrix accepts seven controls and rejects
+the two mixed multi-proof cases. This CRITICAL was sent to #loki and coordinator.
+The combined Rust suite now has 15 passing tests, including that diagnostic;
+production behavior remains stock.
