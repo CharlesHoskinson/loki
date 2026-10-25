@@ -63,7 +63,7 @@ Completed CPU checks on the instrumented legacy cache:
 | `CARGO_BUILD_JOBS=8 cargo test --release --offline --features loki-profile --lib profile::tests -- --test-threads=1` | 1 passed; preceding red run failed for missing counter API | `target/w13/counters-{red,green}.log` |
 | `CARGO_BUILD_JOBS=8 cargo test --release --offline -- --test-threads=4 --skip dev::cost_model::tests::cost_model` | 33 unit, 2 integration, 9 doctests passed | `target/w13/full-cpu.log` |
 | `./loki-harness/run.sh` | k10/k14/k17 cross-verification and equal VK passed; lookup proof bytes differ as on baseline | `target/w13/w2-cpu.log` |
-| `CARGO_BUILD_JOBS=8 RAYON_NUM_THREADS=4 cargo run --release --offline --example cpu-bench -- 16 3 target/cpu-fixture` | Three proofs verified, identical bytes | `target/w13/cpu-fixture.log` |
+| `CARGO_BUILD_JOBS=8 RAYON_NUM_THREADS=4 cargo run --release --offline --example cpu-bench -- 16 3 target/cpu-fixture` | Three proofs verified, identical bytes (before P1; since P1 the default build follows stock's HashMap leftover order, so bytes differ per run like stock 0.8.3; add `--features loki-deterministic-lookup-order` for identical bytes) | `target/w13/cpu-fixture.log` |
 | `CARGO_BUILD_JOBS=8 cargo test --release --offline --manifest-path tests-stock/Cargo.toml` | 1 passed after fixture generation | `target/w13/tests-stock-after-fixture.log` |
 
 The first standalone tests-stock invocation failed because `target/cpu-fixture`

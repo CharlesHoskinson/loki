@@ -104,7 +104,7 @@ which passed separately. The table below uses the definitive batch logs.
 | --- | --- |
 | Default `cargo test --release --offline -- --test-threads=4` | 34 unit, two integration, nine documentation tests pass; two timing tests ignored |
 | `./loki-harness/run.sh` | k10/k14/k17 cross-verify with equal VKs. No-lookup proof bytes match; lookup proof byte differences remain documented |
-| `cargo run --release --offline --example cpu-bench -- 16 3 target/cpu-fixture` | Three verified proofs with identical hashes |
+| `cargo run --release --offline --example cpu-bench -- 16 3 target/cpu-fixture` | Three verified proofs with identical hashes (before P1; since P1 the default build matches stock 0.8.3 and hashes differ per run; use `--features loki-deterministic-lookup-order` for identical hashes) |
 | `cargo test --release --offline --manifest-path tests-stock/Cargo.toml` | Registry stock verifier accepts the fixture and rejects corruption |
 | GPU library, `cuda,cuda-ntt,loki-profile` | 40 pass, 40 ignored; forced NTT fallback and invalid-SRS rejection pass |
 | GPU MSM differential | Pass, 210.93 s test time |
