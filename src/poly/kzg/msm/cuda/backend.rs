@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use std::{collections::VecDeque, ffi::c_void, sync::Mutex};
 
+#[cfg(not(feature = "cuda-srs-registry"))]
 use group::Curve;
 
 struct PrepareTimer {
@@ -40,9 +41,15 @@ fn record(name: &'static str, size: usize, wall_ns: u64) {
     #[cfg(not(feature = "loki-profile"))]
     let _ = (name, size, wall_ns);
 }
-use midnight_curves::{Fq, G1Affine, G1Projective};
+#[cfg(not(feature = "cuda-srs-registry"))]
+use midnight_curves::G1Affine;
+use midnight_curves::{Fq, G1Projective};
 
 use super::convert::{self, Affine, Scalar};
+#[cfg(feature = "cuda-srs-registry")]
+use crate::poly::kzg::msm::srs_validate::{same_prefix, validate, Rejection};
+#[cfg(not(feature = "cuda-srs-registry"))]
+use crate::poly::kzg::msm::srs_validate::same_coordinates;
 
 extern "C" {
     fn loki_gpu_prepare(out: &mut *mut c_void, bases: *const Affine, n: usize) -> sppark::Error;
@@ -91,95 +98,6 @@ fn status(error: sppark::Error) -> Result<(), String> {
     } else {
         Err(error.to_string())
     }
-}
-
-fn same_coordinates(a: &G1Projective, b: &G1Projective) -> bool {
-    // Exact coordinate equality is cheap and sufficient here. Mathematical
-    // equality would perform field multiplications for every cached point.
-    blst::blst_fp::from(a.x()).l == blst::blst_fp::from(b.x()).l
-        && blst::blst_fp::from(a.y()).l == blst::blst_fp::from(b.y()).l
-        && blst::blst_fp::from(a.z()).l == blst::blst_fp::from(b.z()).l
-}
-
-// Never enter Rayon while holding DEVICE/CACHE: even install on a private
-// pool can execute jobs from a calling Rayon worker's pool while it waits.
-// Scoped native workers only read CPU data, and join without scheduler reentry.
-#[cfg(feature = "cuda-srs-registry")]
-fn parallel_chunks<R: Send>(
-    bases: &[G1Projective],
-    f: impl Fn(usize, &[G1Projective]) -> Result<R, String> + Sync,
-) -> Result<Vec<R>, String> {
-    if bases.len() < 4096 {
-        return Ok(vec![f(0, bases)?]);
-    }
-    let chunk_len = bases.len().div_ceil(4);
-    std::thread::scope(|scope| {
-        let f = &f;
-        let mut jobs = Vec::with_capacity(4);
-        let mut error = None;
-        for (i, chunk) in bases.chunks(chunk_len).enumerate() {
-            match std::thread::Builder::new()
-                .name("loki-srs".into())
-                .spawn_scoped(scope, move || f(i * chunk_len, chunk))
-            {
-                Ok(job) => jobs.push(job),
-                Err(cause) => {
-                    error = Some(format!("SRS worker creation failed: {cause}"));
-                    break;
-                }
-            }
-        }
-        let mut results = Vec::with_capacity(jobs.len());
-        // Join every worker, even after an error or panic. Letting Scope
-        // implicitly join a second panicking worker would unwind the caller.
-        for job in jobs {
-            match job.join() {
-                Ok(Ok(result)) => results.push(result),
-                Ok(Err(cause)) => {
-                    error.get_or_insert(cause);
-                }
-                Err(_) => {
-                    error.get_or_insert_with(|| "SRS worker panicked".into());
-                }
-            }
-        }
-        error.map_or(Ok(results), Err)
-    })
-}
-
-#[cfg(feature = "cuda-srs-registry")]
-fn same_prefix(source: &[G1Projective], bases: &[G1Projective]) -> Result<bool, String> {
-    let matches = parallel_chunks(bases, |start, chunk| {
-        Ok(source[start..start + chunk.len()]
-            .iter()
-            .zip(chunk)
-            .all(|(a, b)| same_coordinates(a, b)))
-    })?;
-    Ok(matches.into_iter().all(|equal| equal))
-}
-
-#[cfg(feature = "cuda-srs-registry")]
-fn validate(bases: &[G1Projective]) -> Result<Vec<G1Affine>, String> {
-    let chunks = parallel_chunks(bases, |_, chunk| {
-        if chunk.iter().any(|base| !bool::from(base.is_on_curve())) {
-            return Err("invalid SRS base: off curve".into());
-        }
-        let mut affine = vec![G1Affine::default(); chunk.len()];
-        // Pinned BLST dispatches batches >=768 to its own global pool unless
-        // no-threads is enabled. Keep normalization serial inside each native
-        // worker even when loki-cpu-budget is off (without changing its feature).
-        for (points, output) in chunk.chunks(512).zip(affine.chunks_mut(512)) {
-            G1Projective::batch_normalize(points, output);
-        }
-        if affine
-            .iter()
-            .any(|base| !bool::from(base.is_torsion_free()))
-        {
-            return Err("invalid SRS base: outside G1 subgroup".into());
-        }
-        Ok(affine)
-    })?;
-    Ok(chunks.into_iter().flatten().collect())
 }
 
 #[cfg(feature = "cuda-srs-registry")]
@@ -274,7 +192,8 @@ impl Cache {
             for (i, entry) in self.entries.iter().enumerate() {
                 if entry.address == address
                     && scalars.len() <= entry.source.len()
-                    && same_prefix(&entry.source, &bases[..scalars.len()])?
+                    && same_prefix(&entry.source, &bases[..scalars.len()])
+                        .map_err(Rejection::message)?
                 {
                     hit = Some(i);
                     break;
@@ -299,7 +218,7 @@ impl Cache {
             record("msm.prepare.miss", scalars.len(), 0);
             let validation = PrepareTimer::start("msm.prepare.validation", bases.len());
             #[cfg(feature = "cuda-srs-registry")]
-            let affine = validate(bases)?;
+            let affine = validate(bases).map_err(Rejection::message)?;
             #[cfg(not(feature = "cuda-srs-registry"))]
             let affine = {
                 // Legacy validation stays serial: Rayon workers can be waiting
@@ -479,8 +398,10 @@ mod upload_tests {
     #[cfg(feature = "cuda-srs-registry")]
     #[test]
     fn registry_workers_join_after_errors_and_panics() {
+        use crate::poly::kzg::msm::srs_validate::parallel_chunks;
         let bases = vec![G1Projective::default(); 4096];
-        let outcome = parallel_chunks(&bases, |start, _| -> Result<(), String> {
+        let worker_error = "worker".to_owned();
+        let outcome = parallel_chunks(&bases, worker_error, |start, _| -> Result<(), String> {
             if start == 0 {
                 return Err("first chunk rejected".into());
             }
