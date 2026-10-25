@@ -1,0 +1,17 @@
+# P2-fix compute-sanitizer over ffi_abi (heavy.lock then gpu.lock, --error-exitcode 9, --test-threads=1)
+== memcheck --leak-check full
+test result: ok. 13 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.88s
+========= LEAK SUMMARY: 0 bytes leaked in 0 allocations
+========= ERROR SUMMARY: 0 errors
+exit=0
+== racecheck
+test result: ok. 13 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.06s
+exit=0
+== synccheck
+test result: ok. 13 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.90s
+========= ERROR SUMMARY: 0 errors
+exit=0
+== initcheck
+test result: ok. 13 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.07s
+========= ERROR SUMMARY: 0 errors
+exit=0

@@ -25,6 +25,10 @@ namespace {
 // Native context generation. 0 = never probed. Incremented on every reset;
 // handles minted under another epoch are rejected as stale.
 std::atomic<uint64_t> g_epoch{0};
+// Device selected by the last successful probe/reset; -1 = none. The CUDA
+// current device is per host thread, so every device-touching entry point
+// re-selects it (ensure_device) instead of trusting the caller's thread.
+std::atomic<int32_t> g_ordinal{-1};
 
 bool is_sticky(cudaError_t e) {
   switch (e) {
@@ -75,6 +79,20 @@ int32_t report_cuda(loki_gpu_status_v1 *status, cudaError_t e) {
     (void)cudaGetLastError();
   }
   return report(status, classify(e), e);
+}
+
+// Make the selected device current on the calling host thread. Returns
+// LOKI_GPU_OK (0) or an already reported failure code.
+int32_t ensure_device(loki_gpu_status_v1 *status) {
+  int32_t ordinal = g_ordinal.load();
+  if (g_epoch.load() == 0 || ordinal < 0)
+    return report(status, LOKI_GPU_NO_DEVICE, cudaSuccess);
+  int current = -1;
+  cudaError_t e = cudaGetDevice(&current);
+  if (e == cudaSuccess && current == ordinal) return LOKI_GPU_OK;
+  e = cudaSetDevice(ordinal);
+  if (e != cudaSuccess) return report_cuda(status, e);
+  return LOKI_GPU_OK;
 }
 
 int32_t check(const loki_gpu_handle_v1 *h, uint32_t kind) {
@@ -204,6 +222,9 @@ extern "C" int32_t loki_gpu_rt_probe_v1(int32_t ordinal,
   if (e != cudaSuccess) return report_cuda(status, e);
   uint64_t expected = 0;
   g_epoch.compare_exchange_strong(expected, 1);
+  // Switching devices invalidates handles minted on the previous one.
+  int32_t previous = g_ordinal.exchange(ordinal);
+  if (previous >= 0 && previous != ordinal) g_epoch.fetch_add(1);
   return fill_info(ordinal, out, status);
 }
 
@@ -222,13 +243,14 @@ extern "C" int32_t loki_gpu_rt_reset_v1(int32_t ordinal,
   if (e != cudaSuccess) return report_cuda(status, e);
   e = cudaFree(nullptr);
   if (e != cudaSuccess) return report_cuda(status, e);
+  g_ordinal.store(ordinal);
   return fill_info(ordinal, out, status);
 }
 
 extern "C" int32_t loki_gpu_rt_stream_create_v1(loki_gpu_handle_v1 *out,
                                                 loki_gpu_status_v1 *status) {
   if (out == nullptr) return report(status, LOKI_GPU_INVALID_ARGUMENT, cudaSuccess);
-  if (g_epoch.load() == 0) return report(status, LOKI_GPU_NO_DEVICE, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   cudaStream_t s = nullptr;
   cudaError_t e = cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
   if (e != cudaSuccess) return report_cuda(status, e);
@@ -240,6 +262,7 @@ extern "C" int32_t loki_gpu_rt_stream_destroy_v1(const loki_gpu_handle_v1 *strea
                                                  loki_gpu_status_v1 *status) {
   int32_t c = check(stream, LOKI_GPU_HANDLE_STREAM);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   return report_cuda(status, cudaStreamDestroy(as_ptr<cudaStream_t>(stream)));
 }
 
@@ -247,7 +270,7 @@ extern "C" int32_t loki_gpu_rt_event_create_v1(uint32_t timing,
                                                loki_gpu_handle_v1 *out,
                                                loki_gpu_status_v1 *status) {
   if (out == nullptr) return report(status, LOKI_GPU_INVALID_ARGUMENT, cudaSuccess);
-  if (g_epoch.load() == 0) return report(status, LOKI_GPU_NO_DEVICE, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   cudaEvent_t ev = nullptr;
   unsigned flags = timing ? cudaEventDefault : cudaEventDisableTiming;
   cudaError_t e = cudaEventCreateWithFlags(&ev, flags);
@@ -260,6 +283,7 @@ extern "C" int32_t loki_gpu_rt_event_destroy_v1(const loki_gpu_handle_v1 *event,
                                                 loki_gpu_status_v1 *status) {
   int32_t c = check(event, LOKI_GPU_HANDLE_EVENT);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   return report_cuda(status, cudaEventDestroy(as_ptr<cudaEvent_t>(event)));
 }
 
@@ -269,7 +293,7 @@ extern "C" int32_t loki_gpu_rt_device_alloc_v1(uint64_t bytes,
   if (out == nullptr || bytes == 0 ||
       bytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max()))
     return report(status, LOKI_GPU_INVALID_ARGUMENT, cudaSuccess);
-  if (g_epoch.load() == 0) return report(status, LOKI_GPU_NO_DEVICE, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   void *p = nullptr;
   cudaError_t e = cudaMalloc(&p, static_cast<size_t>(bytes));
   if (e != cudaSuccess) return report_cuda(status, e);
@@ -281,6 +305,7 @@ extern "C" int32_t loki_gpu_rt_device_free_v1(const loki_gpu_handle_v1 *memory,
                                               loki_gpu_status_v1 *status) {
   int32_t c = check(memory, LOKI_GPU_HANDLE_DEVICE_MEMORY);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   return report_cuda(status, cudaFree(as_ptr<void *>(memory)));
 }
 
@@ -290,7 +315,7 @@ extern "C" int32_t loki_gpu_rt_host_alloc_v1(uint64_t bytes, uint32_t pinned,
   if (out == nullptr || bytes == 0 ||
       bytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max()))
     return report(status, LOKI_GPU_INVALID_ARGUMENT, cudaSuccess);
-  if (g_epoch.load() == 0) return report(status, LOKI_GPU_NO_DEVICE, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   void *p = nullptr;
   if (pinned) {
     cudaError_t e = cudaHostAlloc(&p, static_cast<size_t>(bytes), cudaHostAllocDefault);
@@ -308,6 +333,7 @@ extern "C" int32_t loki_gpu_rt_host_free_v1(const loki_gpu_handle_v1 *buffer,
                                             loki_gpu_status_v1 *status) {
   int32_t c = check_host(buffer);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   if (buffer->kind == LOKI_GPU_HANDLE_HOST_PINNED)
     return report_cuda(status, cudaFreeHost(as_ptr<void *>(buffer)));
   std::free(as_ptr<void *>(buffer));
@@ -324,6 +350,7 @@ extern "C" int32_t loki_gpu_rt_memcpy_h2d_v1(const loki_gpu_handle_v1 *dst,
   if (c == LOKI_GPU_OK) c = check_host(src_host);
   if (c == LOKI_GPU_OK) c = check(stream, LOKI_GPU_HANDLE_STREAM);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   if (len == 0 || !in_bounds(dst_offset, len, dst->bytes) ||
       !in_bounds(src_offset, len, src_host->bytes))
     return report(status, LOKI_GPU_INVALID_ARGUMENT, cudaSuccess);
@@ -344,6 +371,7 @@ extern "C" int32_t loki_gpu_rt_memcpy_d2h_v1(const loki_gpu_handle_v1 *dst_host,
   if (c == LOKI_GPU_OK) c = check(src, LOKI_GPU_HANDLE_DEVICE_MEMORY);
   if (c == LOKI_GPU_OK) c = check(stream, LOKI_GPU_HANDLE_STREAM);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   if (len == 0 || !in_bounds(dst_offset, len, dst_host->bytes) ||
       !in_bounds(src_offset, len, src->bytes))
     return report(status, LOKI_GPU_INVALID_ARGUMENT, cudaSuccess);
@@ -363,6 +391,7 @@ extern "C" int32_t loki_gpu_rt_launch_copy_v1(const loki_gpu_handle_v1 *dst,
   if (c == LOKI_GPU_OK) c = check(src, LOKI_GPU_HANDLE_DEVICE_MEMORY);
   if (c == LOKI_GPU_OK) c = check(stream, LOKI_GPU_HANDLE_STREAM);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   if (bytes == 0 || bytes > dst->bytes || bytes > src->bytes)
     return report(status, LOKI_GPU_INVALID_ARGUMENT, cudaSuccess);
   const unsigned threads = 256;
@@ -381,6 +410,7 @@ extern "C" int32_t loki_gpu_rt_event_record_v1(const loki_gpu_handle_v1 *event,
   int32_t c = check(event, LOKI_GPU_HANDLE_EVENT);
   if (c == LOKI_GPU_OK) c = check(stream, LOKI_GPU_HANDLE_STREAM);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   return report_cuda(status, cudaEventRecord(as_ptr<cudaEvent_t>(event),
                                              as_ptr<cudaStream_t>(stream)));
 }
@@ -391,6 +421,7 @@ extern "C" int32_t loki_gpu_rt_stream_wait_event_v1(const loki_gpu_handle_v1 *st
   int32_t c = check(stream, LOKI_GPU_HANDLE_STREAM);
   if (c == LOKI_GPU_OK) c = check(event, LOKI_GPU_HANDLE_EVENT);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   return report_cuda(status, cudaStreamWaitEvent(as_ptr<cudaStream_t>(stream),
                                                  as_ptr<cudaEvent_t>(event), 0));
 }
@@ -399,6 +430,7 @@ extern "C" int32_t loki_gpu_rt_event_synchronize_v1(const loki_gpu_handle_v1 *ev
                                                     loki_gpu_status_v1 *status) {
   int32_t c = check(event, LOKI_GPU_HANDLE_EVENT);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   return report_cuda(status, cudaEventSynchronize(as_ptr<cudaEvent_t>(event)));
 }
 
@@ -406,6 +438,7 @@ extern "C" int32_t loki_gpu_rt_event_query_v1(const loki_gpu_handle_v1 *event,
                                               loki_gpu_status_v1 *status) {
   int32_t c = check(event, LOKI_GPU_HANDLE_EVENT);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   return report_cuda(status, cudaEventQuery(as_ptr<cudaEvent_t>(event)));
 }
 
@@ -417,6 +450,7 @@ extern "C" int32_t loki_gpu_rt_event_elapsed_ms_v1(const loki_gpu_handle_v1 *sta
   if (c == LOKI_GPU_OK) c = check(end, LOKI_GPU_HANDLE_EVENT);
   if (c == LOKI_GPU_OK && ms == nullptr) c = LOKI_GPU_INVALID_ARGUMENT;
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   return report_cuda(status, cudaEventElapsedTime(ms, as_ptr<cudaEvent_t>(start),
                                                   as_ptr<cudaEvent_t>(end)));
 }
@@ -425,5 +459,6 @@ extern "C" int32_t loki_gpu_rt_stream_synchronize_v1(const loki_gpu_handle_v1 *s
                                                      loki_gpu_status_v1 *status) {
   int32_t c = check(stream, LOKI_GPU_HANDLE_STREAM);
   if (c != LOKI_GPU_OK) return report(status, c, cudaSuccess);
+  if (int32_t d = ensure_device(status)) return d;
   return report_cuda(status, cudaStreamSynchronize(as_ptr<cudaStream_t>(stream)));
 }

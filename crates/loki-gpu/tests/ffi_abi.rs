@@ -20,7 +20,7 @@ use std::time::Instant;
 
 use loki_backend_api::{ErrorKind, FailureEffect, ResidentBackend};
 use loki_gpu::ffi::{
-    self, native_abi_layout, native_driver, AbiLayoutV1, DeviceInfoV1, HandleV1, StatusV1,
+    self, native_abi_layout, AbiLayoutV1, DeviceInfoV1, HandleV1, StatusV1,
 };
 use loki_gpu::runtime::{GpuRuntime, RuntimeConfig, REQUIRED_COMPUTE_CAPABILITY};
 use support::{scalars, Toy, ToyPoint};
@@ -261,7 +261,7 @@ fn probe() -> Option<DeviceInfoV1> {
 }
 
 fn native_runtime(cfg: RuntimeConfig) -> GpuRuntime {
-    let rt = GpuRuntime::with_driver(native_driver(), cfg);
+    let rt = GpuRuntime::native(cfg).expect("native driver is unclaimed");
     rt.initialize().expect("native runtime initializes on sm_120");
     rt
 }
@@ -305,6 +305,68 @@ fn device_probe_reports_sm120() {
         info.multiprocessors,
         info.async_engines
     );
+}
+
+#[test]
+fn native_driver_has_a_single_owner() {
+    let _g = device_lock();
+    if probe().is_none() {
+        return;
+    }
+    let rt = native_runtime(small_config());
+    let second = GpuRuntime::native(small_config());
+    assert_eq!(second.err().map(|e| e.kind), Some(ErrorKind::InvalidInput));
+    drop(rt); // healthy teardown releases the claim
+    let again = GpuRuntime::native(small_config()).expect("claim released after healthy drop");
+    drop(again); // never initialized: releases too
+    GpuRuntime::native(small_config()).expect("claim released after uninitialized drop");
+}
+
+#[test]
+fn native_operations_from_other_host_threads_use_the_selected_device() {
+    let _g = device_lock();
+    if probe().is_none() {
+        return;
+    }
+    // Initialize on one thread, then upload/download/release on fresh host
+    // threads whose CUDA current device was never set by this crate.
+    let rt = std::thread::scope(|s| s.spawn(|| native_runtime(small_config())).join().unwrap());
+    let values = scalars(5_003, 7);
+    let h = std::thread::scope(|s| s.spawn(|| rb(&rt).upload_scalars(&values).unwrap()).join().unwrap());
+    let back = std::thread::scope(|s| s.spawn(|| rb(&rt).download_scalars(&h).unwrap()).join().unwrap());
+    assert_eq!(back, values);
+    let d = std::thread::scope(|s| s.spawn(|| rt.duplicate_scalars(&h).unwrap()).join().unwrap());
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            assert_eq!(rb(&rt).download_scalars(&d).unwrap(), values);
+            rb(&rt).release_scalars(d).unwrap();
+            rb(&rt).release_scalars(h).unwrap();
+        })
+        .join()
+        .unwrap()
+    });
+    assert_eq!(rt.telemetry().poison_events, 0);
+    assert!(rb(&rt).runtime_snapshot().unwrap().context_healthy);
+}
+
+#[test]
+fn out_of_range_ordinal_is_unsupported_and_allocates_nothing() {
+    let _g = device_lock();
+    if probe().is_none() {
+        return;
+    }
+    let rt = GpuRuntime::native(RuntimeConfig {
+        device_ordinal: 4096,
+        ..small_config()
+    })
+    .unwrap();
+    let e = rt.initialize().unwrap_err();
+    assert_eq!((e.kind, e.effect), (ErrorKind::Unsupported, FailureEffect::NotStarted));
+    drop(rt);
+    // The probe failure left the selected device untouched: ordinal 0 works.
+    let rt = native_runtime(small_config());
+    let h = rb(&rt).upload_scalars(&scalars(8, 9)).unwrap();
+    rb(&rt).release_scalars(h).unwrap();
 }
 
 #[test]

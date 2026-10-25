@@ -9,6 +9,32 @@
 //!
 //! The `#[repr(C)]` mirrors below are checked against the native layout by
 //! `tests/ffi_abi.rs` and by the compile-time assertions in this module.
+//!
+//! The native driver is crate-private: the only way to reach the device is
+//! `GpuRuntime::native` (single owner per process) or `GpuRuntime::process`.
+//! None of the following compile outside the crate:
+//!
+//! ```compile_fail
+//! let _ = loki_gpu::ffi::native_driver();
+//! ```
+//!
+//! ```compile_fail
+//! let _ = loki_gpu::ffi::NativeDriver::default();
+//! ```
+//!
+//! Driver handles cannot be fabricated from raw bits either:
+//!
+//! ```compile_fail
+//! fn forge(h: loki_gpu::runtime::DriverHandle) -> loki_gpu::runtime::DeviceMemory {
+//!     loki_gpu::runtime::DeviceMemory(h)
+//! }
+//! ```
+//!
+//! ```compile_fail
+//! fn raw(h: &loki_gpu::runtime::DriverHandle) -> u64 {
+//!     h.raw
+//! }
+//! ```
 
 #![allow(dead_code)] // Stub symbols are exercised only by the CUDA tests.
 
@@ -215,11 +241,12 @@ pub fn native_abi_layout() -> (u32, i32, AbiLayoutV1) {
 }
 
 #[cfg(feature = "cuda")]
-pub use native::{native_driver, NativeDriver};
+pub(crate) use native::native_driver;
 
 #[cfg(feature = "cuda")]
 mod native {
-    use std::sync::Arc;
+    use std::collections::HashSet;
+    use std::sync::{Arc, Mutex};
 
     use super::*;
     use crate::runtime::{
@@ -227,15 +254,68 @@ mod native {
         DriverHandle, EventId, HandleKind, HostBuffer, StreamId,
     };
 
-    /// CUDA runtime driver over the `loki_gpu_rt_*` ABI. Stateless on the
-    /// Rust side: the native unit owns the context epoch, so one process
-    /// should use a single [`crate::runtime::GpuRuntime`] (`process()`).
+    /// CUDA runtime driver over the `loki_gpu_rt_*` ABI. Crate-private: it is
+    /// only reachable through `GpuRuntime::native`, which enforces a single
+    /// owner per process. The driver additionally records every handle it
+    /// minted and refuses (as `Poisoned`) any handle it did not mint or has
+    /// already destroyed, so even an internal bug cannot pass a foreign or
+    /// freed raw pointer to CUDA.
     #[derive(Debug, Default)]
-    pub struct NativeDriver;
+    pub(crate) struct NativeDriver {
+        minted: Mutex<HashSet<(u32, u64)>>,
+    }
 
-    /// Shared native driver instance.
-    pub fn native_driver() -> Arc<dyn DeviceDriver> {
-        Arc::new(NativeDriver)
+    /// Fresh native driver instance (crate-private; see `GpuRuntime::native`).
+    pub(crate) fn native_driver() -> Arc<dyn DeviceDriver> {
+        Arc::new(NativeDriver::default())
+    }
+
+    fn key(h: &DriverHandle) -> (u32, u64) {
+        (kind_code(h.kind), h.raw)
+    }
+
+    fn unknown(call: DriverCall) -> DriverError {
+        DriverError {
+            call,
+            class: DriverErrorClass::Poisoned,
+            code: STALE_HANDLE,
+        }
+    }
+
+    impl NativeDriver {
+        fn set(&self) -> std::sync::MutexGuard<'_, HashSet<(u32, u64)>> {
+            // A poisoned registry mutex still holds a consistent set: every
+            // mutation is a single insert/remove/clear.
+            self.minted.lock().unwrap_or_else(|p| p.into_inner())
+        }
+
+        fn mint(&self, h: DriverHandle) -> DriverHandle {
+            self.set().insert(key(&h));
+            h
+        }
+
+        fn known(&self, call: DriverCall, handles: &[&DriverHandle]) -> Result<(), DriverError> {
+            let set = self.set();
+            if handles.iter().all(|h| set.contains(&key(h))) {
+                Ok(())
+            } else {
+                Err(unknown(call))
+            }
+        }
+
+        /// Destroy a minted handle: forgotten only once native destruction
+        /// succeeded (a failed destroy leaves it quarantined, still known).
+        fn retire(
+            &self,
+            call: DriverCall,
+            h: &DriverHandle,
+            destroy: impl FnOnce() -> Result<(), DriverError>,
+        ) -> Result<(), DriverError> {
+            self.known(call, &[h])?;
+            destroy()?;
+            self.set().remove(&key(h));
+            Ok(())
+        }
     }
 
     fn kind_code(kind: HandleKind) -> u32 {
@@ -351,6 +431,8 @@ mod native {
             let call = DriverCall::Reset;
             let o = ordinal(call, ord)?;
             let mut info = DeviceInfoV1::default();
+            // Reset invalidates every handle, whatever its outcome.
+            self.set().clear();
             ffi_call!(call, |st| loki_gpu_rt_reset_v1(o, &mut info, &mut st))?;
             Ok(info_from(&info))
         }
@@ -361,36 +443,39 @@ mod native {
             debug_assert!(non_blocking);
             let mut h = HandleV1::default();
             ffi_call!(call, |st| loki_gpu_rt_stream_create_v1(&mut h, &mut st))?;
-            Ok(StreamId(from_c(call, &h, HandleKind::Stream)?))
+            Ok(StreamId(self.mint(from_c(call, &h, HandleKind::Stream)?)))
         }
 
         fn destroy_stream(&self, stream: StreamId) -> Result<(), DriverError> {
+            let call = DriverCall::StreamDestroy;
             let h = to_c(&stream.0);
-            ffi_call!(DriverCall::StreamDestroy, |st| loki_gpu_rt_stream_destroy_v1(&h, &mut st))
+            self.retire(call, &stream.0, || ffi_call!(call, |st| loki_gpu_rt_stream_destroy_v1(&h, &mut st)))
         }
 
         fn create_event(&self, timing: bool) -> Result<EventId, DriverError> {
             let call = DriverCall::EventCreate;
             let mut h = HandleV1::default();
             ffi_call!(call, |st| loki_gpu_rt_event_create_v1(u32::from(timing), &mut h, &mut st))?;
-            Ok(EventId(from_c(call, &h, HandleKind::Event)?))
+            Ok(EventId(self.mint(from_c(call, &h, HandleKind::Event)?)))
         }
 
         fn destroy_event(&self, event: EventId) -> Result<(), DriverError> {
+            let call = DriverCall::EventDestroy;
             let h = to_c(&event.0);
-            ffi_call!(DriverCall::EventDestroy, |st| loki_gpu_rt_event_destroy_v1(&h, &mut st))
+            self.retire(call, &event.0, || ffi_call!(call, |st| loki_gpu_rt_event_destroy_v1(&h, &mut st)))
         }
 
         fn device_alloc(&self, bytes: u64) -> Result<DeviceMemory, DriverError> {
             let call = DriverCall::DeviceAlloc;
             let mut h = HandleV1::default();
             ffi_call!(call, |st| loki_gpu_rt_device_alloc_v1(bytes, &mut h, &mut st))?;
-            Ok(DeviceMemory(from_c(call, &h, HandleKind::DeviceMemory)?))
+            Ok(DeviceMemory(self.mint(from_c(call, &h, HandleKind::DeviceMemory)?)))
         }
 
         fn device_free(&self, memory: DeviceMemory) -> Result<(), DriverError> {
+            let call = DriverCall::DeviceFree;
             let h = to_c(&memory.0);
-            ffi_call!(DriverCall::DeviceFree, |st| loki_gpu_rt_device_free_v1(&h, &mut st))
+            self.retire(call, &memory.0, || ffi_call!(call, |st| loki_gpu_rt_device_free_v1(&h, &mut st)))
         }
 
         fn host_alloc(&self, bytes: usize, pinned: bool) -> Result<HostBuffer, DriverError> {
@@ -398,7 +483,7 @@ mod native {
             let mut h = HandleV1::default();
             ffi_call!(call, |st| loki_gpu_rt_host_alloc_v1(bytes as u64, u32::from(pinned), &mut h, &mut st))?;
             let kind = if pinned { HandleKind::HostPinned } else { HandleKind::HostPageable };
-            let handle = from_c(call, &h, kind)?;
+            let handle = self.mint(from_c(call, &h, kind)?);
             Ok(HostBuffer {
                 handle,
                 ptr: handle.raw as usize as *mut u8,
@@ -407,8 +492,9 @@ mod native {
         }
 
         fn host_free(&self, buffer: HostBuffer) -> Result<(), DriverError> {
+            let call = DriverCall::HostFree;
             let h = to_c(&buffer.handle);
-            ffi_call!(DriverCall::HostFree, |st| loki_gpu_rt_host_free_v1(&h, &mut st))
+            self.retire(call, &buffer.handle, || ffi_call!(call, |st| loki_gpu_rt_host_free_v1(&h, &mut st)))
         }
 
         fn copy_h2d(
@@ -420,6 +506,7 @@ mod native {
             len: usize,
             stream: StreamId,
         ) -> Result<(), DriverError> {
+            self.known(DriverCall::CopyH2D, &[&dst.0, &src.handle, &stream.0])?;
             let (d, s, q) = (to_c(&dst.0), to_c(&src.handle), to_c(&stream.0));
             ffi_call!(DriverCall::CopyH2D, |st| loki_gpu_rt_memcpy_h2d_v1(
                 &d, dst_offset, &s, src_offset as u64, len as u64, &q, &mut st
@@ -435,6 +522,7 @@ mod native {
             len: usize,
             stream: StreamId,
         ) -> Result<(), DriverError> {
+            self.known(DriverCall::CopyD2H, &[&dst.handle, &src.0, &stream.0])?;
             let (d, s, q) = (to_c(&dst.handle), to_c(&src.0), to_c(&stream.0));
             ffi_call!(DriverCall::CopyD2H, |st| loki_gpu_rt_memcpy_d2h_v1(
                 &d, dst_offset as u64, &s, src_offset, len as u64, &q, &mut st
@@ -448,26 +536,31 @@ mod native {
             bytes: u64,
             stream: StreamId,
         ) -> Result<(), DriverError> {
+            self.known(DriverCall::Launch, &[&dst.0, &src.0, &stream.0])?;
             let (d, s, q) = (to_c(&dst.0), to_c(&src.0), to_c(&stream.0));
             ffi_call!(DriverCall::Launch, |st| loki_gpu_rt_launch_copy_v1(&d, &s, bytes, &q, &mut st))
         }
 
         fn record_event(&self, event: EventId, stream: StreamId) -> Result<(), DriverError> {
+            self.known(DriverCall::EventRecord, &[&event.0, &stream.0])?;
             let (e, q) = (to_c(&event.0), to_c(&stream.0));
             ffi_call!(DriverCall::EventRecord, |st| loki_gpu_rt_event_record_v1(&e, &q, &mut st))
         }
 
         fn stream_wait_event(&self, stream: StreamId, event: EventId) -> Result<(), DriverError> {
+            self.known(DriverCall::StreamWait, &[&stream.0, &event.0])?;
             let (q, e) = (to_c(&stream.0), to_c(&event.0));
             ffi_call!(DriverCall::StreamWait, |st| loki_gpu_rt_stream_wait_event_v1(&q, &e, &mut st))
         }
 
         fn event_synchronize(&self, event: EventId) -> Result<(), DriverError> {
+            self.known(DriverCall::EventSync, &[&event.0])?;
             let e = to_c(&event.0);
             ffi_call!(DriverCall::EventSync, |st| loki_gpu_rt_event_synchronize_v1(&e, &mut st))
         }
 
         fn event_query(&self, event: EventId) -> Result<bool, DriverError> {
+            self.known(DriverCall::EventQuery, &[&event.0])?;
             let e = to_c(&event.0);
             let mut st = StatusV1::default();
             // SAFETY: as in ffi_call!.
@@ -479,6 +572,7 @@ mod native {
         }
 
         fn event_elapsed_ms(&self, start: EventId, end: EventId) -> Result<f32, DriverError> {
+            self.known(DriverCall::EventElapsed, &[&start.0, &end.0])?;
             let (a, b) = (to_c(&start.0), to_c(&end.0));
             let mut ms = 0f32;
             ffi_call!(DriverCall::EventElapsed, |st| loki_gpu_rt_event_elapsed_ms_v1(&a, &b, &mut ms, &mut st))?;
@@ -486,6 +580,7 @@ mod native {
         }
 
         fn stream_synchronize(&self, stream: StreamId) -> Result<(), DriverError> {
+            self.known(DriverCall::StreamSync, &[&stream.0])?;
             let q = to_c(&stream.0);
             ffi_call!(DriverCall::StreamSync, |st| loki_gpu_rt_stream_synchronize_v1(&q, &mut st))
         }

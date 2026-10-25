@@ -593,7 +593,7 @@ fn cancellation_drains_retires_and_publishes_nothing() {
     let values = scalars(80, 21);
     assert_err(
         rt.upload_scalars_cancellable::<Toy>(&values, &token),
-        ErrorKind::Internal,
+        ErrorKind::Cancelled,
         FailureEffect::InputsPreserved,
     );
     assert_eq!(live_and_reserved(&rt), (0, 0));
@@ -607,7 +607,7 @@ fn cancellation_drains_retires_and_publishes_nothing() {
     fake.inject(DriverCall::CopyD2H, 3, Fault::Cancel(token.clone()));
     assert_err(
         rt.download_scalars_cancellable(&h, &token),
-        ErrorKind::Internal,
+        ErrorKind::Cancelled,
         FailureEffect::InputsPreserved,
     );
     assert_eq!(rb(&rt).download_scalars(&h).unwrap(), values);
@@ -622,7 +622,7 @@ fn pre_cancelled_token_does_not_start() {
     let allocs = fake.calls(DriverCall::DeviceAlloc);
     assert_err(
         rt.upload_scalars_cancellable::<Toy>(&scalars(4, 22), &token),
-        ErrorKind::Internal,
+        ErrorKind::Cancelled,
         FailureEffect::NotStarted,
     );
     assert_eq!(fake.calls(DriverCall::DeviceAlloc), allocs);
