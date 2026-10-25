@@ -330,3 +330,43 @@ fn tampered_binary_is_rejected_before_any_lock() {
     holder.kill().unwrap();
     holder.wait().unwrap();
 }
+
+/// Run the launcher, failing (not hanging) if it exceeds `limit`.
+fn run_bounded(mut c: Command, limit: Duration) -> std::process::ExitStatus {
+    let mut child = c.stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+    let t = Instant::now();
+    loop {
+        if let Some(st) = child.try_wait().unwrap() {
+            return st;
+        }
+        if t.elapsed() > limit {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("launcher did not finish within {limit:?}");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn a_deep_escaped_process_tree_is_swept_within_a_bounded_time() {
+    let e = Env::new("deep", "deep", "");
+    let st = run_bounded(e.cmd(), Duration::from_secs(40));
+    let pids: Vec<i32> = fs::read_to_string(e.root.join("arm/deep"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.trim().parse().ok())
+        .collect();
+    // Clean up regardless of the verdict below.
+    for p in &pids {
+        unsafe { libc::kill(*p, libc::SIGKILL) };
+    }
+    assert_eq!(st.code(), Some(1));
+    assert!(pids.len() >= 6, "fixture made {} levels", pids.len());
+    let b = e.block_json();
+    assert!(b.contains("\"status\":\"FAILED\""), "{b}");
+    let alive: Vec<&i32> = pids.iter().filter(|p| {
+        fs::read_to_string(format!("/proc/{p}/stat")).map(|s| !s.contains(") Z")).unwrap_or(false)
+    }).collect();
+    assert!(alive.is_empty(), "levels survived the sweep: {alive:?}");
+}

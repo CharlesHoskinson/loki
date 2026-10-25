@@ -5,3 +5,4 @@
 /campaign/builds/
 /campaign/*.log
 /campaign/*.conf
+/campaign/sigkill.*/

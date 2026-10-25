@@ -36,9 +36,9 @@ An arm is `INVALID` on any host swap I/O. `TIMEOUT`, `CANCELLED` and
 
 ### G0 dispatch qualification
 
-A G0 sample counts only if every stage shows zero accelerator errors and zero
-CPU fallbacks, and every stage published at least one accelerated operation.
-Across the chain, both MSM and NTT must have been accelerated.
+A G0 sample counts only if every stage (A2 leaves, A3 parent, DEC) shows zero
+accelerator errors and zero CPU fallbacks, and has at least one accelerated MSM
+and at least one accelerated NTT.
 
 ### Timing scope
 
@@ -56,7 +56,7 @@ killed and reaped, and the arm is marked `FAILED`.
 If the controller itself is SIGKILLed, only the direct arm process
 (PDEATHSIG, armed by the controller) and the driver's verifier worker
 (PDEATHSIG, armed by the driver) are guaranteed to die. Both check the
-expected parent after arming. Arbitrary grandchildren are not covered.
+expected parent after arming. Arbitrary grandchildren are not covered. `campaign/sigkill-receipt.sh <bench-driver>` is the process receipt for this guarantee: it uses the real driver and a fake worker that never reports ready, so nothing is proved. Post-exit cleanup is bounded at 15 s. Survivors, or stdout that never reaches EOF, fail the arm, and the locks are released anyway.
 
 ## Provenance and licence
 

@@ -54,8 +54,9 @@ fn main() {
     // Orphaned descendants of an arm are re-parented to us, so they can be
     // detected, killed and reaped instead of outliving the reservation.
     // SAFETY: prctl with integer arguments.
-    unsafe {
-        libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
+    if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
+        eprintln!("bench-launch: error: PR_SET_CHILD_SUBREAPER: {}", std::io::Error::last_os_error());
+        std::process::exit(2);
     }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match run(&args) {
@@ -571,27 +572,46 @@ fn set_pdeathsig(c: &mut Command) {
     }
 }
 
-/// Kill and reap every child of ours except `keep` (descendants of an arm
-/// that escaped its process group are re-parented here by the subreaper).
-fn sweep_children(keep: &[i32]) -> Vec<J> {
+/// Bound on post-exit cleanup (sweeping escaped descendants and waiting for
+/// stdout EOF). Locks are released after this even if something survives.
+const CLEANUP_DEADLINE: Duration = Duration::from_secs(15);
+
+struct Cleanup {
+    swept: Vec<J>,
+    remaining: Vec<i32>,
+}
+
+/// Until `deadline`: SIGKILL every child of ours except `keep` (descendants
+/// of an arm that escaped its group are re-parented here by the subreaper,
+/// level by level as their parents die) and reap without blocking. Stops
+/// early once no such child remains and the arm's stdout reached EOF.
+fn sweep_children(keep: &[i32], stdout_eof: &AtomicBool, deadline: Instant) -> Cleanup {
     let me = std::process::id() as i32;
-    let mut swept = Vec::new();
-    for _ in 0..5 {
+    let mut swept: Vec<J> = Vec::new();
+    let mut seen: Vec<i32> = Vec::new();
+    loop {
         let kids: Vec<i32> = host::children_of(me).into_iter().filter(|p| !keep.contains(p)).collect();
-        if kids.is_empty() {
-            break;
-        }
-        for k in kids {
-            swept.push(J::obj().with("pid", k).with("cmd", host::cmdline(k)));
-            // SAFETY: signalling and reaping our own child.
+        for &k in &kids {
+            if !seen.contains(&k) {
+                seen.push(k);
+                swept.push(J::obj().with("pid", k).with("cmd", host::cmdline(k)));
+            }
+            // SAFETY: signalling and non-blocking reaping of our own child.
             unsafe {
                 libc::kill(k, libc::SIGKILL);
                 let mut st = 0;
-                libc::waitpid(k, &mut st, 0);
+                libc::waitpid(k, &mut st, libc::WNOHANG);
             }
         }
+        if kids.is_empty() && stdout_eof.load(Ordering::SeqCst) {
+            return Cleanup { swept, remaining: Vec::new() };
+        }
+        if Instant::now() >= deadline {
+            let remaining = host::children_of(me).into_iter().filter(|p| !keep.contains(p)).collect();
+            return Cleanup { swept, remaining };
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
-    swept
 }
 
 struct ArmCtx<'a> {
@@ -733,6 +753,8 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
     // stdout reader: tee to file and forward lines.
     let (tx, rx) = mpsc::channel::<String>();
     let tee_path = stdout_path.clone();
+    let reader_done = Arc::new(AtomicBool::new(false));
+    let reader_flag = reader_done.clone();
     let reader = std::thread::spawn(move || {
         let mut tee = File::create(tee_path).ok();
         if let Some(out) = stdout {
@@ -743,6 +765,7 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
                 let _ = tx.send(line);
             }
         }
+        reader_flag.store(true, Ordering::SeqCst);
     });
 
     // 200 ms process sampler (live /proc only; never after exit).
@@ -833,10 +856,20 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
     let group_left = host::group_members(pid);
     kill_group(pid);
     std::thread::sleep(Duration::from_millis(100));
-    let escaped = sweep_children(&ctx.nvml_pid.into_iter().collect::<Vec<_>>());
+    let cleanup = sweep_children(
+        &ctx.nvml_pid.into_iter().collect::<Vec<_>>(),
+        &reader_done,
+        Instant::now() + CLEANUP_DEADLINE,
+    );
+    let escaped = cleanup.swept.len();
     stop.store(true, Ordering::SeqCst);
     let _ = sampler.join();
-    let _ = reader.join();
+    // Join only once EOF is established; otherwise the reader is abandoned
+    // (a descendant we could not kill still holds the pipe) and the arm fails.
+    let stdout_eof = reader_done.load(Ordering::SeqCst);
+    if stdout_eof {
+        let _ = reader.join();
+    }
     while let Ok(line) = rx.try_recv() {
         if line.contains("\"event\":\"sample\"") {
             samples_seen += 1;
@@ -850,7 +883,7 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
     }
     std::thread::sleep(Duration::from_millis(200));
     let still_in_group = host::group_members(pid);
-    let orphan_count = group_left.len() + escaped.len() + still_in_group.len();
+    let orphan_count = group_left.len() + escaped + still_in_group.len() + cleanup.remaining.len() + usize::from(!stdout_eof);
     let swap1 = host::swap_counters();
     let swapped = (swap1.0.saturating_sub(swap0.0), swap1.1.saturating_sub(swap0.1));
     let peaks = *peaks.lock().unwrap();
@@ -867,8 +900,8 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
     }
     if orphan_count > 0 {
         reasons.push(format!(
-            "orphan processes after arm exit: group {group_left:?}, escaped {}, unkillable {still_in_group:?}",
-            escaped.len()
+            "orphan processes after arm exit: group {group_left:?}, escaped {escaped}, still in group {still_in_group:?}, unreaped {:?}, stdout EOF {stdout_eof}",
+            cleanup.remaining
         ));
     }
     let nvml = ctx.nvml_csv.map(|p| nvml_summary(p, nvml_from)).unwrap_or(J::Null);
@@ -909,7 +942,9 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
         .with("gates_between_samples", gates)
         .with("driver_events", events)
         .with("group_members_after_exit", J::Arr(group_left.into_iter().map(J::from).collect()))
-        .with("escaped_descendants_swept", J::Arr(escaped))
+        .with("escaped_descendants_swept", J::Arr(cleanup.swept))
+        .with("descendants_remaining_after_deadline", J::Arr(cleanup.remaining.into_iter().map(J::from).collect()))
+        .with("stdout_eof", stdout_eof)
         .with("orphans_after_kill", J::Arr(still_in_group.into_iter().map(J::from).collect()))
         .with("nvml", nvml)
         .with("stdout", stdout_path.display().to_string())

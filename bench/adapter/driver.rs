@@ -111,9 +111,8 @@ fn now_unix_ms() -> u128 {
 }
 
 /// G0 acceptance (SUITE: production dispatch counters qualified): every
-/// stage has zero accelerator errors and zero CPU fallbacks; every stage
-/// published at least one accelerated operation; and across the chain both
-/// MSM and NTT were accelerated. A sample that fails this is not a GPU
+/// stage has zero accelerator errors and zero CPU fallbacks, and every stage
+/// published at least one accelerated MSM AND at least one accelerated NTT. A sample that fails this is not a GPU
 /// performance observation.
 #[cfg_attr(not(any(test, feature = "g0")), allow(dead_code))]
 fn g0_dispatch_qualification(stages: &[Value]) -> std::result::Result<Value, String> {
@@ -135,8 +134,13 @@ fn g0_dispatch_qualification(stages: &[Value]) -> std::result::Result<Value, Str
                 "stage {name}: accelerator error/fallback (msm error {me} fallback {mf}, ntt error {ne} fallback {nf})"
             ));
         }
-        if ms + ns == 0 {
-            return Err(format!("stage {name}: no accelerated MSM or NTT operation"));
+        // Every chain stage (A2 leaves, A3 parent, DEC; k19-k20) has eligible
+        // MSM and NTT work, so both must be accelerated in each stage.
+        if ms == 0 {
+            return Err(format!("stage {name}: no accelerated msm operation"));
+        }
+        if ns == 0 {
+            return Err(format!("stage {name}: no accelerated ntt operation"));
         }
         msm_ok += ms;
         ntt_ok += ns;
@@ -868,7 +872,7 @@ mod dispatch_tests {
     #[test]
     fn accelerated_chain_with_zero_errors_qualifies() {
         let s = vec![
-            stage("children", op(0, 0, 0, 0), op(4, 4, 0, 0)),
+            stage("children", op(2, 2, 0, 0), op(4, 4, 0, 0)),
             stage("parent", op(9, 9, 0, 0), op(7, 7, 0, 0)),
             stage("decider", op(5, 5, 0, 0), op(3, 3, 0, 0)),
         ];
@@ -889,7 +893,7 @@ mod dispatch_tests {
     #[test]
     fn any_fallback_or_error_is_rejected() {
         let s = vec![
-            stage("children", op(0, 0, 0, 0), op(4, 4, 0, 0)),
+            stage("children", op(2, 2, 0, 0), op(4, 4, 0, 0)),
             stage("parent", op(9, 8, 1, 1), op(7, 7, 0, 0)),
             stage("decider", op(5, 5, 0, 0), op(3, 3, 0, 0)),
         ];
@@ -906,6 +910,28 @@ mod dispatch_tests {
         ];
         let e = g0_dispatch_qualification(&s).unwrap_err();
         assert!(e.contains("msm"), "{e}");
+    }
+
+    #[test]
+    fn a_parent_with_zero_accelerated_msm_is_rejected_even_if_other_stages_have_msm() {
+        let s = vec![
+            stage("children", op(4, 4, 0, 0), op(4, 4, 0, 0)),
+            stage("parent", op(0, 0, 0, 0), op(7, 7, 0, 0)),
+            stage("decider", op(5, 5, 0, 0), op(3, 3, 0, 0)),
+        ];
+        let e = g0_dispatch_qualification(&s).unwrap_err();
+        assert!(e.contains("parent") && e.contains("msm"), "{e}");
+    }
+
+    #[test]
+    fn a_parent_with_zero_accelerated_ntt_is_rejected() {
+        let s = vec![
+            stage("children", op(4, 4, 0, 0), op(4, 4, 0, 0)),
+            stage("parent", op(9, 9, 0, 0), op(0, 0, 0, 0)),
+            stage("decider", op(5, 5, 0, 0), op(3, 3, 0, 0)),
+        ];
+        let e = g0_dispatch_qualification(&s).unwrap_err();
+        assert!(e.contains("parent") && e.contains("ntt"), "{e}");
     }
 
     #[test]
