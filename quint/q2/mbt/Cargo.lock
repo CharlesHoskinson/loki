@@ -793,6 +793,7 @@ dependencies = [
  "loki-cuda-runtime",
  "midnight-curves",
  "midnight-proofs",
+ "num-bigint",
  "quint-connect",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",

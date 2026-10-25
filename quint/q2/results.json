@@ -1,0 +1,553 @@
+{
+ "seed": "20261025",
+ "samples": 10000,
+ "max_steps": 20,
+ "faithful": [
+  {
+   "module": "q2_dispatch",
+   "invariant": "resultEqualsOracle",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.8
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "noPublishAfterError",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 3.6
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "poisonIsSticky",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.9
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "msmCountersConsistent",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.9
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "poisonCounterExact",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.8
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "transformPerCallAccounting",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 3.1
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "emptyMsmIsIdentityOnCpu",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 3.1
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "invalidRejectedBeforeBackend",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 3.2
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "backendOnlyWithCapabilityAndAbi",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 3.2
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "noCancelledRetry",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.9
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "transformFallbackRecomputedOnCpu",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.9
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "noAccelPublishAfterDisable",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.9
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "noAccelEntryAfterDisable",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.9
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "noAccelPublishAfterDisable",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.9
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "noAccelEntryAfterDisable",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 3.0
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "noCancelledRetry",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.8
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "transformFallbackRecomputedOnCpu",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.8
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "legacyResultEqualsOracle",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.3
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "noGpuMsmWhileSticky",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.8
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "stickyIsPermanent",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.3
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "defaultBuildNeverTouchesAccelerator",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.4
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "acceleratorsExclusive",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.3
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "noDeviceUseAfterFault",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.7
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "stickyOnlyForDeviceFaults",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.7
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "legacyFailuresVisibleInCounters",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.6
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "envInjectionInert",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.6
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "nttNeverRetried",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.6
+  }
+ ],
+ "switched": [
+  {
+   "module": "q2_dispatch_seq",
+   "switch": "M_NO_EMPTY_GUARD",
+   "invariant": "emptyMsmIsIdentityOnCpu",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.8
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "switch": "M_NO_DISABLED_CHECK",
+   "invariant": "noAccelEntryAfterDisable",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.8
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "switch": "M_NO_ABI_CHECK",
+   "invariant": "backendOnlyWithCapabilityAndAbi",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.8
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "switch": "M_PUBLISH_WRONG_LEN",
+   "invariant": "resultEqualsOracle",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.8
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "switch": "M_PUBLISH_WRONG_LEN",
+   "invariant": "noPublishAfterError",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.8
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "switch": "M_NO_POISON_WRONG_LEN",
+   "invariant": "poisonIsSticky",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.8
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "switch": "M_NO_CPU_BUMP_ON_FALLBACK",
+   "invariant": "msmCountersConsistent",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.9
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "switch": "M_NO_VALIDATE",
+   "invariant": "invalidRejectedBeforeBackend",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.9
+  },
+  {
+   "module": "q2_dispatch",
+   "switch": "M_POISON_COUNT_EVERY",
+   "invariant": "poisonCounterExact",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 1.0
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "switch": "M_NO_TR_CPU_BUMP",
+   "invariant": "transformPerCallAccounting",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.8
+  },
+  {
+   "module": "q2_dispatch",
+   "switch": "M_FIX_CANCEL",
+   "invariant": "noCancelledRetry",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.9
+  },
+  {
+   "module": "q2_dispatch",
+   "switch": "M_FIX_RECHECK",
+   "invariant": "noAccelPublishAfterDisable",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.8
+  },
+  {
+   "module": "q2_dispatch",
+   "switch": "M_FIX_RECHECK",
+   "invariant": "noAccelEntryAfterDisable",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.8
+  },
+  {
+   "module": "q2_dispatch",
+   "switch": "M_FIX_COSET_ACCOUNTING",
+   "invariant": "transformFallbackRecomputedOnCpu",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.9
+  },
+  {
+   "module": "q2_legacy",
+   "switch": "M_NO_COMPILE_GUARD",
+   "invariant": "acceleratorsExclusive",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.6
+  },
+  {
+   "module": "q2_legacy",
+   "switch": "M_DEFAULT_LEAK",
+   "invariant": "defaultBuildNeverTouchesAccelerator",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.6
+  },
+  {
+   "module": "q2_legacy",
+   "switch": "M_NO_STICKY_CHECK",
+   "invariant": "noGpuMsmWhileSticky",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.6
+  },
+  {
+   "module": "q2_legacy",
+   "switch": "M_CLEAR_ON_NTT_SUCCESS",
+   "invariant": "stickyIsPermanent",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.6
+  },
+  {
+   "module": "q2_legacy",
+   "switch": "M_GPU_WRONG_ON_DECODE",
+   "invariant": "legacyResultEqualsOracle",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.6
+  },
+  {
+   "module": "q2_legacy",
+   "switch": "M_DOUBLE_NORM",
+   "invariant": "legacyResultEqualsOracle",
+   "expected": "violate",
+   "got": "violate",
+   "secs": 0.6
+  },
+  {
+   "module": "q2_legacy",
+   "switch": "M_SHARED_POISON",
+   "invariant": "noDeviceUseAfterFault",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.2
+  },
+  {
+   "module": "q2_legacy",
+   "switch": "M_STICKY_DEVICE_ONLY",
+   "invariant": "stickyOnlyForDeviceFaults",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.2
+  },
+  {
+   "module": "q2_legacy",
+   "switch": "M_COUNT_LEGACY",
+   "invariant": "legacyFailuresVisibleInCounters",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.2
+  },
+  {
+   "module": "q2_legacy",
+   "switch": "M_NO_ENV_INJECTION",
+   "invariant": "envInjectionInert",
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.5
+  }
+ ],
+ "verify": [
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "resultEqualsOracle",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 7.3
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "noPublishAfterError",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 6.1
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "poisonIsSticky",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 5.2
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "msmCountersConsistent",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 5.5
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "poisonCounterExact",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 6.2
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "emptyMsmIsIdentityOnCpu",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 5.9
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "invalidRejectedBeforeBackend",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 5.9
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "backendOnlyWithCapabilityAndAbi",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 5.7
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "noAccelEntryAfterDisable",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 5.3
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "noAccelPublishAfterDisable",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 5.4
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "noCancelledRetry",
+   "max_steps": 6,
+   "expected": "violate",
+   "got": "violate",
+   "secs": 4.8
+  },
+  {
+   "module": "q2_dispatch_seq",
+   "invariant": "transformFallbackRecomputedOnCpu",
+   "max_steps": 6,
+   "expected": "violate",
+   "got": "violate",
+   "secs": 4.1
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "noAccelPublishAfterDisable",
+   "max_steps": 6,
+   "expected": "violate",
+   "got": "violate",
+   "secs": 11.6
+  },
+  {
+   "module": "q2_dispatch",
+   "invariant": "resultEqualsOracle",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 98.3
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "legacyResultEqualsOracle",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 1.7
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "noGpuMsmWhileSticky",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 1.8
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "stickyIsPermanent",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 1.8
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "defaultBuildNeverTouchesAccelerator",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.1
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "acceleratorsExclusive",
+   "max_steps": 6,
+   "expected": "hold",
+   "got": "hold",
+   "secs": 2.1
+  },
+  {
+   "module": "q2_legacy",
+   "invariant": "noDeviceUseAfterFault",
+   "max_steps": 6,
+   "expected": "violate",
+   "got": "violate",
+   "secs": 1.6
+  }
+ ],
+ "all_expected": true
+}

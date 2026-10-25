@@ -12,21 +12,21 @@
 // transform output is the distinguished value WRONG.
 //
 // Source correspondence (file:line at a256a9a):
-//   call / admit       Dispatcher::msm                 dispatch.rs:144-170 (gate 153-156)
-//                      Dispatcher::transform           dispatch.rs:176-192 (validate 187)
-//                      try_accelerated_transform gate  dispatch.rs:206-215
-//                      cpu::validate_transform         cpu.rs:81-131
-//   enter              backend.msm / backend.transform dispatch.rs:158, 216
-//   accelOk            Ok arms                         dispatch.rs:159-162, 217-220
-//   accelWrongLen      Ok(_) wrong length arm          dispatch.rs:221-226
-//   accelErr           Err arms -> failed()            dispatch.rs:163, 227-230; failed 128-140
-//   poison             Dispatcher::poison              dispatch.rs:120-124
-//   cpu fallback       bump msm_cpu + cpu::msm_request dispatch.rs:168-169; cpu.rs:42-51
-//                      bump transform_cpu + in-place   dispatch.rs:190-191
-//   coset (OCoset)     accelerated_coset               dispatch.rs:331-350
+//   admit              Dispatcher::msm                 dispatch.rs:130-159 (gate 143-146)
+//                      Dispatcher::transform           dispatch.rs:165-183 (validate 175)
+//                      try_accelerated_transform gate  dispatch.rs:187-207 (gate 200-205)
+//                      cpu::validate_transform         cpu.rs:83-
+//   enter              backend.msm / backend.transform dispatch.rs:148, 209
+//   accelOk            Ok arms                         dispatch.rs:149-152, 210-213
+//   accelWrongLen      Ok(_) wrong length arm          dispatch.rs:214-219
+//   accelErr           Err arms -> failed()            dispatch.rs:153, 220-223; failed 115-127
+//   poison             Dispatcher::poison              dispatch.rs:107-111
+//   cpu fallback       bump msm_cpu + cpu::msm_request dispatch.rs:157-158; cpu.rs:42-51
+//                      bump transform_cpu + in-place   dispatch.rs:181-182
+//   coset (OCoset)     accelerated_coset               dispatch.rs:333-350
 //                      EvaluationDomain::coeff_to_extended stock body after None
-//                                                      domain.rs:277-302 -> fft 411-421
-//                                                      -> dispatch::fft/run_transform 285-306
+//                                                      domain.rs:277-302 -> fft 412-422
+//                                                      -> dispatch::fft 306 / run_transform 272-288
 module q2_dispatch {
   // ------------------------------------------------------------- types
   type Op = OMsm | OTransform | OCoset
@@ -102,10 +102,13 @@ module q2_dispatch {
   // M_FIX_RECHECK: `disabled` is re-checked at entry and before publication.
   pure val M_FIX_CANCEL = false
   pure val M_FIX_RECHECK = false
+  // M_FIX_COSET_ACCOUNTING: the coset hook's failed offer is not a *_fallback
+  // (its stock body is accounted by the inner P1 transform).
+  pure val M_FIX_COSET_ACCOUNTING = false
 
   // ------------------------------------------------------------- gates
-  // dispatch.rs:153-156 (msm) and 206-213 (transform). Transform requests
-  // reaching the gate are already validated (dispatch.rs:187, 337).
+  // dispatch.rs:143-146 (msm) and 200-205 (transform). Transform requests
+  // reaching the gate are already validated (dispatch.rs:175, 341).
   def admittedNow(r: Req): bool =
     (M_NO_DISABLED_CHECK or not(disabled))
     and r.capOk and (M_NO_ABI_CHECK or r.abiOk)
@@ -155,7 +158,7 @@ module q2_dispatch {
       if (not(r.valid) and not(M_NO_VALIDATE)) all {
         // validate_transform error: values unchanged, no backend, no counters.
         // OCoset with an invalid spec is unreachable (domain specs are valid),
-        // and accelerated_coset would just return None (dispatch.rs:337).
+        // and accelerated_coset would just return None (dispatch.rs:341).
         reqs' = reqs.set(t, { ...r, phase: Done, source: SReject, result: 0 }),
         ctr' = ctr, msmDone' = msmDone, trDone' = trDone,
       } else if (admittedNow(r)) all {
@@ -171,7 +174,7 @@ module q2_dispatch {
     }
   }
 
-  // The admitted request enters the backend (dispatch.rs:158 / 216). Nothing
+  // The admitted request enters the backend (dispatch.rs:148 / 209). Nothing
   // re-checks `disabled` between the gate and this call.
   action enter(t: int): bool = {
     val r = reqs.get(t)
@@ -216,7 +219,8 @@ module q2_dispatch {
   // Transform only: Ok(output) with output.len() != output_len.
   action accelWrongLen(t: int): bool = {
     val r = reqs.get(t)
-    val c1 = { ...ctr, trFb: ctr.trFb + 1 }
+    val outerCoset = r.op == OCoset and not(r.inner)
+    val c1 = if (M_FIX_COSET_ACCOUNTING and outerCoset) ctr else { ...ctr, trFb: ctr.trFb + 1 }
     val poisonNow = not(M_NO_POISON_WRONG_LEN)
     val d1 = disabled or poisonNow
     val c2 = if (poisonNow and (M_POISON_COUNT_EVERY or not(disabled))) { ...c1, poisoned: c1.poisoned + 1 } else c1
@@ -240,7 +244,9 @@ module q2_dispatch {
   action accelErr(t: int, kind: Kind, effect: Effect): bool = {
     val r = reqs.get(t)
     val poisonNow = effect == SessionPoisoned or kind == ContextLost or kind == Poisoned
-    val c1 = if (isMsm(r)) { ...ctr, msmFb: ctr.msmFb + 1 } else { ...ctr, trFb: ctr.trFb + 1 }
+    val outerCoset = r.op == OCoset and not(r.inner)
+    val c1 = if (isMsm(r)) { ...ctr, msmFb: ctr.msmFb + 1 }
+      else if (M_FIX_COSET_ACCOUNTING and outerCoset) ctr else { ...ctr, trFb: ctr.trFb + 1 }
     val c2 = if (poisonNow and (M_POISON_COUNT_EVERY or not(disabled))) { ...c1, poisoned: c1.poisoned + 1 } else c1
     val d1 = disabled or poisonNow
     val failedReq = { ...r, lastAccelFailed: true, cancelled: r.cancelled or kind == Cancelled }
@@ -338,7 +344,7 @@ module q2_dispatch {
   // P5: counters.
   val msmCountersConsistent = ctr.msmAcc + ctr.msmCpu == msmDone and ctr.msmFb <= ctr.msmCpu
   val poisonCounterExact = ctr.poisoned == (if (disabled) 1 else 0)
-  // dispatch.rs:39-43: every transform fallback was recomputed on CPU.
+  // dispatch.rs:42-43 (DispatchCounters doc): every transform fallback was recomputed on CPU.
   val transformFallbackRecomputedOnCpu = ctr.trFb <= ctr.trCpu
   // Each P1 transform call bumps exactly one of cpu / accelerated, ignoring
   // the coset hook's own bumps.

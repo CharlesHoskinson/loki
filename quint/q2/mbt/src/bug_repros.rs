@@ -57,7 +57,7 @@ impl TransformBackend<Fq> for Cancelling {
 
 /// B1: `ErrorKind::Cancelled` "does not request automatic CPU retry of
 /// cancelled work" (loki-backend-api, loki-gpu cefecbc; design/BUILD.md:191),
-/// yet Dispatcher::failed (dispatch.rs:128-140) accounts it as a fallback and
+/// yet Dispatcher::failed (dispatch.rs:115-127) accounts it as a fallback and
 /// msm()/transform() recompute on CPU. msm() cannot even report cancellation:
 /// it returns a bare point.
 #[test]
@@ -119,8 +119,8 @@ impl MsmBackend<Fq, G1Projective> for Scripted {
 
 /// B3: an in-flight accelerator result is published (msm_accelerated bumped)
 /// after a concurrent call has sticky-disabled the accelerator with
-/// ContextLost. The gate (dispatch.rs:153-156) is evaluated once before the
-/// call and nothing re-checks `disabled` before publication (159-162).
+/// ContextLost. The gate (dispatch.rs:143-146) is evaluated once before the
+/// call (148) and nothing re-checks `disabled` before publication (149-152).
 #[test]
 fn b3_result_published_after_concurrent_poison() {
     let d = Dispatcher::new();
@@ -156,7 +156,7 @@ fn b3_result_published_after_concurrent_poison() {
 }
 
 /// Control: `preserves_observable_state` is true for every FailureEffect, so
-/// the assert in Dispatcher::failed (dispatch.rs:130-133) is unreachable.
+/// the assert in Dispatcher::failed (dispatch.rs:116-119) is unreachable.
 #[test]
 fn preserves_observable_state_is_a_tautology() {
     for effect in [FailureEffect::NotStarted, FailureEffect::InputsPreserved, FailureEffect::SessionPoisoned] {

@@ -504,6 +504,8 @@ impl Drop for DispatchDriver {
     }
 }
 
+// 5 x 2000 traces (Quint keeps all traces of one run in memory; 10000 in
+// one run exhausts its 4 GB Node heap).
 #[quint_connect::quint_run(
     spec = "../dispatch.qnt",
     main = "q2_dispatch",
@@ -512,6 +514,54 @@ impl Drop for DispatchDriver {
     max_steps = 30,
     seed = "20261025"
 )]
-fn replay_p1_dispatcher() -> DispatchDriver {
+fn replay_p1_dispatcher_0() -> DispatchDriver {
+    DispatchDriver::default()
+}
+
+#[quint_connect::quint_run(
+    spec = "../dispatch.qnt",
+    main = "q2_dispatch",
+    step = "mbtStep",
+    max_samples = 2000,
+    max_steps = 30,
+    seed = "20261026"
+)]
+fn replay_p1_dispatcher_1() -> DispatchDriver {
+    DispatchDriver::default()
+}
+
+#[quint_connect::quint_run(
+    spec = "../dispatch.qnt",
+    main = "q2_dispatch",
+    step = "mbtStep",
+    max_samples = 2000,
+    max_steps = 30,
+    seed = "20261027"
+)]
+fn replay_p1_dispatcher_2() -> DispatchDriver {
+    DispatchDriver::default()
+}
+
+#[quint_connect::quint_run(
+    spec = "../dispatch.qnt",
+    main = "q2_dispatch",
+    step = "mbtStep",
+    max_samples = 2000,
+    max_steps = 30,
+    seed = "20261028"
+)]
+fn replay_p1_dispatcher_3() -> DispatchDriver {
+    DispatchDriver::default()
+}
+
+#[quint_connect::quint_run(
+    spec = "../dispatch.qnt",
+    main = "q2_dispatch",
+    step = "mbtStep",
+    max_samples = 2000,
+    max_steps = 30,
+    seed = "20261029"
+)]
+fn replay_p1_dispatcher_4() -> DispatchDriver {
     DispatchDriver::default()
 }

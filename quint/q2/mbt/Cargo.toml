@@ -21,6 +21,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 blst = "0.3.16"
 tracing = "0.1"
+num-bigint = "0.4"
 loki-cuda-runtime = { path = "../../../cuda-runtime" }
 quint-connect = { git = "https://github.com/informalsystems/quint-connect", rev = "4f018f54fc7dd4cef341d10111427bab59d3b307" }
 
@@ -28,6 +29,7 @@ quint-connect = { git = "https://github.com/informalsystems/quint-connect", rev 
 # Compile the legacy W9/W13 host adapter with its registry variant.
 cuda-srs-registry = []
 cuda = []
+default = ["cuda"]
 
 [patch.crates-io]
 midnight-proofs = { path = "../../.." }
