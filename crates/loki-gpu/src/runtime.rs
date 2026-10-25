@@ -859,6 +859,27 @@ impl GpuRuntime {
     /// generation and publication guarantees, and the memory safety of
     /// native drivers, depend on this exclusivity; violating it can free or
     /// reset memory that queued device work still references.
+    ///
+    /// Raw injection is not callable from safe code (review finding L2):
+    ///
+    /// ```compile_fail,E0133
+    /// use std::sync::Arc;
+    /// use loki_gpu::runtime::fake::{FakeConfig, FakeDriver};
+    /// use loki_gpu::runtime::{DeviceDriver, GpuRuntime, RuntimeConfig};
+    /// let driver: Arc<dyn DeviceDriver> = Arc::new(FakeDriver::new(FakeConfig::default()));
+    /// let _rt = GpuRuntime::with_driver(driver, RuntimeConfig::default());
+    /// ```
+    ///
+    /// The same call inside `unsafe`, with the precondition upheld, compiles:
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use loki_gpu::runtime::fake::{FakeConfig, FakeDriver};
+    /// use loki_gpu::runtime::{DeviceDriver, GpuRuntime, RuntimeConfig};
+    /// let driver: Arc<dyn DeviceDriver> = Arc::new(FakeDriver::new(FakeConfig::default()));
+    /// // SAFETY: `driver` is fresh and moved in; no alias remains.
+    /// let _rt = unsafe { GpuRuntime::with_driver(driver, RuntimeConfig::default()) };
+    /// ```
     pub unsafe fn with_driver(driver: Arc<dyn DeviceDriver>, config: RuntimeConfig) -> Self {
         let mut rt = Self::unavailable();
         rt.driver = Some(driver);
