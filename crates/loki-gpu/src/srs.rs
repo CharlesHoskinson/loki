@@ -659,9 +659,17 @@ where
         };
         if buffer.generation() != generation {
             // The context was replaced during the upload; the new allocation
-            // belongs to a generation this request did not name.
-            let _ = self.runtime.release_wire(buffer);
-            self.lock(op)?.pending_bytes -= bytes;
+            // belongs to a generation this request did not name. A failed
+            // release is never retried; like a failed victim release its
+            // bytes stay charged (quarantined under the buffer's generation)
+            // until that generation ends.
+            let stray = buffer.generation();
+            let released = self.runtime.release_wire(buffer);
+            let mut st = self.lock(op)?;
+            st.pending_bytes -= bytes;
+            if released.is_err() {
+                st.quarantined.push((stray, bytes));
+            }
             return Err(err(op, ErrorKind::ContextLost, FailureEffect::InputsPreserved));
         }
 

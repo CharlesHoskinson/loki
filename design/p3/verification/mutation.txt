@@ -32,3 +32,9 @@ failed: ['oversized_entries_are_refused_before_upload']
 exit=101 ['test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s']
 failed: ['forged_lease_metadata_and_public_paths_are_rejected']
 
+
+M8 (lean-w1 finding 2): revert the stray-generation release quarantine in
+srs.rs (discard the release result). Caught:
+  stray_generation_upload_release_failure_is_quarantined
+  assertion failed: failed stray release stays charged (left: 0, right: 2048)
+With the fix: cargo test -p loki-gpu --offline --locked --test srs_registry -> 17 passed.

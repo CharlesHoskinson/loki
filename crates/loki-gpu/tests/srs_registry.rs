@@ -440,6 +440,8 @@ fn malformed_requests_are_rejected_before_any_work() {
     assert_eq!(parse_budget(Some("8388608")).unwrap(), 8 << 20);
     assert!(parse_budget(Some("bad")).is_err());
     assert!(parse_budget(Some("-1")).is_err());
+    assert!(parse_budget(Some("")).is_err());
+    assert!(parse_budget(Some(" 1")).is_err());
 }
 
 // --------------------------------------------------------------------------
@@ -607,6 +609,81 @@ fn failed_eviction_release_is_quarantined() {
     assert_eq!(e.stats().retiring_bytes, 0);
     e.release(l);
     e.clean();
+}
+
+/// Codec that runs a one-shot hook during validation (outside every lock),
+/// used to replace the device context between key check and upload.
+struct HookCodec {
+    inner: ToyCodec,
+    hook: std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+impl SrsPointCodec<ToyPoint> for HookCodec {
+    fn curve_abi(&self) -> CurveAbi {
+        self.inner.curve_abi()
+    }
+    fn wire_bytes(&self) -> usize {
+        self.inner.wire_bytes()
+    }
+    fn validate_encode(&self, points: &[ToyPoint], wire: &mut [u8]) -> Result<(), SrsPointError> {
+        if let Some(hook) = self.hook.lock().unwrap().take() {
+            hook();
+        }
+        self.inner.validate_encode(points, wire)
+    }
+    fn same_representation(&self, a: &ToyPoint, b: &ToyPoint) -> bool {
+        self.inner.same_representation(a, b)
+    }
+}
+
+/// lean-w1 finding: an upload that lands in a newer generation is released,
+/// and if that release fails its bytes are quarantined (charged) under the
+/// stray buffer's generation, exactly like a failed victim release.
+#[test]
+fn stray_generation_upload_release_failure_is_quarantined() {
+    let n = 256;
+    let bytes = (n * WIRE) as u64;
+    let e = env(1 << 30);
+    let rt = e.rt;
+    let fake = e.fake.clone();
+    let old_gen = e.gen();
+    let codec = Arc::new(HookCodec {
+        inner: ToyCodec::default(),
+        hook: std::sync::Mutex::new(Some(Box::new(move || {
+            fake.inject(DriverCall::DeviceAlloc, 1, Fault::Fail(DriverErrorClass::ContextLost));
+            assert!(ResidentBackend::<Toy, ToyPoint>::upload_scalars(rt, &[Toy::new(1)]).is_err());
+            rt.reinitialize().unwrap();
+            // The stray buffer's release will fail.
+            fake.inject(DriverCall::DeviceFree, 1, Fault::Fail(DriverErrorClass::Transient));
+        }))),
+    });
+    let reg = GpuSrsRegistry::with_runtime(rt, codec, 1 << 30);
+    let r: &Reg = &reg;
+    let pts = points(n, 30);
+    let key = e.key(SrsBasis::Coefficient, 8, n);
+    assert_eq!(key.generation, old_gen);
+    assert_err(
+        r.acquire_srs(SrsRequest { key, points: &pts }),
+        ErrorKind::ContextLost,
+        FailureEffect::InputsPreserved,
+    );
+    let new_gen = e.gen();
+    assert_ne!(new_gen, old_gen);
+    let s = reg.stats();
+    assert_eq!((s.resident_entries, s.pending_bytes, s.uploads), (0, 0, 0));
+    assert_eq!(s.retiring_bytes, bytes, "failed stray release stays charged");
+    // The failed free poisoned the session: no acquire until a new
+    // generation, and the quarantine survives the refused attempt.
+    assert_err(
+        r.acquire_srs(SrsRequest { key: e.key(SrsBasis::Coefficient, 8, n), points: &pts }),
+        ErrorKind::Poisoned,
+        FailureEffect::SessionPoisoned,
+    );
+    assert_eq!(reg.stats().retiring_bytes, bytes);
+    rt.reinitialize().unwrap();
+    let again = r.acquire_srs(SrsRequest { key: e.key(SrsBasis::Coefficient, 8, n), points: &pts }).unwrap();
+    assert_eq!(reg.stats().retiring_bytes, 0);
+    r.release_srs(again).unwrap();
 }
 
 #[test]
