@@ -1,7 +1,7 @@
 //! P7 scheduler contract: one-heavy FIFO admission over the P2 reservation API.
 //!
 //! These tests drive [`loki_gpu::schedule::HeavyScheduler`] against the
-//! fault-injecting fake device runtime (`GpuRuntime::with_driver`) and against
+//! fault-injecting fake device runtime (`GpuRuntime::with_fake`) and against
 //! recording fakes for host locks and reservations. No CUDA toolkit or GPU is
 //! required.
 //!
@@ -28,7 +28,7 @@ use loki_backend_api::{
     BackendError, DeviceGeneration, ErrorKind, FailureEffect, ReservationId, ReservationResult,
     ReservationToken, ResidentBackend, RuntimeSnapshot,
 };
-use loki_gpu::runtime::fake::{DriverCall, FakeDriver, Fault};
+use loki_gpu::runtime::fake::{DriverCall, FakeControl, Fault};
 use loki_gpu::runtime::{DriverErrorClass, GpuRuntime, RuntimeConfig};
 use loki_gpu::schedule::{
     Admission, ArtifactIdentity, Dependency, HeavyScheduler, HostLock, HostLockGuard, HostLocks,
@@ -41,10 +41,9 @@ use support::{scalars, Toy, ToyPoint};
 // Fixtures
 // --------------------------------------------------------------------------
 
-fn fake_runtime() -> (Arc<FakeDriver>, Arc<GpuRuntime>) {
-    let fake = Arc::new(FakeDriver::new(Default::default()));
-    let rt = GpuRuntime::with_driver(
-        fake.clone(),
+fn fake_runtime() -> (FakeControl, Arc<GpuRuntime>) {
+    let (fake, rt) = GpuRuntime::with_fake(
+        Default::default(),
         RuntimeConfig {
             device_budget_cap: Some(1 << 20),
             device_headroom_bytes: 0,
