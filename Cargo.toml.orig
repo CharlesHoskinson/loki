@@ -88,6 +88,8 @@ truncated-challenges = []
 
 # Optional wall timing and arithmetic counts; no hooks are built by default.
 loki-profile = []
+loki-cpu-budget = ["blst/no-threads"]
+loki-harden = []
 
 # This feature adds a new argument to prover and verifier functions, which
 # represents instances in committed form (e.g. in the form of a polynomial

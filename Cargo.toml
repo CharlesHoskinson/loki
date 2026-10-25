@@ -56,6 +56,8 @@ dev-curves = [
 ]
 truncated-challenges = []
 loki-profile = []
+loki-cpu-budget = ["blst/no-threads"]
+loki-harden = []
 
 [lib]
 name = "midnight_proofs"
@@ -122,10 +124,8 @@ required-features = ["bench-internal"]
 [dependencies.blake2b_simd]
 version = "1"
 
-# All MSM parallelism uses the active Rayon pool, including nested callers.
 [dependencies.blst]
 version = "0.3.16"
-features = ["no-threads"]
 
 [dependencies.criterion]
 version = "0.7"
