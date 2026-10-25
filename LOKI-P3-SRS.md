@@ -1,6 +1,6 @@
 # P3 — legacy sppark adapter and new-backend SRS codec (Loki side)
 
-Branch `loki/p3-srs` on `0c4ab9d`. The loki-gpu half (registry, runtime seam, contract
+Branch `loki/p3-srs` on `1c8615f` (P4 merge). The loki-gpu half (registry, runtime seam, contract
 tests) is recorded in `loki-gpu/design/p3/REVIEW.md`. Labels: CODE / MEASURED / OPEN
 QUESTION. All inputs are synthetic.
 
@@ -40,7 +40,7 @@ The two never coexist: `src/lib.rs` rejects `loki-gpu-backend` together with `cu
 
 ## Gates (MEASURED)
 
-CPU (final commit `85586f3`): `loki-sppark` lib 49 passed / 41 GPU-ignored;
+CPU (final source commit `05a3c7a`; MERGE-CPU on the rebased branch): `loki-sppark` lib 49 passed / 41 GPU-ignored;
 `loki-gpu-srs-registry` lib 38 / 3 ignored; default lib 34; `backend_cpu_equivalence` 15
 (`--features loki-backend-api`); W2 harness k10/k14/k17 cross-verified with equal VKs; the
 independent stock verifier (`tests-stock`) accepts the k14 CPU fixture. Each new rule (output
@@ -52,8 +52,9 @@ GPU, measured before the final fixes: the adapter equals the legacy call and the
 cases) and `gpu_large_boundaries` pass under `loki-sppark`; the `tests/gpu-compat` stock
 verifier accepts the GPU proof and rejects a mutated one.
 
-PENDING (W12 GPU hold): the GPU rows on the final commit, the W13 `gpu_srs_*` set including
-`gpu_srs_kernel_prefix_differential`, and `gpu_srs_registry_k19_k20_on_device`.
+RECEIPT-NATIVE (post-merge, per `docs/MERGE-GATES.md`): the GPU rows on the merged sha, the
+W13 `gpu_srs_*` set including `gpu_srs_kernel_prefix_differential`, and
+`gpu_srs_registry_k19_k20_on_device`.
 
 ## Open questions
 
