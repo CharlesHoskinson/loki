@@ -28,8 +28,8 @@ struct Entry {
     resident: *mut c_void,
 }
 
-// All access, including destruction, is under CACHE. Each FFI entry sets the
-// active CUDA device on the calling thread and completes work before returning.
+// All access, including destruction, holds the process device guard, then CACHE.
+// Each FFI entry sets the active device and completes work before returning.
 unsafe impl Send for Entry {}
 
 #[derive(Default)]
@@ -80,14 +80,25 @@ impl Cache {
         let entry = if let Some(index) = hit {
             self.entries.remove(index).unwrap()
         } else {
+            // LokiLean/Msm.lean: MeetsMsmSpecific assumes prime-order G1
+            // inputs. Validate once per upload, before preparing device bases;
+            // a cache hit compares every coordinate against this validated copy.
+            // Keep validation serial while holding the device/cache locks:
+            // Rayon workers may themselves be waiting to enter this backend.
+            if bases.iter().any(|base| !bool::from(base.is_on_curve())) {
+                return Err("invalid SRS base: off curve".into());
+            }
+            let mut affine = vec![G1Affine::default(); bases.len()];
+            G1Projective::batch_normalize(bases, &mut affine);
+            if affine.iter().any(|base| !bool::from(base.is_torsion_free())) {
+                return Err("invalid SRS base: outside G1 subgroup".into());
+            }
             // Bound residency to two SRS arrays (coefficient and Lagrange).
             if self.entries.len() == 2 {
                 let old = self.entries.pop_front().unwrap();
                 // SAFETY: this handle was created by prepare and is not in use.
                 status(unsafe { loki_gpu_release(old.resident) })?;
             }
-            let mut affine = vec![G1Affine::default(); bases.len()];
-            G1Projective::batch_normalize(bases, &mut affine);
             let wire: Vec<_> = affine.iter().map(convert::affine).collect();
             let mut resident = std::ptr::null_mut();
             // SAFETY: live, correctly sized/aligned arrays; C++ copies them.
@@ -121,6 +132,7 @@ pub(super) fn msm(scalars: &[Fq], bases: &[G1Projective]) -> Result<G1Projective
     if n == 0 {
         return Ok(G1Projective::default());
     }
+    let _device = loki_cuda_runtime::lock()?;
     let mut cache = CACHE
         .lock()
         .map_err(|_| "GPU cache lock poisoned".to_owned())?;
@@ -137,6 +149,7 @@ pub(super) fn msm(scalars: &[Fq], bases: &[G1Projective]) -> Result<G1Projective
 
 #[cfg(test)]
 pub(super) fn clear_cache() -> Result<(), String> {
+    let _device = loki_cuda_runtime::lock()?;
     let mut cache = CACHE
         .lock()
         .map_err(|_| "GPU cache lock poisoned".to_owned())?;
@@ -157,4 +170,35 @@ pub(super) fn gpu_calls() -> usize {
 #[cfg(test)]
 pub(super) fn failed() -> bool {
     CACHE.lock().unwrap().failed
+}
+
+#[cfg(test)]
+mod upload_tests {
+    use super::*;
+    use ff::Field;
+
+    #[test]
+    fn gpu_rejects_corrupted_resident_base() {
+        use midnight_curves::Fp;
+        // Raw unchecked APIs can construct points outside the group. Never cache one.
+        let raw = blst::blst_p1 {
+            x: Fp::ONE.into(),
+            y: Fp::ONE.into(),
+            z: Fp::ONE.into(),
+        };
+        // SAFETY: G1Projective is repr(transparent) over blst_p1; reduced limbs.
+        let corrupt: G1Projective = unsafe { std::mem::transmute(raw) };
+        assert!(!bool::from(corrupt.is_on_curve()));
+        let mut cache = Cache::default();
+        let error = cache.run(&[Fq::ONE], &[corrupt]).unwrap_err();
+        assert!(error.contains("invalid SRS base"), "{error}");
+        assert_eq!(cache.entries.len(), 0);
+        // (0, 2) lies on y^2 = x^3 + 4 but has order 3, outside prime-order G1.
+        use midnight_curves::CurveExt;
+        let torsion = G1Projective::new_jacobian(Fp::ZERO, Fp::from(2), Fp::ONE).unwrap();
+        assert!(bool::from(torsion.is_on_curve()));
+        let error = cache.run(&[Fq::ONE], &[torsion]).unwrap_err();
+        assert!(error.contains("outside G1 subgroup"), "{error}");
+        assert_eq!(cache.entries.len(), 0);
+    }
 }

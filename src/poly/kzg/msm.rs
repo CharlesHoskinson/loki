@@ -207,10 +207,10 @@ fn msm_cpu<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) -> C::Curve
         let res = {
             let chunk_size = coeffs.len().div_ceil(rayon::current_num_threads()).max(1024);
             coeffs
-            .par_chunks(chunk_size)
-            .zip(bases.par_chunks(chunk_size))
-            .map(|(coeffs, bases)| G1Projective::multi_exp(bases, coeffs))
-            .reduce(G1Projective::identity, |a, b| a + b)
+                .par_chunks(chunk_size)
+                .zip(bases.par_chunks(chunk_size))
+                .map(|(coeffs, bases)| G1Projective::multi_exp(bases, coeffs))
+                .reduce(G1Projective::identity, |a, b| a + b)
         };
         unsafe { std::mem::transmute_copy(&res) }
     } else {

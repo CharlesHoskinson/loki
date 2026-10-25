@@ -176,6 +176,44 @@ mod proof_fixture {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/gpu-compat/circuit.rs"
     ));
+
+    #[cfg(feature = "cuda-ntt")]
+    pub fn concurrent_setup() -> (ParamsKZG<Bls12>, plonk::ProvingKey<Fq, Scheme>) {
+        let params = ParamsKZG::<Bls12>::unsafe_setup(14, OsRng);
+        let vk = plonk::keygen_vk_with_k::<Fq, Scheme, _>(&params, &SquareCircuit, 14).unwrap();
+        let pk = plonk::keygen_pk(vk, &SquareCircuit).unwrap();
+        (params, pk)
+    }
+
+    #[cfg(feature = "cuda-ntt")]
+    pub fn concurrent_proof(params: &ParamsKZG<Bls12>, pk: &plonk::ProvingKey<Fq, Scheme>) {
+        let values = [Fq::from(49)];
+        let instances: &[&[Fq]] = &[&values];
+        let mut transcript = CircuitTranscript::<State>::init();
+        plonk::create_proof::<Fq, Scheme, _, _>(
+            params,
+            pk,
+            &[SquareCircuit],
+            #[cfg(feature = "committed-instances")]
+            0,
+            &[instances],
+            &mut transcript,
+            OsRng,
+        )
+        .unwrap();
+        let proof = transcript.finalize();
+        let mut transcript = CircuitTranscript::<State>::init_from_bytes(&proof);
+        plonk::prepare::<Fq, Scheme, _>(
+            pk.get_vk(),
+            #[cfg(feature = "committed-instances")]
+            &[&[]],
+            &[instances],
+            &mut transcript,
+        )
+        .unwrap()
+        .verify(&params.verifier_params())
+        .unwrap();
+    }
 }
 
 #[test]
@@ -239,4 +277,45 @@ fn gpu_large_boundaries() {
             eprintln!("GPU large boundary {n}: passed");
         }
     }
+}
+
+#[cfg(feature = "cuda-ntt")]
+#[test]
+#[ignore = "requires CUDA; four concurrent provers using MSM and NTT"]
+fn gpu_concurrent_proofs() {
+    let (params, pk) = proof_fixture::concurrent_setup();
+    let msm_reference = backend::gpu_calls();
+    let ntt_reference = loki_cuda_ntt::completed_calls();
+    proof_fixture::concurrent_proof(&params, &pk);
+    let msm_before = backend::gpu_calls();
+    let ntt_before = loki_cuda_ntt::completed_calls();
+    let msm_per_proof = msm_before - msm_reference;
+    let ntt_per_proof = ntt_before - ntt_reference;
+    assert!(msm_per_proof > 0 && ntt_per_proof > 0);
+    let barrier = std::sync::Barrier::new(4);
+    std::thread::scope(|scope| {
+        let jobs: Vec<_> = (0..4)
+            .map(|_| {
+                let barrier = &barrier;
+                let params = &params;
+                let pk = &pk;
+                scope.spawn(move || {
+                    barrier.wait();
+                    proof_fixture::concurrent_proof(&params, &pk);
+                })
+            })
+            .collect();
+        for job in jobs {
+            job.join().unwrap();
+        }
+    });
+    assert_eq!(backend::gpu_calls() - msm_before, 4 * msm_per_proof);
+    assert_eq!(
+        loki_cuda_ntt::completed_calls() - ntt_before,
+        4 * ntt_per_proof
+    );
+    assert!(
+        !backend::failed(),
+        "concurrent proofs must not silently fall back"
+    );
 }

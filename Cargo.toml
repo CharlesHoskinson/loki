@@ -46,7 +46,7 @@ rustdoc-args = [
 bench-internal = ["criterion"]
 circuit-params = []
 cuda-ntt = ["dep:loki-cuda-ntt"]
-cuda = ["dep:sppark", "dep:cc"]
+cuda = ["dep:sppark", "dep:cc", "dep:loki-cuda-runtime"]
 committed-instances = []
 default = ["committed-instances"]
 derive_serde = ["midnight-curves/serde"]
@@ -212,4 +212,8 @@ optional = true
 
 [build-dependencies.cc]
 version = "1"
+optional = true
+
+[dependencies.loki-cuda-runtime]
+path = "cuda-runtime"
 optional = true
