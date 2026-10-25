@@ -6,8 +6,8 @@ edition = "2021"
 
 [features]
 default = []
-# Placeholder until Loki's GPU MSM (`cuda`) lands in main: then "loki/cuda".
-cuda = []
+# GPU MSM; a tracing layer turns Loki's silent CPU fallback into a failure.
+cuda = ["loki/cuda", "dep:tracing", "dep:tracing-subscriber"]
 cuda-ntt = ["loki/cuda-ntt", "dep:loki-cuda-ntt"]
 # Prover and verifier must agree on this feature; both crates get it.
 truncated = ["loki/truncated-challenges", "stock/truncated-challenges"]
@@ -24,6 +24,8 @@ blake2b_simd = "1"
 rand_chacha = "0.3"
 rand_core = "0.6"
 arbitrary = "1"
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", optional = true, default-features = false, features = ["registry"] }
 # Same package as Loki's optional dependency: exposes the GPU call counter.
 loki-cuda-ntt = { path = "../../cuda-ntt", optional = true }
 

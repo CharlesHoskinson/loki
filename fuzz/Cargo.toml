@@ -13,7 +13,7 @@ cargo-fuzz = true
 members = [".", "diff"]
 
 [features]
-# GPU MSM (loki/w4-gpu-msm). Enable only once Loki's `cuda` feature exists.
+# GPU MSM (Loki `cuda`).
 cuda = ["loki-diff/cuda"]
 cuda-ntt = ["loki-diff/cuda-ntt"]
 truncated = ["loki-diff/truncated"]

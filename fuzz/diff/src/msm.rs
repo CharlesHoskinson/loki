@@ -64,8 +64,42 @@ pub fn init() {
         if std::env::var_os("LOKI_GPU_MSM_MIN").is_none() {
             std::env::set_var("LOKI_GPU_MSM_MIN", "1");
         }
+        #[cfg(feature = "cuda")]
+        gpu_watch::install();
         pool();
     });
+}
+
+/// Loki's GPU MSM falls back to the CPU (with one `warn!`) on any GPU error;
+/// that would make the differential vacuous, so any WARN event fails the run.
+#[cfg(feature = "cuda")]
+pub mod gpu_watch {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tracing_subscriber::{layer::SubscriberExt, Layer};
+
+    pub static WARNED: AtomicBool = AtomicBool::new(false);
+
+    struct Watch;
+    impl<S: tracing::Subscriber> Layer<S> for Watch {
+        fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
+            if *event.metadata().level() <= tracing::Level::WARN {
+                WARNED.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    pub fn install() {
+        let _ = tracing::subscriber::set_global_default(tracing_subscriber::registry().with(Watch));
+    }
+
+    pub fn assert_no_fallback() {
+        assert!(!WARNED.load(Ordering::SeqCst), "GPU MSM failed and fell back to the CPU");
+    }
+}
+
+fn check_gpu() {
+    #[cfg(feature = "cuda")]
+    gpu_watch::assert_no_fallback();
 }
 
 /// Every coordinate is a fully reduced Montgomery residue, and the point is
@@ -156,6 +190,7 @@ fn msm(input: &mut Input) {
     let (scalars, bases) = case(input);
     let loki = loki::poly::kzg::msm::msm_specific::<G1Affine>(&scalars, &bases);
     let stock = stock::poly::kzg::msm::msm_specific::<G1Affine>(&scalars, &bases);
+    check_gpu();
     assert_reduced(&loki, "loki msm_specific");
     assert!(
         same(&loki, &stock),
@@ -221,6 +256,7 @@ fn commit(input: &mut Input) {
             ),
         )
     };
+    check_gpu();
     assert_reduced(&l, "loki commitment");
     assert!(same(&l, &s), "commit(lagrange={lagrange}) mismatch at k={k}");
     // Reference: the first 2^k entries of the full-size Lagrange basis.

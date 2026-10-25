@@ -182,3 +182,44 @@ fn truncated_challenges_parity() {
     assert_eq!(v[2].accepted(), !CROSS_MISMATCH);
     assert_eq!(v[3].accepted(), !CROSS_MISMATCH);
 }
+
+/// Upstream (stock and Loki alike) panics on hostile verifying keys, found
+/// by `proof_parse`: (1) a k byte near 32 passes the `k <= S` check but
+/// `EvaluationDomain::new` asserts `extended_k <= S`; (2) a VK declaring fewer
+/// fixed commitments than the constraint system uses is accepted by `read`
+/// and the verifier then indexes past the end. Both crates must behave alike.
+#[test]
+fn upstream_hostile_vk_panics() {
+    let fx = loki_diff::parse::fixture();
+    let b = &fx.built;
+    let layout = b.case.layout.clone();
+    let proof = &fx.proofs[0];
+    let both = |vk: &[u8]| {
+        let l = loki_diff::catch(|| loki_diff::proof::lk::verify(&layout, vk, &b.lvp, &b.instances, proof));
+        let s = loki_diff::catch(|| loki_diff::proof::st::verify(&layout, vk, &b.svp, &b.instances, proof));
+        (l, s)
+    };
+    // (1) k = 32.
+    let mut vk = b.vk.clone();
+    vk[1] = 32;
+    let (l, s) = both(&vk);
+    assert!(l.is_err() && s.is_err(), "k=32 VK: loki={l:?} stock={s:?}");
+    assert!(l.unwrap_err().contains("extended_k <= F::S"));
+    // (2) Drop the last fixed commitment and decrement the count.
+    let nfixed = u32::from_le_bytes(vk[2..6].try_into().unwrap()) as usize;
+    let mut found = false;
+    for size in [48usize, 96] {
+        let mut v = b.vk.clone();
+        v[2..6].copy_from_slice(&((nfixed - 1) as u32).to_le_bytes());
+        let start = 6 + (nfixed - 1) * size;
+        v.drain(start..start + size);
+        let (l, s) = both(&v);
+        if let (Err(le), Err(se)) = (&l, &s) {
+            assert!(le.contains("index out of bounds") && se.contains("index out of bounds"), "{le} / {se}");
+            found = true;
+        } else {
+            assert_eq!(l.as_ref().map(|v| v.accepted()).ok(), s.as_ref().map(|v| v.accepted()).ok());
+        }
+    }
+    assert!(found, "short fixed-commitment VK did not reproduce the panic");
+}
