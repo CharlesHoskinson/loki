@@ -1,0 +1,31 @@
+[package]
+name = "loki-diff"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[features]
+default = []
+# Placeholder until Loki's GPU MSM (`cuda`) lands in main: then "loki/cuda".
+cuda = []
+cuda-ntt = ["loki/cuda-ntt", "dep:loki-cuda-ntt"]
+# Prover and verifier must agree on this feature; both crates get it.
+truncated = ["loki/truncated-challenges", "stock/truncated-challenges"]
+# Deliberate mismatch: Loki truncates, stock does not. Cross verification must fail.
+truncated-loki-only = ["loki/truncated-challenges"]
+
+[dependencies]
+loki = { package = "midnight-proofs", path = "../.." }
+stock = { package = "midnight-proofs", version = "=0.8.3" }
+midnight-curves = "0.3.1"
+ff = "0.13"
+group = "0.13"
+blake2b_simd = "1"
+rand_chacha = "0.3"
+rand_core = "0.6"
+arbitrary = "1"
+# Same package as Loki's optional dependency: exposes the GPU call counter.
+loki-cuda-ntt = { path = "../../cuda-ntt", optional = true }
+
+[dev-dependencies]
+proptest = "1"
