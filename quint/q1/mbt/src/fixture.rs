@@ -51,25 +51,47 @@ macro_rules! side {
             impl Transcript for Logging {
                 type Hash = State;
                 fn init() -> Self {
-                    Self { inner: Plain::init(), absorbed: vec![], ops: vec![], fault: None, writes: 0 }
+                    Self {
+                        inner: Plain::init(),
+                        absorbed: vec![],
+                        ops: vec![],
+                        fault: None,
+                        writes: 0,
+                    }
                 }
                 fn init_from_bytes(bytes: &[u8]) -> Self {
-                    Self { inner: Plain::init_from_bytes(bytes), absorbed: vec![], ops: vec![], fault: None, writes: 0 }
+                    Self {
+                        inner: Plain::init_from_bytes(bytes),
+                        absorbed: vec![],
+                        ops: vec![],
+                        fault: None,
+                        writes: 0,
+                    }
                 }
                 fn squeeze_challenge<T: Sampleable<State>>(&mut self) -> T {
                     let digest = blake2b_simd::blake2b(&self.absorbed).as_bytes().to_vec();
-                    self.ops.push(Op { kind: "squeeze", bytes: digest });
+                    self.ops.push(Op {
+                        kind: "squeeze",
+                        bytes: digest,
+                    });
                     self.inner.squeeze_challenge()
                 }
                 fn common<T: Hashable<State>>(&mut self, input: &T) -> io::Result<()> {
                     self.inner.common(input)?;
-                    let kind = if is_point::<T>() { "common_point" } else { "common_scalar" };
+                    let kind = if is_point::<T>() {
+                        "common_point"
+                    } else {
+                        "common_scalar"
+                    };
                     self.absorb(kind, input.to_bytes());
                     Ok(())
                 }
                 fn read<T: Hashable<State>>(&mut self) -> io::Result<T> {
                     let input: T = self.inner.read()?;
-                    self.absorb(if is_point::<T>() { "point" } else { "scalar" }, input.to_bytes());
+                    self.absorb(
+                        if is_point::<T>() { "point" } else { "scalar" },
+                        input.to_bytes(),
+                    );
                     Ok(input)
                 }
                 fn write<T: Hashable<State>>(&mut self, input: &T) -> io::Result<()> {
@@ -78,7 +100,10 @@ macro_rules! side {
                         self.inner.common(input)?;
                     }
                     self.writes += 1;
-                    self.absorb(if is_point::<T>() { "point" } else { "scalar" }, input.to_bytes());
+                    self.absorb(
+                        if is_point::<T>() { "point" } else { "scalar" },
+                        input.to_bytes(),
+                    );
                     Ok(())
                 }
                 fn finalize(self) -> Vec<u8> {
@@ -111,14 +136,17 @@ macro_rules! side {
                 fn configure(meta: &mut ConstraintSystem<Fq>) -> FxConfig {
                     let c = current_cfg();
                     meta.set_minimum_degree(DEGREE);
-                    let mut adv: Vec<Column<Advice>> = (0..c.adv0).map(|_| meta.advice_column()).collect();
+                    let mut adv: Vec<Column<Advice>> =
+                        (0..c.adv0).map(|_| meta.advice_column()).collect();
                     adv.extend((0..c.adv1).map(|_| meta.advice_column_in(SecondPhase)));
                     adv.extend((0..c.adv2).map(|_| meta.advice_column_in(ThirdPhase)));
-                    let mut chs: Vec<Challenge> =
-                        (0..c.ch0).map(|_| meta.challenge_usable_after(FirstPhase)).collect();
+                    let mut chs: Vec<Challenge> = (0..c.ch0)
+                        .map(|_| meta.challenge_usable_after(FirstPhase))
+                        .collect();
                     chs.extend((0..c.ch1).map(|_| meta.challenge_usable_after(SecondPhase)));
-                    let inst: Vec<Column<Instance>> =
-                        (0..c.committed + c.plain).map(|_| meta.instance_column()).collect();
+                    let inst: Vec<Column<Instance>> = (0..c.committed + c.plain)
+                        .map(|_| meta.instance_column())
+                        .collect();
                     let fz = meta.fixed_column();
                     let (a, i, ch, next) = (adv.clone(), inst.clone(), chs.clone(), c.adv_next);
                     meta.create_gate("zero-gated queries", move |meta| {
@@ -164,9 +192,18 @@ macro_rules! side {
                             e
                         })
                         .collect();
-                    FxConfig { adv, eq, tables, trash }
+                    FxConfig {
+                        adv,
+                        eq,
+                        tables,
+                        trash,
+                    }
                 }
-                fn synthesize(&self, cfg: FxConfig, mut layouter: impl Layouter<Fq>) -> Result<(), Error> {
+                fn synthesize(
+                    &self,
+                    cfg: FxConfig,
+                    mut layouter: impl Layouter<Fq>,
+                ) -> Result<(), Error> {
                     layouter.assign_region(
                         || "cells",
                         |mut region| {
@@ -174,7 +211,12 @@ macro_rules! side {
                                 s.enable(&mut region, 0)?;
                             }
                             for col in &cfg.adv {
-                                region.assign_advice(|| "a", *col, 0, || Value::known(Fq::from(self.a0)))?;
+                                region.assign_advice(
+                                    || "a",
+                                    *col,
+                                    0,
+                                    || Value::known(Fq::from(self.a0)),
+                                )?;
                             }
                             for e in &cfg.eq {
                                 region.assign_fixed(|| "e", *e, 0, || Value::known(Fq::ONE))?;
@@ -187,7 +229,12 @@ macro_rules! side {
                             || "table",
                             |mut table| {
                                 for i in 0..8 {
-                                    table.assign_cell(|| "v", *t, i, || Value::known(Fq::from(i as u64)))?;
+                                    table.assign_cell(
+                                        || "v",
+                                        *t,
+                                        i,
+                                        || Value::known(Fq::from(i as u64)),
+                                    )?;
                                 }
                                 Ok(())
                             },
@@ -198,9 +245,12 @@ macro_rules! side {
             }
 
             pub fn setup() -> Vec<u8> {
-                let params = ParamsKZG::<Bls12>::unsafe_setup(K, ChaCha20Rng::from_seed([0x51; 32]));
+                let params =
+                    ParamsKZG::<Bls12>::unsafe_setup(K, ChaCha20Rng::from_seed([0x51; 32]));
                 let mut bytes = Vec::new();
-                params.write_custom(&mut bytes, SerdeFormat::RawBytes).unwrap();
+                params
+                    .write_custom(&mut bytes, SerdeFormat::RawBytes)
+                    .unwrap();
                 bytes
             }
             fn params(bytes: &[u8]) -> ParamsKZG<Bls12> {
@@ -218,10 +268,22 @@ macro_rules! side {
                 prove_with_fault(srs, c, publics, seed, None)
             }
 
-            pub fn prove_with_fault(srs: &[u8], c: &Cfg, publics: &[Vec<Vec<Fq>>], seed: u64, fault: Option<usize>) -> Proved {
+            pub fn prove_with_fault(
+                srs: &[u8],
+                c: &Cfg,
+                publics: &[Vec<Vec<Fq>>],
+                seed: u64,
+                fault: Option<usize>,
+            ) -> Proved {
                 let params = params(srs);
-                let circuits: Vec<Fx> = (0..c.proofs).map(|p| Fx { a0: (p as u64 + 3) % 8 }).collect();
-                let vk = keygen_vk_with_k::<_, KZGCommitmentScheme<Bls12>, _>(&params, &circuits[0], K).unwrap();
+                let circuits: Vec<Fx> = (0..c.proofs)
+                    .map(|p| Fx {
+                        a0: (p as u64 + 3) % 8,
+                    })
+                    .collect();
+                let vk =
+                    keygen_vk_with_k::<_, KZGCommitmentScheme<Bls12>, _>(&params, &circuits[0], K)
+                        .unwrap();
                 let pk = keygen_pk(vk, &circuits[0]).unwrap();
                 let cs = pk.get_vk().cs();
                 let shape = Shape {
@@ -235,8 +297,10 @@ macro_rules! side {
                     permutation_columns: cs.permutation().get_columns().len(),
                     challenges: cs.num_challenges(),
                 };
-                let cols: Vec<Vec<&[Fq]>> =
-                    publics.iter().map(|p| p.iter().map(Vec::as_slice).collect()).collect();
+                let cols: Vec<Vec<&[Fq]>> = publics
+                    .iter()
+                    .map(|p| p.iter().map(Vec::as_slice).collect())
+                    .collect();
                 let instances: Vec<&[&[Fq]]> = cols.iter().map(Vec::as_slice).collect();
                 let mut t = Logging::init();
                 t.fault = fault;
@@ -251,7 +315,12 @@ macro_rules! side {
                 )
                 .unwrap();
                 let ops = t.ops.clone();
-                Proved { vk: pk.get_vk().to_bytes(SerdeFormat::RawBytes), proof: t.finalize(), ops, shape }
+                Proved {
+                    vk: pk.get_vk().to_bytes(SerdeFormat::RawBytes),
+                    proof: t.finalize(),
+                    ops,
+                    shape,
+                }
             }
 
             pub fn commitment_bytes(srs: &[u8], vk: &[u8], values: &[Fq]) -> Vec<u8> {
@@ -261,7 +330,11 @@ macro_rules! side {
                     SerdeFormat::RawBytes,
                 )
                 .unwrap();
-                let com = commit_to_instances::<Fq, KZGCommitmentScheme<Bls12>>(&params, key.get_domain(), values);
+                let com = commit_to_instances::<Fq, KZGCommitmentScheme<Bls12>>(
+                    &params,
+                    key.get_domain(),
+                    values,
+                );
                 <G1Projective as Hashable<State>>::to_bytes(&com)
             }
 
@@ -272,7 +345,14 @@ macro_rules! side {
             }
 
             /// `alias`: pass ONE committed-instance slice for every proof (identical values).
-            pub fn verify(srs: &[u8], vk: &[u8], proof: &[u8], c: &Cfg, publics: &[Vec<Vec<Fq>>], alias: bool) -> Verified {
+            pub fn verify(
+                srs: &[u8],
+                vk: &[u8],
+                proof: &[u8],
+                c: &Cfg,
+                publics: &[Vec<Vec<Fq>>],
+                alias: bool,
+            ) -> Verified {
                 let params = params(srs);
                 let key = VerifyingKey::<Fq, KZGCommitmentScheme<Bls12>>::read::<_, Fx>(
                     &mut Cursor::new(vk),
@@ -285,7 +365,13 @@ macro_rules! side {
                     .map(|p| {
                         p[..c.committed]
                             .iter()
-                            .map(|v| commit_to_instances::<Fq, KZGCommitmentScheme<Bls12>>(&params, key.get_domain(), v))
+                            .map(|v| {
+                                commit_to_instances::<Fq, KZGCommitmentScheme<Bls12>>(
+                                    &params,
+                                    key.get_domain(),
+                                    v,
+                                )
+                            })
                             .collect()
                     })
                     .collect();
@@ -294,17 +380,26 @@ macro_rules! side {
                 } else {
                     comms.iter().map(Vec::as_slice).collect()
                 };
-                let normal: Vec<Vec<&[Fq]>> =
-                    publics.iter().map(|p| p[c.committed..].iter().map(Vec::as_slice).collect()).collect();
+                let normal: Vec<Vec<&[Fq]>> = publics
+                    .iter()
+                    .map(|p| p[c.committed..].iter().map(Vec::as_slice).collect())
+                    .collect();
                 let normal: Vec<&[&[Fq]]> = normal.iter().map(Vec::as_slice).collect();
                 let mut t = Logging::init_from_bytes(proof);
-                let guard = prepare::<Fq, KZGCommitmentScheme<Bls12>, _>(&key, &comm_refs, &normal, &mut t);
+                let guard =
+                    prepare::<Fq, KZGCommitmentScheme<Bls12>, _>(&key, &comm_refs, &normal, &mut t);
                 let prepared = guard.is_ok();
                 let accepted = match guard {
-                    Ok(g) => t.assert_empty().is_ok() && g.verify(&params.verifier_params()).is_ok(),
+                    Ok(g) => {
+                        t.assert_empty().is_ok() && g.verify(&params.verifier_params()).is_ok()
+                    }
                     Err(_) => false,
                 };
-                Verified { ops: t.ops, prepared, accepted }
+                Verified {
+                    ops: t.ops,
+                    prepared,
+                    accepted,
+                }
             }
         }
     };

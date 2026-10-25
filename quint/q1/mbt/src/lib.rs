@@ -35,7 +35,10 @@ pub fn set_cfg(c: &Cfg) {
     *CFG.lock().unwrap() = Some(c.clone());
 }
 pub fn current_cfg() -> Cfg {
-    CFG.lock().unwrap().clone().expect("fixture configuration not set")
+    CFG.lock()
+        .unwrap()
+        .clone()
+        .expect("fixture configuration not set")
 }
 
 /// One observed transcript operation. For squeezes, `bytes` is a BLAKE2b digest of all
@@ -57,9 +60,21 @@ pub struct Ev {
 }
 
 const SCALAR_WRITES: &[&str] = &[
-    "inst_eval", "adv_eval", "fixed_eval", "random_eval", "sigma_eval", "pz_eval",
-    "pz_next_eval", "pz_last_eval", "lprod_eval", "lprod_next_eval", "lin_eval",
-    "lin_inv_eval", "ltab_eval", "trash_eval", "q_eval",
+    "inst_eval",
+    "adv_eval",
+    "fixed_eval",
+    "random_eval",
+    "sigma_eval",
+    "pz_eval",
+    "pz_next_eval",
+    "pz_last_eval",
+    "lprod_eval",
+    "lprod_next_eval",
+    "lin_eval",
+    "lin_inv_eval",
+    "ltab_eval",
+    "trash_eval",
+    "q_eval",
 ];
 
 impl Ev {
@@ -78,7 +93,9 @@ impl Ev {
 // ---------- ITF decoding ----------
 pub fn int(v: &Value) -> i64 {
     match v {
-        Value::Object(o) if o.contains_key("#bigint") => o["#bigint"].as_str().unwrap().parse().unwrap(),
+        Value::Object(o) if o.contains_key("#bigint") => {
+            o["#bigint"].as_str().unwrap().parse().unwrap()
+        }
         Value::Number(n) => n.as_i64().unwrap(),
         _ => panic!("not an ITF int: {v}"),
     }
