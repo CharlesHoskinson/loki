@@ -1,0 +1,30 @@
+[package]
+name = "loki-quint-q1"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone: no [patch] — `stock` MUST resolve to the registry midnight-proofs 0.8.3.
+[workspace]
+
+[features]
+default = []
+loki-multiopen = ["loki/loki-multiopen"]
+# Truncation is a protocol change: enable it on both sides.
+truncated = ["loki/truncated-challenges", "stock/truncated-challenges"]
+det-lookup = ["loki/loki-deterministic-lookup-order"]
+# P1 seam with the stock CPU adapter (no device needed).
+backend-api = ["loki/loki-backend-api"]
+
+[dependencies]
+loki = { package = "midnight-proofs", path = "../../.." }
+stock = { package = "midnight-proofs", version = "=0.8.3" }
+midnight-curves = "0.3.1"
+ff = "0.13"
+blake2b_simd = "1"
+rand_chacha = "0.3"
+rand_core = "0.6"
+serde_json = "1"
+
+[profile.dev.package."*"]
+opt-level = 3
