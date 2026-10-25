@@ -212,6 +212,16 @@ typedef struct loki_gpu_ntt_params_v1 {
 
 #if defined(__cplusplus)
 static_assert(sizeof(loki_gpu_ntt_params_v1) == 2112, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, abi_version) == 0, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, struct_size) == 4, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, ntt_log) == 8, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, flags) == 12, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, source_len) == 16, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, output_len) == 24, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, root_powers) == 32, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, coset_powers) == 1056, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, scale) == 2080, "ntt params ABI");
+static_assert(alignof(loki_gpu_ntt_params_v1) == 8, "ntt params ABI");
 #endif
 
 /* Scratch bytes required by `params` (0 on malformed params). */

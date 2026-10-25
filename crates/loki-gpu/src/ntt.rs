@@ -161,9 +161,10 @@ pub fn validate_transform<F: PrimeField>(
     if spec.coset.is_some() && !natural {
         return Err(bad);
     }
-    if spec.direction == TransformDirection::Forward
-        && spec.inverse_normalization != InverseNormalization::None
-    {
+    // Exactly one `1/n` on every inverse, none on a forward transform (the
+    // API contract): an unnormalized inverse is not an inverse NTT.
+    let normalized = spec.inverse_normalization == InverseNormalization::DivideByLengthOnce;
+    if normalized != (spec.direction == TransformDirection::Inverse) {
         return Err(bad);
     }
     if source_len != 1usize << src_log {

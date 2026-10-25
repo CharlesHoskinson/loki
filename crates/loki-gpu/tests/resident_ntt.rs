@@ -701,3 +701,16 @@ mod native {
         }
     }
 }
+
+#[test]
+fn non_canonical_transform_output_is_refused_on_write_back() {
+    // Host write-back decodes through `Fq::from_repr`, which refuses residues
+    // >= r: a corrupted (all-0xff) device result never reaches the caller.
+    let (fake, rt) = fake_rt(1 << 20);
+    let s = small();
+    let src = rb(&rt).upload_scalars(&input(Pattern::Random, s.n(), 31)).unwrap();
+    let out = transform_resident(&rt, &src, s.spec_coeff_to_lagrange()).unwrap();
+    fake.corrupt_device_memory(0xff);
+    let e = rb(&rt).download_scalars(&out).expect_err("non-canonical bytes");
+    assert_eq!(e.kind, ErrorKind::Internal, "{e:?}");
+}

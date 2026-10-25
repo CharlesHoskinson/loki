@@ -965,9 +965,24 @@ impl GpuRuntime {
             return Err(err(op, ErrorKind::Poisoned, FailureEffect::SessionPoisoned));
         }
         let started = Instant::now();
-        let info = driver
-            .probe(self.config.device_ordinal)
-            .map_err(|_| BackendError::unsupported(op))?;
+        let info = match driver.probe(self.config.device_ordinal) {
+            Ok(info) => info,
+            // No device, or a device this build cannot use.
+            Err(e) if e.class == DriverErrorClass::Unsupported => {
+                return Err(BackendError::unsupported(op));
+            }
+            // The query failed without corrupting anything: retryable.
+            Err(e) if e.class == DriverErrorClass::Transient => {
+                return Err(err(op, Self::kind_for(&e), FailureEffect::NotStarted));
+            }
+            // A sticky or lost context observed while probing: the native
+            // session is uncertain, so recovery must reset (L1).
+            Err(e) => {
+                let failure = err(op, Self::kind_for(&e), FailureEffect::SessionPoisoned);
+                device.setup_failed = Some(failure);
+                return Err(failure);
+            }
+        };
         let ctx = Self::record_setup(&mut device, self.build_context(driver.as_ref(), info, started))?;
         let generation = ctx.generation;
         device.current = Some(ctx);
@@ -1008,6 +1023,8 @@ impl GpuRuntime {
             Some(_) => {}
         }
         let started = Instant::now();
+        // A failed reset leaves whatever uncertainty existed in place: the
+        // poisoned context stays current, or `setup_failed` stays set.
         let info = driver
             .reset(self.config.device_ordinal)
             .map_err(|_| err(op, ErrorKind::ContextLost, FailureEffect::SessionPoisoned))?;

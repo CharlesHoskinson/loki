@@ -154,6 +154,15 @@ fn rejected_shapes_and_roots() {
     expect_reject(0, s.spec_coeff_to_lagrange(), inv, "empty");
     expect_reject(big, s.spec_coeff_to_extended(), inv, "c2e given extended length");
     expect_reject(n, s.spec_extended_to_coeff(), inv, "e2c given base length");
+    // exactly one 1/n on inverses, none on forward transforms
+    for (len, mut sp) in [(n, s.spec_lagrange_to_coeff()), (big, s.spec_extended_to_coeff())] {
+        sp.inverse_normalization = InverseNormalization::None;
+        expect_reject(len, sp, inv, "inverse without normalization");
+    }
+    for (len, mut sp) in [(n, s.spec_coeff_to_lagrange()), (n, s.spec_coeff_to_extended())] {
+        sp.inverse_normalization = InverseNormalization::DivideByLengthOnce;
+        expect_reject(len, sp, inv, "normalized forward");
+    }
     // plain transforms keep the log
     let mut sp = s.spec_coeff_to_lagrange();
     sp.output_log_size += 1;
@@ -462,14 +471,17 @@ fn inverse_normalization_is_applied_exactly_once() {
         let v = input(Pattern::Random, s.n(), 5);
         let once = gpu(&rt, &v, s.spec_lagrange_to_coeff());
         assert_vec_eq("once == stock", &once, &s.lagrange_to_coeff(&v));
+        // An unnormalized inverse is refused before any device work.
         let mut raw = s.spec_lagrange_to_coeff();
         raw.inverse_normalization = InverseNormalization::None;
-        let unnormalized = gpu(&rt, &v, raw);
+        let launches = rt.telemetry().transform_launches;
+        let e = transform_host(&rt, &v, raw).expect_err("inverse without 1/n");
+        assert_eq!((e.kind, e.effect), (ErrorKind::InvalidInput, FailureEffect::NotStarted));
+        assert_eq!(rt.telemetry().transform_launches, launches);
+        // No hidden scaling: the forward transform of the inverse's output
+        // is the input itself (exactly one 1/n was applied).
+        assert_vec_eq("forward(inverse(v)) == v", &gpu(&rt, &once, s.spec_coeff_to_lagrange()), &v);
         let n = Fr::from(s.n() as u64);
-        // unnormalized == n * once, and differs from once (no hidden scaling)
-        let scaled: Vec<Fr> = once.iter().map(|x| *x * n).collect();
-        assert_vec_eq("None == n * once", &unnormalized, &scaled);
-        assert_ne!(unnormalized, once, "a hidden normalization would make these equal");
         // twice-normalized would be once / n: not what we get
         let n_inv = n.invert().unwrap();
         let twice: Vec<Fr> = once.iter().map(|x| *x * n_inv).collect();

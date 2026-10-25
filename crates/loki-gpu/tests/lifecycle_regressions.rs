@@ -117,3 +117,45 @@ fn clean_transient_setup_failure_leaves_no_state() {
     usable(&rt);
     assert!(fake.violations().is_empty(), "{:?}", fake.violations());
 }
+
+#[test]
+fn probe_failures_are_classified() {
+    // No device / unusable device: Unsupported, nothing persisted.
+    let (fake, rt) = runtime();
+    fake.inject(DriverCall::Probe, 1, Fault::Fail(DriverErrorClass::Unsupported));
+    let e = rt.initialize().expect_err("no device");
+    assert_eq!((e.kind, e.effect), (ErrorKind::Unsupported, FailureEffect::NotStarted));
+    rt.initialize().expect("device appears: plain retry");
+    // Transient query failure: NotStarted, retryable without reset.
+    let (fake, rt) = runtime();
+    fake.inject(DriverCall::Probe, 1, Fault::Fail(DriverErrorClass::Transient));
+    let e = rt.initialize().expect_err("transient probe");
+    assert_eq!(e.effect, FailureEffect::NotStarted, "{e:?}");
+    rt.initialize().expect("retry");
+    assert_eq!(fake.calls(DriverCall::Reset), 0);
+    // Sticky or lost context while probing: persisted, reset required.
+    for class in [DriverErrorClass::Poisoned, DriverErrorClass::ContextLost] {
+        let (fake, rt) = runtime();
+        fake.inject(DriverCall::Probe, 1, Fault::Fail(class));
+        let e = rt.initialize().expect_err("uncertain probe");
+        assert_eq!(e.effect, FailureEffect::SessionPoisoned, "{e:?}");
+        assert_refused_without_driver_calls(&fake, &rt);
+        rt.reinitialize().expect("reset then rebuild");
+        assert_eq!(fake.calls(DriverCall::Reset), 1);
+        usable(&rt);
+    }
+}
+
+#[test]
+fn failed_reset_keeps_setup_uncertainty() {
+    let (fake, rt) = runtime();
+    fake.inject(DriverCall::StreamCreate, 1, Fault::Fail(DriverErrorClass::Poisoned));
+    assert!(rt.initialize().is_err());
+    fake.inject(DriverCall::Reset, 1, Fault::Fail(DriverErrorClass::Poisoned));
+    let e = rt.reinitialize().expect_err("reset fails");
+    assert_eq!((e.kind, e.effect), (ErrorKind::ContextLost, FailureEffect::SessionPoisoned));
+    assert_refused_without_driver_calls(&fake, &rt);
+    rt.reinitialize().expect("second reset succeeds");
+    assert_eq!(fake.calls(DriverCall::Reset), 2);
+    usable(&rt);
+}

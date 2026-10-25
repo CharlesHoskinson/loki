@@ -171,6 +171,34 @@ const _: () = {
     assert!(core::mem::align_of::<NttParamsV1>() == 8);
 };
 
+#[cfg(test)]
+mod ntt_layout_tests {
+    use super::NttParamsV1;
+    use core::mem::MaybeUninit;
+    use core::ptr::addr_of;
+
+    /// Field offsets of `NttParamsV1`, matching the `offsetof` static_asserts
+    /// on `loki_gpu_ntt_params_v1` in the header (no `offset_of!` at MSRV 1.76).
+    #[test]
+    fn ntt_params_field_offsets_match_the_header() {
+        let p = MaybeUninit::<NttParamsV1>::uninit();
+        let base = p.as_ptr();
+        // SAFETY: only field addresses are computed; nothing is read.
+        let off = |f: *const u8| f as usize - base as usize;
+        unsafe {
+            assert_eq!(off(addr_of!((*base).abi_version).cast()), 0);
+            assert_eq!(off(addr_of!((*base).struct_size).cast()), 4);
+            assert_eq!(off(addr_of!((*base).ntt_log).cast()), 8);
+            assert_eq!(off(addr_of!((*base).flags).cast()), 12);
+            assert_eq!(off(addr_of!((*base).source_len).cast()), 16);
+            assert_eq!(off(addr_of!((*base).output_len).cast()), 24);
+            assert_eq!(off(addr_of!((*base).root_powers).cast()), 32);
+            assert_eq!(off(addr_of!((*base).coset_powers).cast()), 1056);
+            assert_eq!(off(addr_of!((*base).scale).cast()), 2080);
+        }
+    }
+}
+
 #[cfg(feature = "cuda")]
 #[allow(unsafe_code)]
 extern "C" {
@@ -627,6 +655,9 @@ mod native {
                 code: INVALID_ARGUMENT,
             };
             let Some(scratch) = scratch else { return Err(refuse) };
+            // D4: every handle must be one this driver minted and still owns;
+            // the native check validates only metadata, epoch and kind.
+            self.known(call, &[&dst.0, &src.0, &scratch.0, &stream.0])?;
             if native == 0 || Some(native) != launch.scratch_bytes() {
                 return Err(refuse);
             }
