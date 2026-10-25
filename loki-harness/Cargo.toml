@@ -10,6 +10,7 @@ publish = false
 default = []
 # Once W4 lands, replace this with cuda = ["loki/cuda"].
 cuda = []
+loki-multiopen = ["loki/loki-multiopen"]
 
 [dependencies]
 loki = { package = "midnight-proofs", path = ".." }

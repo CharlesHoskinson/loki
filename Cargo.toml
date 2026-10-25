@@ -56,6 +56,7 @@ dev-curves = [
 ]
 truncated-challenges = []
 loki-profile = []
+loki-multiopen = []
 
 [lib]
 name = "midnight_proofs"

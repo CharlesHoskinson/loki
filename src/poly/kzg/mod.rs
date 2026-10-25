@@ -17,6 +17,9 @@ pub mod msm;
 pub mod params;
 mod utils;
 
+#[cfg(feature = "loki-multiopen")]
+mod multiopen;
+
 use std::{fmt::Debug, hash::Hash};
 
 use ff::Field;
@@ -108,59 +111,66 @@ where
         let x1: E::Fr = transcript.squeeze_challenge();
         let x2: E::Fr = transcript.squeeze_challenge();
 
-        let (poly_map, point_sets) = construct_intermediate_sets(prover_query)?;
+        #[cfg(feature = "loki-multiopen")]
+        let (q_polys, f_poly) = multiopen::prepare(prover_query, x1, x2, params.max_k())?;
 
-        let mut q_polys = vec![vec![]; point_sets.len()];
+        #[cfg(not(feature = "loki-multiopen"))]
+        let (q_polys, f_poly) = {
+            let (poly_map, point_sets) = construct_intermediate_sets(prover_query)?;
 
-        for com_data in poly_map.iter() {
-            q_polys[com_data.set_index].push(com_data.commitment.poly.clone());
-        }
+            let mut q_polys = vec![vec![]; point_sets.len()];
 
-        let q_polys = q_polys
-            .iter()
-            .map(|polys| {
-                #[cfg(feature = "truncated-challenges")]
-                let x1 = truncated_powers(x1);
+            for com_data in poly_map.iter() {
+                q_polys[com_data.set_index].push(com_data.commitment.poly.clone());
+            }
 
-                #[cfg(not(feature = "truncated-challenges"))]
-                let x1 = powers(x1);
-
-                inner_product(polys, x1)
-            })
-            .collect::<Vec<_>>();
-
-        // Sort point sets by ascending cardinality to ensure the first set is the one
-        // that contains fixed commitments (which are evaluated at x only). This
-        // property is not necessary for the actual proving system, but it is important
-        // for in-circuit verification of proofs. (It enables an optimization based on
-        // an internal collapse.)
-        //
-        // The (len, i) key provides a deterministic total order even when two sets
-        // share the same cardinality.
-        let (q_polys, point_sets) = {
-            let mut order: Vec<usize> = (0..point_sets.len()).collect();
-            order.sort_by_key(|&i| (point_sets[i].len(), i));
-            let q_polys: Vec<_> = order.iter().map(|&i| q_polys[i].clone()).collect();
-            let point_sets: Vec<_> = order.iter().map(|&i| point_sets[i].clone()).collect();
-            (q_polys, point_sets)
-        };
-
-        let f_poly = {
-            let f_polys = point_sets
+            let q_polys = q_polys
                 .iter()
-                .zip(q_polys.clone())
-                .map(|(points, q_poly)| {
-                    let mut poly = points.iter().fold(q_poly.clone().values, |poly, point| {
-                        kate_division(&poly, *point)
-                    });
-                    poly.resize(1 << params.max_k() as usize, E::Fr::ZERO);
-                    Polynomial {
-                        values: poly,
-                        _marker: PhantomData,
-                    }
+                .map(|polys| {
+                    #[cfg(feature = "truncated-challenges")]
+                    let x1 = truncated_powers(x1);
+
+                    #[cfg(not(feature = "truncated-challenges"))]
+                    let x1 = powers(x1);
+
+                    inner_product(polys, x1)
                 })
                 .collect::<Vec<_>>();
-            inner_product(&f_polys, powers(x2))
+
+            // Sort point sets by ascending cardinality to ensure the first set is the one
+            // that contains fixed commitments (which are evaluated at x only). This
+            // property is not necessary for the actual proving system, but it is important
+            // for in-circuit verification of proofs. (It enables an optimization based on
+            // an internal collapse.)
+            //
+            // The (len, i) key provides a deterministic total order even when two sets
+            // share the same cardinality.
+            let (q_polys, point_sets) = {
+                let mut order: Vec<usize> = (0..point_sets.len()).collect();
+                order.sort_by_key(|&i| (point_sets[i].len(), i));
+                let q_polys: Vec<_> = order.iter().map(|&i| q_polys[i].clone()).collect();
+                let point_sets: Vec<_> = order.iter().map(|&i| point_sets[i].clone()).collect();
+                (q_polys, point_sets)
+            };
+
+            let f_poly = {
+                let f_polys = point_sets
+                    .iter()
+                    .zip(q_polys.clone())
+                    .map(|(points, q_poly)| {
+                        let mut poly = points.iter().fold(q_poly.clone().values, |poly, point| {
+                            kate_division(&poly, *point)
+                        });
+                        poly.resize(1 << params.max_k() as usize, E::Fr::ZERO);
+                        Polynomial {
+                            values: poly,
+                            _marker: PhantomData,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                inner_product(&f_polys, powers(x2))
+            };
+            (q_polys, f_poly)
         };
 
         let f_com = Self::commit(params, &f_poly);
@@ -187,7 +197,11 @@ where
             #[cfg(not(feature = "truncated-challenges"))]
             let powers = powers(x4);
 
-            inner_product(&polys, powers)
+            #[cfg(not(feature = "loki-multiopen"))]
+            let combined = inner_product(&polys, powers);
+            #[cfg(feature = "loki-multiopen")]
+            let combined = multiopen::combine(&polys.iter().collect::<Vec<_>>(), powers);
+            combined
         };
         let v = eval_polynomial(&final_poly, x3);
 
@@ -288,18 +302,21 @@ where
 
         // We can compute the expected msm_eval at x_3 using the u provided
         // by the prover and from x_2
-        let f_eval =
-            point_sets.iter().zip(q_eval_sets.iter()).zip(q_evals_on_x3.iter()).rev().fold(
-                E::Fr::ZERO,
-                |acc_eval, ((points, evals), proof_eval)| {
-                    let r_poly = lagrange_interpolate(points, evals);
-                    let r_eval = eval_polynomial(&r_poly, x3);
-                    // eval = (proof_eval - r_eval) / prod_i (x3 - point_i)
-                    let den = points.iter().fold(E::Fr::ONE, |acc, point| acc * &(x3 - point));
-                    let eval = (*proof_eval - &r_eval) * den.invert().unwrap();
-                    acc_eval * &(x2) + &eval
-                },
-            );
+        let f_eval = point_sets
+            .iter()
+            .zip(q_eval_sets.iter())
+            .zip(q_evals_on_x3.iter())
+            .rev()
+            .fold(E::Fr::ZERO, |acc_eval, ((points, evals), proof_eval)| {
+                let r_poly = lagrange_interpolate(points, evals);
+                let r_eval = eval_polynomial(&r_poly, x3);
+                // eval = (proof_eval - r_eval) / prod_i (x3 - point_i)
+                let den = points
+                    .iter()
+                    .fold(E::Fr::ONE, |acc, point| acc * &(x3 - point));
+                let eval = (*proof_eval - &r_eval) * den.invert().unwrap();
+                acc_eval * &(x2) + &eval
+            });
 
         let x4: E::Fr = transcript.squeeze_challenge();
 
