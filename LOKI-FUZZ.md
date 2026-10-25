@@ -86,11 +86,27 @@ j >= 2 (extended 2^10..2^12 on the GPU while the base domain stays on the CPU).
 | Target | Build | Execs | exec/s | cov | ft | corpus (after cmin) | Result |
 |---|---|---|---|---|---|---|---|
 | msm_diff | CPU, ASan | 67,415 | 37 | 1255 | 4488 | 418 (262) | clean |
-| msm_diff | `cuda` GPU MSM, 3 x 10 min slices | MSM_GPU_EXECS | | MSM_GPU_COV | | | MSM_GPU_RESULT |
+| msm_diff | `cuda` GPU MSM (`LOKI_GPU_MSM_MIN=1`), 2 x 10 min slices | 1,358 | ~1 | 816 (max) | 2022 | shared | clean, no CPU fallback |
 | ntt_diff | `cuda-ntt`, 30 min (one slot) | 18,196 | 10 | 879 | 2878 | 504 (331) | clean |
-| proof_roundtrip | `cuda-ntt`, 3 x 10 min slices | 8,891 | ~5 | 8422 | 20105 | 1082 (659) | clean |
+| proof_roundtrip | `cuda-ntt`, 3 x 10 min slices | 8,891 (sum) | ~5 | 8422 (max over slices) | 20105 | 1082 (659) | clean |
+| proof_roundtrip | `cuda,cuda-ntt` (GPU MSM at threshold 1 + GPU NTT), 1 partial slice | 128 corpus inputs replayed | ~0.2 | 8505 | 18595 | - | clean; stopped early (see below) |
 | soundness | CPU | 12,214 | 6 | 12323 | 37121 | 1580 (856) | clean |
 | proof_parse | CPU, ASan | 678,721 | 376 | 6840 | 10804 | 656 (324) | 2 shared upstream panics, no divergence |
+
+GPU time was cut short by the coordinator (the shared GPU lock was the bottleneck
+for other packages): msm_diff on the GPU got 2 of the planned 3 slices, and the
+fully integrated GPU prover (`cuda,cuda-ntt`) only replayed 128 of the 659 corpus
+inputs (all accepted in all four directions, Loki == stock, no GPU fallback) before
+it was stopped. GPU MSM through `msm_diff` runs at ~1 exec/s because each input
+builds fresh base vectors, which defeats W4's address-keyed resident cache (a
+performance observation for W4, not a bug); in proofs at threshold 1, single inputs
+took up to 40 s.
+
+The CPU proof targets (`soundness`, `proof_roundtrip`) stayed at libFuzzer `lim: 4..6`
+bytes: every short input reseeds the ChaCha stream that fills the rest of the case,
+so new coverage kept coming from 4-byte inputs and libFuzzer never grew the length.
+These runs were therefore close to seeded random testing rather than mutation of the
+structured bytes. `run-target.sh` now passes `-len_control=0` for future runs.
 
 Logs: `fuzz/logs/` (not committed). Commands:
 `fuzz/run-target.sh <t> 1800 [cargo-fuzz args]`, GPU:
@@ -98,7 +114,10 @@ Logs: `fuzz/logs/` (not committed). Commands:
 GPU builds use `-s none` (ASan and CUDA do not mix).
 
 Stable gate: `fuzz/quick.sh` -> default 23 s, truncated 19 s, truncated-loki-only 20 s
-(62 s test time; all passed). `QUICK_GPU=1` adds `cuda-ntt` and `cuda` under the GPU lock.
+(62 s test time; all passed). `QUICK_GPU=1` adds `cuda-ntt` and `cuda` under the GPU
+lock; that full script was not run (GPU pause), but its pieces were: the `cuda` MSM
+cases and MSM proptests passed on the GPU (180 s + 220 s), and the fallback watch was
+checked both ways (`CUDA_VISIBLE_DEVICES=-1` fires it, the real GPU does not).
 
 ## Findings
 
@@ -156,9 +175,9 @@ mutant sets in Loki and stock) plus 10 real-proof mutation cases.
 ## Open risks / limits
 
 - GPU targets ran in 10 minute lock slices; ASan is not used with CUDA.
-- `proof_roundtrip` uses the default GPU MSM threshold (2^14), so with `cuda` the
-  small fuzz circuits do not exercise GPU MSM inside proofs; GPU MSM correctness is
-  covered by `msm_diff` with the threshold at 1 and W4's own tests.
+- GPU MSM inside full proofs got only a partial run (128 inputs); with `cuda` the
+  proof targets now set the threshold to 1 and fail on CPU fallback, so a later
+  `fuzz/gpu-slices.sh proof_roundtrip ... --features cuda,cuda-ntt` continues it.
 - Circuits are small (k <= 10); large-k behaviour is covered by the W2 harness.
 - `ParamsKZG::read_custom` is fuzzed only for k <= 6 (a garbage header requests 2^k
   points, an upstream unbounded allocation by design).
