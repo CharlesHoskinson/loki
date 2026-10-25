@@ -263,6 +263,30 @@ pub unsafe trait DeviceDriver: Send + Sync {
         bytes: u64,
         stream: StreamId,
     ) -> Result<(), DriverError>;
+    /// P4 transform pipeline (see [`TransformLaunch`]): read `src` (never
+    /// written), use `scratch` privately and write all of `dst`. Asynchronous
+    /// on `stream`, like the copies. The default refuses before enqueueing.
+    fn launch_transform(
+        &self,
+        dst: DeviceMemory,
+        src: DeviceMemory,
+        scratch: Option<DeviceMemory>,
+        launch: &TransformLaunch,
+        stream: StreamId,
+    ) -> Result<(), DriverError> {
+        let _ = (dst, src, scratch, launch, stream);
+        Err(DriverError {
+            call: DriverCall::Launch,
+            class: DriverErrorClass::Unsupported,
+            code: 0,
+        })
+    }
+    /// Whether [`launch_transform`](Self::launch_transform) is implemented.
+    /// The runtime refuses transform work (`Unsupported`, `NotStarted`) and
+    /// advertises no transform capability when this is false.
+    fn supports_transform(&self) -> bool {
+        false
+    }
     fn record_event(&self, event: EventId, stream: StreamId) -> Result<(), DriverError>;
     fn stream_wait_event(&self, stream: StreamId, event: EventId) -> Result<(), DriverError>;
     fn event_synchronize(&self, event: EventId) -> Result<(), DriverError>;
@@ -272,6 +296,66 @@ pub unsafe trait DeviceDriver: Send + Sync {
     /// Called before the runtime reads or writes a staging buffer on the host.
     /// The fake driver uses it to detect access while DMA is pending.
     fn before_host_access(&self, _buffer: &HostBuffer) {}
+}
+
+/// Bytes per scalar in the P4 transform wire format (canonical little-endian
+/// `to_repr` bytes of a 255-bit field element).
+pub const TRANSFORM_ELEM_BYTES: usize = 32;
+
+/// Maximum number of per-bit constants carried by a [`TransformLaunch`].
+pub const TRANSFORM_MAX_POW_TABLE: usize = 32;
+
+/// Scratch elements holding the launch constants in Montgomery form (32 root
+/// powers, 32 coset powers, scale, padding to a 256-byte multiple).
+pub const TRANSFORM_CONST_SLOTS: u64 = 72;
+
+/// Descriptor of one P4 transform launch, built and validated by `ntt.rs`.
+///
+/// CODE (P4): the device pipeline is, for `N = 2^ntt_log`:
+///
+/// 1. twiddles `w^t` (`t < N/2`) from `root_powers[j] = w^(2^j)`, where `w`
+///    is the exact root for this direction (already inverted for inverse);
+/// 2. load: work slot `q` receives the logical input `x[i]`,
+///    `i = q` when `input_bitrev` and `bitrev(q)` otherwise, multiplied by
+///    `g^i` (`g^(2^j) = coset_powers[j]`) when `pre_coset`; logical indices
+///    `i >= source_len` read as zero (padding);
+/// 3. in-place radix-2 decimation-in-time stages, producing natural order;
+/// 4. finish: output slot `p < output_len` receives work slot `bitrev(p)`
+///    when `output_bitrev` and `p` otherwise, multiplied by `scale` and, when
+///    `post_coset`, by `g^p`; fully reduced canonical bytes.
+///
+/// All constants are canonical little-endian bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransformLaunch {
+    pub ntt_log: u32,
+    pub source_len: u64,
+    pub output_len: u64,
+    pub input_bitrev: bool,
+    pub output_bitrev: bool,
+    pub pre_coset: bool,
+    pub post_coset: bool,
+    pub root_powers: [[u8; TRANSFORM_ELEM_BYTES]; TRANSFORM_MAX_POW_TABLE],
+    pub coset_powers: [[u8; TRANSFORM_ELEM_BYTES]; TRANSFORM_MAX_POW_TABLE],
+    pub scale: [u8; TRANSFORM_ELEM_BYTES],
+}
+
+impl TransformLaunch {
+    /// Private scratch, in elements: [`TRANSFORM_CONST_SLOTS`] Montgomery
+    /// constants, `N/2` twiddles, plus an `N`-element work buffer when the
+    /// output is shorter than the transform (truncated inverse coset). Must
+    /// equal the native `loki_gpu_ntt_scratch_bytes_v1`.
+    pub fn scratch_bytes(&self) -> Option<u64> {
+        if self.ntt_log >= 63 {
+            return None;
+        }
+        let n = 1u64 << self.ntt_log;
+        let elem = TRANSFORM_ELEM_BYTES as u64;
+        let work = if self.output_len < n { n } else { 0 };
+        TRANSFORM_CONST_SLOTS
+            .checked_add(n / 2)?
+            .checked_add(work)?
+            .checked_mul(elem)
+    }
 }
 
 // ===========================================================================
@@ -419,6 +503,15 @@ pub struct RuntimeTelemetry {
     pub event_wait_ns: u64,
     /// Sum of GPU event durations of completed operations.
     pub gpu_event_ms: f64,
+    /// P4: completed transform launches (subset of `launches`).
+    pub transform_launches: u64,
+    /// P4: CUDA event time of transform launches, milliseconds.
+    pub transform_kernel_ms: f64,
+    /// P4: host wall time from first enqueue to completion of transform
+    /// launches (excludes validation and publication), nanoseconds.
+    pub transform_wall_ns: u64,
+    /// P4: largest private transform scratch allocation, bytes.
+    pub scratch_high_water: u64,
 }
 
 /// What remains recoverable for a resident handle.
@@ -586,6 +679,12 @@ struct DeviceState {
     /// Poisoned contexts superseded by a reset. Their resources were destroyed
     /// by the reset (or are deliberately leaked); they are never freed here.
     retired: Vec<Context>,
+    /// A setup attempt that ended with the context's health uncertain (a
+    /// sticky driver error, or a failed destroy while cleaning up). There is
+    /// no `Context`, but the driver context must not be trusted: `initialize`
+    /// refuses, `reinitialize` must reset first, and `Drop` keeps the native
+    /// claim. Holds the error the failed attempt reported.
+    setup_failed: Option<BackendError>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -745,8 +844,43 @@ impl GpuRuntime {
     }
 
     /// A runtime over an explicit driver. Nothing is probed or allocated until
-    /// [`initialize`](Self::initialize).
-    pub fn with_driver(driver: Arc<dyn DeviceDriver>, config: RuntimeConfig) -> Self {
+    /// [`initialize`](Self::initialize). For tests, use the safe
+    /// [`with_fake`](Self::with_fake); native code uses
+    /// [`native`](Self::native) or [`process`](Self::process).
+    ///
+    /// # Safety
+    ///
+    /// The runtime must be the driver's only coordinator for the driver's
+    /// whole lifetime: no other `GpuRuntime` may be built over the same
+    /// driver (or over one sharing its device context), and no retained
+    /// alias may call any `DeviceDriver` method (in particular `reset`,
+    /// `device_free`, `host_free`, `destroy_*` or a launch) while this
+    /// runtime or any handle it minted is alive. The runtime's quarantine,
+    /// generation and publication guarantees, and the memory safety of
+    /// native drivers, depend on this exclusivity; violating it can free or
+    /// reset memory that queued device work still references.
+    ///
+    /// Raw injection is not callable from safe code (review finding L2):
+    ///
+    /// ```compile_fail,E0133
+    /// use std::sync::Arc;
+    /// use loki_gpu::runtime::fake::{FakeConfig, FakeDriver};
+    /// use loki_gpu::runtime::{DeviceDriver, GpuRuntime, RuntimeConfig};
+    /// let driver: Arc<dyn DeviceDriver> = Arc::new(FakeDriver::new(FakeConfig::default()));
+    /// let _rt = GpuRuntime::with_driver(driver, RuntimeConfig::default());
+    /// ```
+    ///
+    /// The same call inside `unsafe`, with the precondition upheld, compiles:
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use loki_gpu::runtime::fake::{FakeConfig, FakeDriver};
+    /// use loki_gpu::runtime::{DeviceDriver, GpuRuntime, RuntimeConfig};
+    /// let driver: Arc<dyn DeviceDriver> = Arc::new(FakeDriver::new(FakeConfig::default()));
+    /// // SAFETY: `driver` is fresh and moved in; no alias remains.
+    /// let _rt = unsafe { GpuRuntime::with_driver(driver, RuntimeConfig::default()) };
+    /// ```
+    pub unsafe fn with_driver(driver: Arc<dyn DeviceDriver>, config: RuntimeConfig) -> Self {
         let mut rt = Self::unavailable();
         rt.driver = Some(driver);
         rt.config = config;
@@ -772,7 +906,9 @@ impl GpuRuntime {
                 FailureEffect::NotStarted,
             ));
         }
-        let mut rt = Self::with_driver(crate::ffi::native_driver(), config);
+        // SAFETY: the native driver is not reachable from safe code and the
+        // `NATIVE_CLAIMED` claim above makes this the only live coordinator.
+        let mut rt = unsafe { Self::with_driver(crate::ffi::native_driver(), config) };
         rt.owns_native = true;
         Ok(rt)
     }
@@ -844,14 +980,47 @@ impl GpuRuntime {
                 Ok(ctx.generation)
             };
         }
+        if device.setup_failed.is_some() {
+            // An earlier setup left the context uncertain: retrying without a
+            // reset could build on it. Only `reinitialize` may recover.
+            return Err(err(op, ErrorKind::Poisoned, FailureEffect::SessionPoisoned));
+        }
         let started = Instant::now();
-        let info = driver
-            .probe(self.config.device_ordinal)
-            .map_err(|_| BackendError::unsupported(op))?;
-        let ctx = self.build_context(driver.as_ref(), info, started)?;
+        let info = match driver.probe(self.config.device_ordinal) {
+            Ok(info) => info,
+            // No device, or a device this build cannot use.
+            Err(e) if e.class == DriverErrorClass::Unsupported => {
+                return Err(BackendError::unsupported(op));
+            }
+            // The query failed without corrupting anything: retryable.
+            Err(e) if e.class == DriverErrorClass::Transient => {
+                return Err(err(op, Self::kind_for(&e), FailureEffect::NotStarted));
+            }
+            // A sticky or lost context observed while probing: the native
+            // session is uncertain, so recovery must reset (L1).
+            Err(e) => {
+                let failure = err(op, Self::kind_for(&e), FailureEffect::SessionPoisoned);
+                device.setup_failed = Some(failure);
+                return Err(failure);
+            }
+        };
+        let ctx = Self::record_setup(&mut device, self.build_context(driver.as_ref(), info, started))?;
         let generation = ctx.generation;
         device.current = Some(ctx);
         Ok(generation)
+    }
+
+    /// Persist an uncertain setup failure (effect `SessionPoisoned`) so that
+    /// it survives the call; a clean `NotStarted` failure leaves no state.
+    fn record_setup(
+        device: &mut DeviceState,
+        built: Result<Context, BackendError>,
+    ) -> Result<Context, BackendError> {
+        built.inspect_err(|e| {
+            if e.effect == FailureEffect::SessionPoisoned {
+                device.setup_failed = Some(*e);
+            }
+        })
     }
 
     /// Replace a poisoned generation: reset the driver context, then build a
@@ -863,25 +1032,31 @@ impl GpuRuntime {
         self.config.validate()?;
         let mut device = self.lock_device(op)?;
         match &device.current {
-            None => {
+            None if device.setup_failed.is_none() => {
                 drop(device);
                 return self.initialize();
             }
+            // Failed, uncertain setup: no context to retire, but reset first.
+            None => {}
             Some(ctx) if !ctx.poisoned => {
                 return Err(err(op, ErrorKind::InvalidInput, FailureEffect::NotStarted));
             }
             Some(_) => {}
         }
         let started = Instant::now();
+        // A failed reset leaves whatever uncertainty existed in place: the
+        // poisoned context stays current, or `setup_failed` stays set.
         let info = driver
             .reset(self.config.device_ordinal)
             .map_err(|_| err(op, ErrorKind::ContextLost, FailureEffect::SessionPoisoned))?;
-        // The reset destroyed every resource of the old context; never free
-        // them again. Keep the record only for diagnostics.
+        // The reset destroyed every resource of the old context (and of any
+        // failed setup); never free them again. Keep the record only for
+        // diagnostics.
         if let Some(old) = device.current.take() {
             device.retired.push(old);
         }
-        let ctx = self.build_context(driver.as_ref(), info, started)?;
+        device.setup_failed = None;
+        let ctx = Self::record_setup(&mut device, self.build_context(driver.as_ref(), info, started))?;
         let generation = ctx.generation;
         device.current = Some(ctx);
         Ok(generation)
@@ -905,6 +1080,19 @@ impl GpuRuntime {
         let mut streams: Vec<StreamId> = Vec::new();
         let mut events: Vec<EventId> = Vec::new();
         let mut buffers: Vec<HostBuffer> = Vec::new();
+        let kind_of = |e: &DriverError| match e.class {
+            DriverErrorClass::ContextLost => ErrorKind::ContextLost,
+            DriverErrorClass::Unsupported => ErrorKind::Unsupported,
+            _ => match e.call {
+                DriverCall::HostAlloc | DriverCall::DeviceAlloc => ErrorKind::Allocation,
+                _ => ErrorKind::Internal,
+            },
+        };
+        // Clean failure: every partial resource destroyed, effect NotStarted.
+        // Uncertain failure (sticky cause, or a destroy failing during
+        // cleanup): effect SessionPoisoned, which the caller persists as
+        // `setup_failed` so that recovery must reset. A failed destroy
+        // reports its own kind.
         let cleanup = |streams: Vec<StreamId>,
                        events: Vec<EventId>,
                        buffers: Vec<HostBuffer>,
@@ -913,38 +1101,35 @@ impl GpuRuntime {
             {
                 // Stop at the first failed destroy: the context may have just
                 // become sticky, and nothing more may be destructed through it.
-                'cleanup: {
+                let failed: Option<DriverError> = 'cleanup: {
                     for b in buffers {
-                        if driver.host_free(b).is_err() {
-                            break 'cleanup;
+                        if let Err(d) = driver.host_free(b) {
+                            break 'cleanup Some(d);
                         }
                     }
                     for ev in events {
-                        if driver.destroy_event(ev).is_err() {
-                            break 'cleanup;
+                        if let Err(d) = driver.destroy_event(ev) {
+                            break 'cleanup Some(d);
                         }
                     }
                     for s in streams {
-                        if driver.destroy_stream(s).is_err() {
-                            break 'cleanup;
+                        if let Err(d) = driver.destroy_stream(s) {
+                            break 'cleanup Some(d);
                         }
                     }
+                    None
+                };
+                match failed {
+                    None => err(op, kind_of(&e), FailureEffect::NotStarted),
+                    Some(d) => err(op, kind_of(&d), FailureEffect::SessionPoisoned),
                 }
             } else {
                 // Sticky failure during setup: leak rather than destruct
                 // through an untrusted context. HostBuffer has no Drop, so
                 // dropping the Rust handles does not free the allocations.
                 drop(buffers);
+                err(op, kind_of(&e), FailureEffect::SessionPoisoned)
             }
-            let kind = match e.class {
-                DriverErrorClass::ContextLost => ErrorKind::ContextLost,
-                DriverErrorClass::Unsupported => ErrorKind::Unsupported,
-                _ => match e.call {
-                    DriverCall::HostAlloc | DriverCall::DeviceAlloc => ErrorKind::Allocation,
-                    _ => ErrorKind::Internal,
-                },
-            };
-            err(op, kind, FailureEffect::NotStarted)
         };
 
         macro_rules! attempt {
@@ -1082,13 +1267,23 @@ impl GpuRuntime {
     }
 
     /// Advertise only what this runtime can currently guarantee: resident
-    /// scalar buffers on a healthy generation. Arithmetic operations remain
-    /// unadvertised until their packages pass their gates.
+    /// scalar buffers on a healthy generation, plus (P4) BLS12-381 scalar
+    /// transforms when the driver implements them. Other arithmetic
+    /// operations remain unadvertised until their packages pass their gates.
     pub fn capabilities(&self) -> BackendCapabilities {
         let snap = self.snapshot();
         if snap.generation.is_some() && snap.healthy {
+            let transform = self.driver_supports_transform();
             BackendCapabilities {
                 resident_buffers: true,
+                host_transform: transform,
+                resident_transform: transform,
+                supported_arithmetic: if transform {
+                    vec![crate::ntt::TRANSFORM_ARITHMETIC]
+                } else {
+                    Vec::new()
+                },
+                max_transform_log: transform.then_some(crate::ntt::MAX_TRANSFORM_LOG),
                 device_memory_budget: snap.hard_budget_bytes,
                 ..BackendCapabilities::default()
             }
@@ -1827,8 +2022,222 @@ impl GpuRuntime {
     }
 
     // -----------------------------------------------------------------------
+    // Transform launch (P4)
+    // -----------------------------------------------------------------------
+
+    /// Whether the driver implements P4 transforms (no device access).
+    pub(crate) fn driver_supports_transform(&self) -> bool {
+        self.driver.as_ref().is_some_and(|d| d.supports_transform())
+    }
+
+    /// CODE (P4): run one transform launch from `source` into a fresh output
+    /// allocation of `launch.output_len` elements and publish it only after
+    /// the completion event retires.
+    ///
+    /// Output and scratch are reserved together for their full size before
+    /// either is allocated; scratch is freed after completion and never
+    /// published. `source` is only read. Error effects follow
+    /// [`duplicate_scalars`](Self::duplicate_scalars): `NotStarted` before an
+    /// enqueue, `InputsPreserved` after a successful drain, `SessionPoisoned`
+    /// when completion is uncertain (output and scratch quarantined).
+    pub(crate) fn launch_transform_fresh<F: PrimeField>(
+        &self,
+        source: &ResidentBuffer<F>,
+        launch: &TransformLaunch,
+    ) -> Result<ResidentBuffer<F>, BackendError> {
+        let op = Operation::ResidentTransform;
+        let driver = self.driver.as_deref().ok_or(BackendError::unsupported(op))?;
+        let not_started = |kind| err(op, kind, FailureEffect::NotStarted);
+        if !driver.supports_transform() {
+            return Err(BackendError::unsupported(op));
+        }
+        let elem = TRANSFORM_ELEM_BYTES as u64;
+        let out_len = usize::try_from(launch.output_len)
+            .map_err(|_| not_started(ErrorKind::InvalidInput))?;
+        let out_bytes = launch
+            .output_len
+            .checked_mul(elem)
+            .ok_or(not_started(ErrorKind::Capacity))?;
+        let scratch_bytes = launch
+            .scratch_bytes()
+            .ok_or(not_started(ErrorKind::Capacity))?;
+        let total = out_bytes
+            .checked_add(scratch_bytes)
+            .ok_or(not_started(ErrorKind::Capacity))?;
+        if out_len == 0 {
+            return Err(not_started(ErrorKind::InvalidInput));
+        }
+        // Identity is allocated before any device work so exhaustion can
+        // never strand a completed launch.
+        let id = AllocationId(self.fresh_id(op)?);
+
+        let mut device = self.lock_device(op)?;
+        let ctx = device
+            .current
+            .as_mut()
+            .ok_or(BackendError::unsupported(op))?;
+        let generation = {
+            let mut reg = self.lock_registry(op)?;
+            let record = reg.validate(op, source)?;
+            if record.elem_size != TRANSFORM_ELEM_BYTES
+                || record.len as u64 != launch.source_len
+            {
+                return Err(not_started(ErrorKind::InvalidInput));
+            }
+            let generation = record.generation;
+            if ctx.poisoned {
+                return Err(err(op, ErrorKind::Poisoned, FailureEffect::SessionPoisoned));
+            }
+            if total > reg.available() {
+                return Err(not_started(ErrorKind::Capacity));
+            }
+            reg.reserved += total;
+            generation
+        };
+        let src = *ctx
+            .memory
+            .get(&source.allocation())
+            .ok_or(not_started(ErrorKind::Internal))?;
+
+        // Allocate output, then scratch. A failed allocation frees what was
+        // already allocated (nothing has been enqueued) and releases the
+        // whole reservation.
+        let alloc_fail = |this: &Self, ctx: &mut Context, e: DriverError, held: Option<(DeviceMemory, u64)>| {
+            this.release_internal_reservation(total, 0);
+            if Self::is_uncertain(&e) {
+                this.poison(ctx, held);
+                return err(op, Self::kind_for(&e), FailureEffect::SessionPoisoned);
+            }
+            if let Some((m, b)) = held {
+                // The cleanup failure, not the allocation failure, decides the
+                // reported kind once the context is untrusted.
+                if let Err(fe) = driver.device_free(m) {
+                    this.poison(ctx, Some((m, b)));
+                    return err(op, Self::kind_for(&fe), FailureEffect::SessionPoisoned);
+                }
+            }
+            err(op, Self::kind_for(&e), FailureEffect::NotStarted)
+        };
+        let dst = match driver.device_alloc(out_bytes) {
+            Ok(m) => m,
+            Err(e) => return Err(alloc_fail(self, ctx, e, None)),
+        };
+        let scratch = if scratch_bytes > 0 {
+            match driver.device_alloc(scratch_bytes) {
+                Ok(m) => Some(m),
+                Err(e) => return Err(alloc_fail(self, ctx, e, Some((dst, out_bytes)))),
+            }
+        } else {
+            None
+        };
+
+        let stream = ctx.compute_streams[0];
+        let (copy_done, copy_stream, done) = (ctx.copy_done, ctx.copy_stream, ctx.compute_done);
+        let (timing_start, timing_end) = (ctx.timing_start, ctx.timing_end);
+        let started = Instant::now();
+        let outcome = (|| -> Result<(), Abort> {
+            let step = |this: &Self, ctx: &mut Context, r: Result<(), DriverError>| {
+                r.map_err(|e| {
+                    this.fail_after_enqueue(
+                        driver, ctx, op, Self::kind_for(&e), Some(e), stream, Some((dst, out_bytes)),
+                    )
+                })
+            };
+            // Order the compute stream after earlier copy-stream work.
+            let r = driver.record_event(copy_done, copy_stream);
+            step(self, ctx, r)?;
+            let r = driver.stream_wait_event(stream, copy_done);
+            step(self, ctx, r)?;
+            // Timing calls are optional, but a sticky failure poisons (the
+            // scratch retirement below then quarantines scratch as well).
+            let mem = Some((dst, out_bytes));
+            let r = driver.record_event(timing_start, stream);
+            let timing = self.optional(ctx, op, r, mem)?.is_some();
+            let r = driver.launch_transform(dst, src, scratch, launch, stream);
+            step(self, ctx, r)?;
+            let r = driver.record_event(timing_end, stream);
+            let timing = self.optional(ctx, op, r, mem)?.is_some() && timing;
+            let r = driver.record_event(done, stream);
+            step(self, ctx, r)?;
+            self.wait_event(driver, ctx, op, done, mem)?;
+            if timing {
+                let r = driver.event_elapsed_ms(timing_start, timing_end);
+                if let Some(ms) = self.optional(ctx, op, r, mem)? {
+                    self.with_telemetry(|t| {
+                        t.gpu_event_ms += f64::from(ms);
+                        t.transform_kernel_ms += f64::from(ms);
+                    });
+                }
+            }
+            Ok(())
+        })();
+        let wall = started.elapsed().as_nanos() as u64;
+
+        // Retire scratch. On success or after a successful drain it is
+        // unreferenced and freed; after an uncertain failure it stays
+        // quarantined. A failed free makes the context untrusted: whatever
+        // the launch outcome, the call reports `SessionPoisoned` and
+        // publishes nothing (a completed `dst` joins the quarantine).
+        if let Some(m) = scratch {
+            if ctx.poisoned {
+                self.poison(ctx, Some((m, scratch_bytes)));
+            } else if let Err(e) = driver.device_free(m) {
+                self.poison(ctx, Some((m, scratch_bytes)));
+                if outcome.is_ok() {
+                    self.poison(ctx, Some((dst, out_bytes)));
+                }
+                self.release_internal_reservation(total, 0);
+                return Err(err(op, Self::kind_for(&e), FailureEffect::SessionPoisoned));
+            }
+        }
+        if let Err(abort) = outcome {
+            self.release_internal_reservation(total, 0);
+            return Err(abort.error);
+        }
+
+        ctx.memory.insert(id, dst);
+        let live = {
+            let mut reg = self.lock_registry(op)?;
+            reg.reserved = reg.reserved.saturating_sub(total);
+            reg.live += out_bytes;
+            reg.allocations.insert(
+                id,
+                AllocRecord {
+                    generation,
+                    element: TypeId::of::<F>(),
+                    elem_size: TRANSFORM_ELEM_BYTES,
+                    form: Form::ScalarCanonicalRepr,
+                    len: out_len,
+                    bytes: out_bytes,
+                    quarantined: false,
+                    checkpoint: None,
+                },
+            );
+            reg.live
+        };
+        self.with_telemetry(|t| {
+            t.launches += 1;
+            t.transform_launches += 1;
+            t.transform_wall_ns += wall;
+            t.live_high_water = t.live_high_water.max(live);
+            t.scratch_high_water = t.scratch_high_water.max(scratch_bytes);
+        });
+        Ok(ResidentBuffer::from_untrusted_metadata(
+            generation,
+            id,
+            out_len,
+            out_bytes,
+        ))
+    }
+
+    // -----------------------------------------------------------------------
     // Release and recovery
     // -----------------------------------------------------------------------
+
+    /// Release a resident handle without naming a group type (P4 chains).
+    pub(crate) fn release_handle<T: 'static>(&self, handle: ResidentBuffer<T>) -> Result<(), BackendError> {
+        self.release_impl(handle)
+    }
 
     fn release_impl<T: 'static>(&self, handle: ResidentBuffer<T>) -> Result<(), BackendError> {
         let op = Operation::Release;
@@ -1995,6 +2404,11 @@ impl Drop for GpuRuntime {
         // retired (reset) context frees nothing through the driver.
         state.retired.clear();
         let Some(ctx) = state.current.take() else {
+            if state.setup_failed.is_some() {
+                // A failed setup left the process context uncertain: keep the
+                // native claim, exactly as for a poisoned context.
+                return;
+            }
             // Never initialized (or nothing live): nothing native to protect.
             #[cfg(feature = "cuda")]
             if owns_native {
@@ -2106,7 +2520,7 @@ where
         source: &ResidentBuffer<F>,
         spec: TransformSpec<F>,
     ) -> Result<ResidentBuffer<F>, BackendError> {
-        crate::ntt::transform_resident(source, spec)
+        crate::ntt::transform_resident(self, source, spec)
     }
 
     fn release_scalars(&self, buffer: ResidentBuffer<F>) -> Result<(), BackendError> {
@@ -2165,7 +2579,7 @@ where
         source: &ResidentBuffer<F>,
         spec: TransformSpec<F>,
     ) -> Result<ResidentBuffer<F>, BackendError> {
-        crate::ntt::transform_resident(source, spec)
+        crate::ntt::transform_resident(GpuRuntime::process(), source, spec)
     }
 
     fn release_scalars(&self, buffer: ResidentBuffer<F>) -> Result<(), BackendError> {
@@ -2250,6 +2664,10 @@ pub mod fake {
         H2D { dst: u64, dst_off: u64, src: u64, src_off: usize, len: usize },
         D2H { dst: u64, dst_off: usize, src: u64, src_off: u64, len: usize },
         Copy { dst: u64, src: u64, len: u64 },
+        /// P4 transform stand-in: deterministic, non-arithmetic. `dst`
+        /// receives `src` bytes (zero-padded or truncated); scratch is
+        /// overwritten. Used only to test transactional behaviour.
+        Transform { dst: u64, src: u64, scratch: Option<u64> },
         Record(u64),
         Wait(u64),
         AsyncFail(DriverErrorClass),
@@ -2260,6 +2678,9 @@ pub mod fake {
             match *self {
                 Op::H2D { dst, src, .. } | Op::D2H { dst, src, .. } | Op::Copy { dst, src, .. } => {
                     dst == handle || src == handle
+                }
+                Op::Transform { dst, src, scratch } => {
+                    dst == handle || src == handle || scratch == Some(handle)
                 }
                 _ => false,
             }
@@ -2305,6 +2726,8 @@ pub mod fake {
         double_frees: usize,
         all_non_blocking: bool,
         corrupt: Option<u8>,
+        transform_enabled: bool,
+        transform_launches: usize,
     }
 
     // SAFETY: host pointers are owned by the fake (from Box::into_raw) and
@@ -2349,6 +2772,8 @@ pub mod fake {
                     double_frees: 0,
                     all_non_blocking: true,
                     corrupt: None,
+                    transform_enabled: false,
+                    transform_launches: 0,
                 }),
             }
         }
@@ -2413,6 +2838,17 @@ pub mod fake {
         }
 
         /// Overwrite every live device allocation with `byte`.
+        /// Make `supports_transform` true (P4 transactional tests). The fake
+        /// transform is not arithmetic; see `Op::Transform`.
+        pub fn enable_transform(&self) {
+            self.st().transform_enabled = true;
+        }
+
+        /// Fake transforms executed (retired), not merely enqueued.
+        pub fn transform_launches(&self) -> usize {
+            self.st().transform_launches
+        }
+
         pub fn corrupt_device_memory(&self, byte: u8) {
             let mut st = self.st();
             st.corrupt = Some(byte);
@@ -2589,6 +3025,30 @@ pub mod fake {
                             _ => st.violations.push(Violation::UseAfterFree { handle: dst }),
                         }
                     }
+                    Op::Transform { dst, src, scratch } => {
+                        let bytes = match st.allocs.get(&src) {
+                            Some(a) if !a.freed => a.data.clone(),
+                            _ => {
+                                st.violations.push(Violation::UseAfterFree { handle: src });
+                                continue;
+                            }
+                        };
+                        if let Some(sc) = scratch {
+                            match st.allocs.get_mut(&sc) {
+                                Some(a) if !a.freed => a.data.iter_mut().for_each(|b| *b = 0xa5),
+                                _ => st.violations.push(Violation::UseAfterFree { handle: sc }),
+                            }
+                        }
+                        match st.allocs.get_mut(&dst) {
+                            Some(a) if !a.freed => {
+                                let n = a.data.len().min(bytes.len());
+                                a.data[..n].copy_from_slice(&bytes[..n]);
+                                a.data[n..].iter_mut().for_each(|b| *b = 0);
+                            }
+                            _ => st.violations.push(Violation::UseAfterFree { handle: dst }),
+                        }
+                        st.transform_launches += 1;
+                    }
                     Op::Copy { dst, src, len } => {
                         let bytes = match st.allocs.get(&src) {
                             Some(a) if !a.freed && len as usize <= a.data.len() => a.data[..len as usize].to_vec(),
@@ -2615,6 +3075,64 @@ pub mod fake {
                 raw: Self::fresh(st),
                 bytes,
             }
+        }
+    }
+
+    /// Safe control surface for a fake driver owned by exactly one runtime:
+    /// fault injection and inspection only. It cannot call any
+    /// `DeviceDriver` method, so it cannot reset, free or launch behind the
+    /// runtime's back.
+    #[derive(Clone)]
+    pub struct FakeControl(Arc<FakeDriver>);
+
+    impl FakeControl {
+        pub fn inject(&self, call: DriverCall, nth: usize, fault: Fault) {
+            self.0.inject(call, nth, fault)
+        }
+        pub fn calls(&self, call: DriverCall) -> usize {
+            self.0.calls(call)
+        }
+        pub fn violations(&self) -> Vec<Violation> {
+            self.0.violations()
+        }
+        pub fn double_frees(&self) -> usize {
+            self.0.double_frees()
+        }
+        pub fn live_device_allocations(&self) -> usize {
+            self.0.live_device_allocations()
+        }
+        pub fn live_host_buffers(&self) -> usize {
+            self.0.live_host_buffers()
+        }
+        pub fn live_streams(&self) -> usize {
+            self.0.live_streams()
+        }
+        pub fn live_events(&self) -> usize {
+            self.0.live_events()
+        }
+        pub fn streams_created_non_blocking(&self) -> bool {
+            self.0.streams_created_non_blocking()
+        }
+        pub fn enable_transform(&self) {
+            self.0.enable_transform()
+        }
+        pub fn transform_launches(&self) -> usize {
+            self.0.transform_launches()
+        }
+        pub fn corrupt_device_memory(&self, byte: u8) {
+            self.0.corrupt_device_memory(byte)
+        }
+    }
+
+    impl GpuRuntime {
+        /// A runtime over a fresh fake driver that it exclusively owns, plus
+        /// the restricted control handle for that driver.
+        pub fn with_fake(fake: FakeConfig, config: RuntimeConfig) -> (FakeControl, GpuRuntime) {
+            let driver = Arc::new(FakeDriver::new(fake));
+            // SAFETY: the driver is new; the only other reference is the
+            // `FakeControl`, which exposes no `DeviceDriver` method.
+            let rt = unsafe { GpuRuntime::with_driver(driver.clone(), config) };
+            (FakeControl(driver), rt)
         }
     }
 
@@ -2949,6 +3467,62 @@ pub mod fake {
                         dst: dst.0.raw,
                         src: src.0.raw,
                         len: bytes,
+                    },
+                    call,
+                )?;
+                if let Action::AsyncFail(class) = action {
+                    Self::enqueue(&mut st, &stream, Op::AsyncFail(class), call)?;
+                }
+                action
+            };
+            Self::pause(&action);
+            Ok(())
+        }
+
+        fn supports_transform(&self) -> bool {
+            self.st().transform_enabled
+        }
+
+        fn launch_transform(
+            &self,
+            dst: DeviceMemory,
+            src: DeviceMemory,
+            scratch: Option<DeviceMemory>,
+            launch: &TransformLaunch,
+            stream: StreamId,
+        ) -> Result<(), DriverError> {
+            let call = DriverCall::Launch;
+            let action = {
+                let mut st = self.st();
+                if !st.transform_enabled {
+                    return Err(derr(call, DriverErrorClass::Unsupported));
+                }
+                let action = self.enter(&mut st, call)?;
+                Self::check_epoch(&mut st, &dst.0);
+                Self::check_epoch(&mut st, &src.0);
+                let elem = TRANSFORM_ELEM_BYTES as u64;
+                let scratch_ok = match (scratch, launch.scratch_bytes()) {
+                    (Some(m), Some(b)) => {
+                        Self::check_epoch(&mut st, &m.0);
+                        m.0.bytes >= b && b > 0
+                    }
+                    (None, Some(0)) => true,
+                    _ => false,
+                };
+                if launch.output_len.checked_mul(elem) != Some(dst.0.bytes)
+                    || launch.source_len.checked_mul(elem) != Some(src.0.bytes)
+                    || !scratch_ok
+                {
+                    st.violations.push(Violation::OutOfBounds { handle: dst.0.raw });
+                    return Err(derr(call, DriverErrorClass::Transient));
+                }
+                Self::enqueue(
+                    &mut st,
+                    &stream,
+                    Op::Transform {
+                        dst: dst.0.raw,
+                        src: src.0.raw,
+                        scratch: scratch.map(|m| m.0.raw),
                     },
                     call,
                 )?;

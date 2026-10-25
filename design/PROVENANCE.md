@@ -155,3 +155,14 @@ and hashes with their original owners.
 5. Label performance evidence by exact scope, cohort, source revision, and
    confidence. Estimates must include assumptions and arithmetic; estimates
    are not measurements.
+
+## P4 resident NTT (loki-p4, 2026-10-25)
+
+| Item | Label | Source and boundary |
+|---|---|---|
+| `cuda/vendor/sppark-0.1.16/ff/mont_t.cuh` | CODE (vendored) | sppark 0.1.16 from crates.io, Apache-2.0, copied verbatim, header kept; sha256 `f6f89b574507a6b07dec5e5f62d4d4d705a4a3b062187d7cda9d003809b96473`. Transitive includes: `<cstddef>`, `<cstdint>`, `pow.hpp`. Entered in `NOTICE`. |
+| `cuda/vendor/sppark-0.1.16/ff/pow.hpp` | CODE (vendored) | Same package, verbatim; sha256 `487b8c43b7c64956f5ba5a45413c218c5a1848c2b56141f643b124bddb49611f`. Transitive include: `<cassert>` only. |
+| `cuda/ntt_field.cuh` | CODE (own) | Instantiates `mont_t` with BLS12-381 Fr constants (r, R² mod r, R mod r, 2r, m0' = 0xffffffff), each recomputed independently in Python from the modulus; canonical↔Montgomery helpers are own code. |
+| `cuda/ntt.cu` radix-2 network | SOURCE | Iterative decimation-in-time Cooley–Tukey with a bit-reversed load: Cooley & Tukey, "An algorithm for the machine calculation of complex Fourier series", Math. Comp. 19 (1965); Cormen, Leiserson, Rivest, Stein, *Introduction to Algorithms*, ch. 30 (iterative FFT). Shared-memory fusion of the first ≤10 stages and the per-stage global kernel are own design. sppark's NTT driver, twiddle tables, streams and device selection were not used (they cannot adopt the runtime's streams or budget). No open-icicle source, derivative or H21.md was opened. |
+| Coset / normalization semantics | CODE (reference) | Behaviour matched to `midnight-proofs` 0.8.3 `EvaluationDomain` (MIT OR Apache-2.0) used as a dev-only test oracle via crates.io; no source copied. Formal statement: `gpu-spec/LokiLean/BackendNtt.lean` (P4 section). |
+| Dev-only oracle dependencies | CODE | `midnight-proofs =0.8.3`, `midnight-curves 0.3.1` as `[dev-dependencies]` of `loki-gpu`; the Cargo.lock delta is dev-only (recorded in `design/p4/REVIEW.md`). |

@@ -175,6 +175,76 @@ int32_t loki_gpu_rt_event_elapsed_ms_v1(const loki_gpu_handle_v1 *start,
 int32_t loki_gpu_rt_stream_synchronize_v1(const loki_gpu_handle_v1 *stream,
                                           loki_gpu_status_v1 *status);
 
+/* ------------------------------------------------------------------------
+ * P4 resident transform ABI. One launch runs the whole pipeline described in
+ * `loki-gpu/src/runtime.rs` (`TransformLaunch`) asynchronously on `stream`:
+ * constants -> twiddles -> load (canonical->Montgomery, optional bit
+ * reversal, coset powers, zero padding) -> radix-2 DIT stages -> finish
+ * (scale, inverse coset powers, optional bit reversal, Montgomery->fully
+ * reduced canonical). `src` is only read. Scalars and constants are 32-byte
+ * canonical little-endian values below r. The scratch layout is
+ * [LOKI_GPU_NTT_CONST_SLOTS consts][N/2 twiddles][N work, only when
+ * output_len < N]; it must be exactly that size (scratch may be NULL only
+ * when the size is zero, i.e. never in v1 since consts are always used).
+ * ------------------------------------------------------------------------ */
+
+#define LOKI_GPU_NTT_ABI_VERSION ((uint32_t)1)
+#define LOKI_GPU_NTT_MAX_LOG ((uint32_t)27)
+#define LOKI_GPU_NTT_CONST_SLOTS ((uint32_t)72)
+#define LOKI_GPU_NTT_FLAG_INPUT_BITREV ((uint32_t)1)
+#define LOKI_GPU_NTT_FLAG_OUTPUT_BITREV ((uint32_t)2)
+#define LOKI_GPU_NTT_FLAG_PRE_COSET ((uint32_t)4)
+#define LOKI_GPU_NTT_FLAG_POST_COSET ((uint32_t)8)
+
+typedef struct loki_gpu_ntt_params_v1 {
+  uint32_t abi_version;          /* LOKI_GPU_NTT_ABI_VERSION */
+  uint32_t struct_size;          /* sizeof(loki_gpu_ntt_params_v1) */
+  uint32_t ntt_log;              /* N = 2^ntt_log, <= LOKI_GPU_NTT_MAX_LOG */
+  uint32_t flags;                /* LOKI_GPU_NTT_FLAG_* */
+  uint64_t source_len;           /* elements read from src, 1..=N */
+  uint64_t output_len;           /* elements written to dst, 1..=N */
+  uint8_t root_powers[32][32];   /* w^(2^j), j < ntt_log; w already inverted
+                                    for inverse transforms */
+  uint8_t coset_powers[32][32];  /* g^(2^j), j < ntt_log, when a coset flag
+                                    is set */
+  uint8_t scale[32];             /* output multiplier (N^-1 or 1) */
+} loki_gpu_ntt_params_v1;
+
+#if defined(__cplusplus)
+static_assert(sizeof(loki_gpu_ntt_params_v1) == 2112, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, abi_version) == 0, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, struct_size) == 4, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, ntt_log) == 8, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, flags) == 12, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, source_len) == 16, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, output_len) == 24, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, root_powers) == 32, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, coset_powers) == 1056, "ntt params ABI");
+static_assert(offsetof(loki_gpu_ntt_params_v1, scale) == 2080, "ntt params ABI");
+static_assert(alignof(loki_gpu_ntt_params_v1) == 8, "ntt params ABI");
+#endif
+
+/* Scratch bytes required by `params` (0 on malformed params). */
+uint64_t loki_gpu_ntt_scratch_bytes_v1(const loki_gpu_ntt_params_v1 *params);
+
+int32_t loki_gpu_ntt_launch_v1(const loki_gpu_handle_v1 *dst,
+                               const loki_gpu_handle_v1 *src,
+                               const loki_gpu_handle_v1 *scratch,
+                               const loki_gpu_ntt_params_v1 *params,
+                               const loki_gpu_handle_v1 *stream,
+                               loki_gpu_status_v1 *status);
+
+/* Shared validation for other translation units (P4): the runtime's own
+ * handle check (version, kind, nonzero, current epoch) and CUDA error
+ * classification/report. Neither dereferences a handle's raw bits. */
+int32_t loki_gpu_rt_check_handle_v1(const loki_gpu_handle_v1 *handle,
+                                    uint32_t kind);
+int32_t loki_gpu_rt_report_cuda_v1(int32_t cuda_error,
+                                   loki_gpu_status_v1 *status);
+/* Make the probed device current on the calling host thread; returns
+ * LOKI_GPU_OK or an already reported failure. */
+int32_t loki_gpu_rt_ensure_device_v1(loki_gpu_status_v1 *status);
+
 #ifdef __cplusplus
 }
 #endif
