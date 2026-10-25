@@ -22,6 +22,7 @@ timeout_s = 5400
 idle_gate = $idle
 idle_window_s = 60
 idle_max_wait_s = 900
+vk_policy = ${VK_POLICY:-record}
 heavy = $heavy
 gpu_lock = $gpulock
 nvml = on

@@ -4,3 +4,4 @@
 /campaign/dw/
 /campaign/builds/
 /campaign/*.log
+/campaign/*.conf
