@@ -1,0 +1,20 @@
+module gpu_dispatch_test {
+  import gpu_dispatch.* from "./gpu_dispatch"
+  run belowThresholdTest = init.then(submit(0, Msm, 0, 3)).then(dispatch(0))
+    .expect(requests.get(0).phase == Fallback).then(cpuFinish(0)).expect(safety)
+  run thresholdTest = init.then(submit(0, Msm, 0, 4)).then(dispatch(0))
+    .expect(requests.get(0).phase == Gpu).then(gpuSuccess(0)).expect(safety)
+  run errorFallbackTest = init.then(submit(0, Ntt, 0, 5)).then(dispatch(0))
+    .then(gpuError(0)).then(cpuFinish(0)).expect(fellBack and safety)
+  run uploadFailureTest = init.then(submit(0, Msm, 0, 4)).then(uploadError(0))
+    .then(cpuFinish(0)).expect(fellBack and safety)
+  run stalePointerTest = init.then(submit(0, Msm, 0, 4)).then(dispatch(0))
+    .then(reusePointer(0, 2)).then(submit(1, Msm, 0, 4)).then(dispatch(1))
+    .expect(not(requests.get(1).hit)).then(gpuSuccess(0)).then(gpuSuccess(1)).expect(safety)
+  run cacheHitTest = init.then(submit(0, Msm, 0, 4)).then(dispatch(0))
+    .then(submit(1, Msm, 0, 4)).then(dispatch(1)).expect(cacheHit and concurrent)
+  run lengthChangeTest = init.then(submit(0, Msm, 0, 4)).then(dispatch(0))
+    .then(submit(1, Msm, 0, 5)).then(dispatch(1)).expect(not(requests.get(1).hit))
+  run duplicateCompletionBlockedTest = init.then(submit(0, Ntt, 0, 0))
+    .then(dispatch(0)).then(cpuFinish(0)).then(cpuFinish(0).fail())
+}

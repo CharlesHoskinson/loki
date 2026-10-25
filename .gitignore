@@ -1,1 +1,3 @@
 target/
+.artifacts/w8/*
+!.artifacts/w8/PLAN.md
