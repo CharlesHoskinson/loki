@@ -24,6 +24,8 @@ pub mod plonk;
 pub mod poly;
 #[cfg(feature = "loki-profile")]
 pub mod profile;
+#[cfg(any(feature = "cuda", feature = "cuda-ntt", feature = "loki-backend-api"))]
+pub mod telemetry;
 pub mod transcript;
 
 pub mod dev;
