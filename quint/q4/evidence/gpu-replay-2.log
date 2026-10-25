@@ -1,0 +1,81 @@
+queued 2026-10-25T07:53:00Z
+locks acquired 2026-10-25T07:53:00Z
+NVIDIA GeForce RTX 5090, 616.92
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+warning: unexpected `cfg` condition value: `loki-profile`
+  --> /home/charles/repos/loki-wt/quint-v2/quint/mbt/q4-srs/target/release/build/loki-q4-srs-mbt-2d1b3607cacb8d18/out/w13/backend.rs:38:11
+   |
+38 |     #[cfg(feature = "loki-profile")]
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cuda`, `cuda-srs-registry`, and `gpu`
+   = help: consider adding `loki-profile` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unexpected `cfg` condition value: `loki-profile`
+  --> /home/charles/repos/loki-wt/quint-v2/quint/mbt/q4-srs/target/release/build/loki-q4-srs-mbt-2d1b3607cacb8d18/out/w13/backend.rs:40:15
+   |
+40 |     #[cfg(not(feature = "loki-profile"))]
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cuda`, `cuda-srs-registry`, and `gpu`
+   = help: consider adding `loki-profile` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: variable does not need to be mutable
+   --> /home/charles/repos/loki-wt/quint-v2/quint/mbt/q4-srs/src/driver.rs:880:9
+    |
+880 |     let mut set = |d: &mut W13, i: usize, p: MPoint| {
+    |         ----^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `loki-q4-srs-mbt` (lib test) generated 3 warnings (run `cargo fix --lib -p loki-q4-srs-mbt --tests` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 37.99s
+     Running unittests src/lib.rs (target/release/deps/loki_q4_srs_mbt-1e21caf90a6f2493)
+
+running 11 tests
+test w13::cuda::backend::q4_mbt::q4_point_encoding_matches_model ... ok
+test w13::cuda::backend::q4_mbt::q4_rewarm_then_mutate_same_address_misses ... q4 replay: 0 steps, 2 GPU-path hits, 4 GPU-path misses
+ok
+test w13::cuda::backend::q4_mbt::q4_sppark_formula_matches_backend ... ok
+test w13::cuda::backend::q4_mbt::replay_w13_registry_gpu ... == Running model based tests for replay_w13_registry_gpu
+   Generating 12 traces using `20261025` as random seed ...
+   Replaying traces ...
+q4 replay: 252 steps, 19 GPU-path hits, 32 GPU-path misses
+q4 replay events: {"Disabled": 19, "Empty": 16, "GpuErr": 4, "GpuOk": 51, "err:budget": 4, "err:other": 19, "evict": 17, "hit:n-1": 10, "hit:prefix": 15, "miss:same-address-stale": 14}
+   [OK] replay_w13_registry_gpu
+ok
+test w13::cuda::backend::upload_tests::gpu_rejects_corrupted_resident_base ... ok
+test w13::cuda::backend::upload_tests::registry_persistent_byte_accounting ... ok
+test w13::cuda::backend::upload_tests::registry_release_failure_retains_entry_and_disables_backend ... ok
+test w13::cuda::backend::upload_tests::registry_workers_join_after_errors_and_panics ... 
+thread 'loki-srs' (3816679) panicked at /home/charles/repos/loki-wt/quint-v2/quint/mbt/q4-srs/target/release/build/loki-q4-srs-mbt-2d1b3607cacb8d18/out/w13/backend.rs:487:13:
+synthetic worker failure
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'loki-srs' (3816680) panicked at /home/charles/repos/loki-wt/quint-v2/quint/mbt/q4-srs/target/release/build/loki-q4-srs-mbt-2d1b3607cacb8d18/out/w13/backend.rs:487:13:
+synthetic worker failure
+
+thread 'loki-srs' (3816678) panicked at /home/charles/repos/loki-wt/quint-v2/quint/mbt/q4-srs/target/release/build/loki-q4-srs-mbt-2d1b3607cacb8d18/out/w13/backend.rs:487:13:
+synthetic worker failure
+ok
+test w13::cuda::convert::tests::cuda_conversion_layout_and_montgomery_constants ... ok
+test w13::cuda::convert::tests::cuda_conversion_matches_independent_big_integer_arithmetic ... ok
+test w13::cuda::convert::tests::cuda_conversion_rejects_invalid_output ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.98s
+
+   Doc-tests loki_q4_srs_mbt
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit 0 at 2026-10-25T07:53:44Z

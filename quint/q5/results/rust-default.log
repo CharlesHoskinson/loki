@@ -1,0 +1,111 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling midnight-proofs v0.8.3 (/home/charles/repos/loki-wt/quint-v2)
+   Compiling loki-q5-replay v0.1.0 (/home/charles/repos/loki-wt/quint-v2/quint/q5/replay)
+    Finished `release` profile [optimized] target(s) in 40.71s
+     Running unittests src/lib.rs (target/release/deps/loki_q5_replay-97083cb62198390f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/emit.rs (target/release/deps/emit-e8584bb3882c0472)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/release/deps/differential-7447f6c83e51c232)
+
+running 5 tests
+test batch_invert_and_prefix_product_equal_stock ... helper samples=10880
+ok
+test batch_invert_rational_equals_stock ... rational samples=10590
+ok
+test lookup_product_equals_stock_and_telescopes ... product samples=10500 telescoped=3500 zero_den=7000
+ok
+test permutation_product_equals_stock_and_telescopes ... permutation samples=10500 telescoped=6545
+ok
+test permute_expression_pair_equals_stock_for_every_hash_order ... permute samples=10200 errors=600 order_sensitive=6499
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 35.19s
+
+     Running tests/end_to_end.rs (target/release/deps/end_to_end-a2453e0e32462ac2)
+
+running 2 tests
+test proofs_match_stock_and_verify_with_stock ... k=7 coverage=Single seed=1 draws=456 stock_self_equal=true loki_equal_stock=true
+k=7 coverage=Single seed=2 draws=452 stock_self_equal=true loki_equal_stock=true
+k=7 coverage=Multi seed=1 draws=456 stock_self_equal=false loki_equal_stock=false
+k=7 coverage=Multi seed=2 draws=452 stock_self_equal=false loki_equal_stock=false
+k=7 coverage=AllEqual seed=1 draws=456 stock_self_equal=false loki_equal_stock=false
+k=7 coverage=AllEqual seed=2 draws=452 stock_self_equal=false loki_equal_stock=false
+k=7 coverage=MaxElem seed=1 draws=456 stock_self_equal=false loki_equal_stock=false
+k=7 coverage=MaxElem seed=2 draws=452 stock_self_equal=false loki_equal_stock=false
+k=11 coverage=Single seed=1 draws=456 stock_self_equal=true loki_equal_stock=true
+k=11 coverage=Single seed=2 draws=452 stock_self_equal=true loki_equal_stock=true
+k=11 coverage=Multi seed=1 draws=456 stock_self_equal=false loki_equal_stock=false
+k=11 coverage=Multi seed=2 draws=452 stock_self_equal=false loki_equal_stock=false
+k=11 coverage=AllEqual seed=1 draws=456 stock_self_equal=false loki_equal_stock=false
+k=11 coverage=AllEqual seed=2 draws=452 stock_self_equal=false loki_equal_stock=false
+k=11 coverage=MaxElem seed=1 draws=456 stock_self_equal=false loki_equal_stock=false
+k=11 coverage=MaxElem seed=2 draws=452 stock_self_equal=false loki_equal_stock=false
+ok
+test w10_commit_argument_equals_main_commit ... w10 commit samples=1980 equal=1584 bad_lagrange_diverged=151
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.89s
+
+     Running tests/mbt.rs (target/release/deps/mbt-0a9cc33d7123cd6d)
+
+running 4 tests
+test mbt_rejects_mut1_reversed_leftovers - should panic ... == Running model based tests for mbt_rejects_mut1_reversed_leftovers
+   Generating 300 traces using `0x51515` as random seed ...
+   Replaying traces ...
+   Specification and implementation states diverge
+   [FAIL] mbt_rejects_mut1_reversed_leftovers 
+   Reproduce this error with `QUINT_SEED=0x51515`
+
+
+thread 'mbt_rejects_mut1_reversed_leftovers' (3819150) panicked at tests/mbt.rs:370:1:
+State invariant failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+ok
+test mbt_rejects_mut2_table_draws_first - should panic ... == Running model based tests for mbt_rejects_mut2_table_draws_first
+   Generating 300 traces using `0x51515` as random seed ...
+   Replaying traces ...
+   Specification and implementation states diverge
+   [FAIL] mbt_rejects_mut2_table_draws_first 
+   Reproduce this error with `QUINT_SEED=0x51515`
+
+
+thread 'mbt_rejects_mut2_table_draws_first' (3819297) panicked at tests/mbt.rs:371:1:
+State invariant failed
+ok
+test mbt_rejects_mut9_descending_sort - should panic ... == Running model based tests for mbt_rejects_mut9_descending_sort
+   Generating 300 traces using `0x51515` as random seed ...
+   Replaying traces ...
+   Specification and implementation states diverge
+   [FAIL] mbt_rejects_mut9_descending_sort 
+   Reproduce this error with `QUINT_SEED=0x51515`
+
+
+thread 'mbt_rejects_mut9_descending_sort' (3819410) panicked at tests/mbt.rs:372:1:
+State invariant failed
+ok
+test q5_lookup_mbt ... == Running model based tests for q5_lookup_mbt
+   Generating 2000 traces using `0x51515` as random seed ...
+   Replaying traces ...
+   [OK] q5_lookup_mbt
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.40s
+
+   Doc-tests loki_q5_replay
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

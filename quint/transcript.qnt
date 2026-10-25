@@ -1,3 +1,6 @@
+// NOTE (quint-q1, a256a9a): superseded by quint/q1/transcript_q1.qnt, which derives the prover and
+// verifier schedules independently, computes multiopen point sets instead of hard-coding them,
+// and checks truncated-challenges derivations. Results: quint/q1/results.json. Kept for W8 reproducibility.
 // Stock 0.8.3 order: prover.rs compute_trace/finalise_proof, then KZG multi_open.
 // Payloads are symbolic; the Rust adapter compares real bytes in memory.
 module transcript {

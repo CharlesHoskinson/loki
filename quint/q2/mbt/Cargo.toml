@@ -1,0 +1,37 @@
+[package]
+name = "loki-quint-q2-mbt"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Test-only crate: drives the real P1 dispatcher (src/backend/dispatch.rs) and
+# the pinned legacy sppark host adapters (with CPU FFI surrogates) from
+# quint/q2 models. Production crates and features are unchanged.
+
+[dependencies]
+anyhow = "1"
+itf = "0.4"
+midnight-proofs = { path = "../../..", features = ["loki-backend-api"] }
+midnight-curves = "0.3.1"
+ff = "0.13"
+group = "0.13"
+rand_chacha = "0.3"
+rand_core = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blst = "0.3.16"
+tracing = "0.1"
+num-bigint = "0.4"
+loki-cuda-runtime = { path = "../../../cuda-runtime" }
+quint-connect = { git = "https://github.com/informalsystems/quint-connect", rev = "4f018f54fc7dd4cef341d10111427bab59d3b307" }
+
+[features]
+# Compile the legacy W9/W13 host adapter with its registry variant.
+cuda-srs-registry = []
+cuda = []
+default = ["cuda"]
+
+[patch.crates-io]
+midnight-proofs = { path = "../../.." }
+
+[workspace]

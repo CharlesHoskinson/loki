@@ -1,0 +1,40 @@
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "Safety", "samples": 10000, "steps": 5, "seed": "0x51515", "expect": "ok", "status": "ok", "pass": true, "seconds": 103.3}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessNoError", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 2.2}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessNoZeroDen", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.9}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessOrderInsensitive", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 2.0}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessNoMultiSet", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.9}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessNoPermOne", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.8}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessNoInvalidPerm", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.8}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessNoRationalOne", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessNoRationalZeroDen", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.6}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessNotDone", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessNoDet", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.8}
+PASS {"spec": "lookup.qnt", "main": "lookup_ok", "invariant": "WitnessNoMultiChunk", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "mut1", "invariant": "LookupEqualsStock", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.6}
+PASS {"spec": "lookup.qnt", "main": "mut2", "invariant": "BlindingRowsUntouched", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.6}
+PASS {"spec": "lookup.qnt", "main": "mut2", "invariant": "SameDraws", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "mut3", "invariant": "HelpersEqualSequential", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.6}
+PASS {"spec": "lookup.qnt", "main": "mut3", "invariant": "LookupEqualsStock", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "mut4", "invariant": "HelpersEqualSequential", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "mut4", "invariant": "LookupEqualsStock", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 2.2}
+PASS {"spec": "lookup.qnt", "main": "mut5", "invariant": "RationalEqualsStock", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "mut6", "invariant": "LookupConditions", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.6}
+PASS {"spec": "lookup.qnt", "main": "mut7", "invariant": "LookupTelescopes", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.6}
+PASS {"spec": "lookup.qnt", "main": "mut7", "invariant": "PermEqualsStock", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "mut8", "invariant": "BlindingRowsUntouched", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "mut8", "invariant": "LookupTelescopes", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.8}
+PASS {"spec": "lookup.qnt", "main": "mut9", "invariant": "LookupConditions", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "mut10", "invariant": "ErrorAgrees", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "mut11", "invariant": "PermTelescopes", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "lookup.qnt", "main": "mut11", "invariant": "PermEqualsStock", "samples": 2000, "steps": 5, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 1.7}
+PASS {"spec": "argcommit.qnt", "main": "argcommit_ok", "invariant": "Safety", "samples": 10000, "steps": 6, "seed": "0x51515", "expect": "ok", "status": "ok", "pass": true, "seconds": 219.2}
+PASS {"spec": "argcommit.qnt", "main": "argcommit_ok", "invariant": "WitnessNoCoeffPath", "samples": 2000, "steps": 6, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 0.6}
+PASS {"spec": "argcommit.qnt", "main": "argcommit_ok", "invariant": "WitnessNoFallback", "samples": 2000, "steps": 6, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 0.6}
+PASS {"spec": "argcommit.qnt", "main": "argcommit_ok", "invariant": "WitnessNoDownsize", "samples": 2000, "steps": 6, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 0.6}
+PASS {"spec": "argcommit.qnt", "main": "argcommit_ok", "invariant": "WitnessNoBadSrsDivergence", "samples": 2000, "steps": 6, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 0.5}
+PASS {"spec": "argcommit.qnt", "main": "acmut1", "invariant": "W10EqualsStockOnValidSrs", "samples": 2000, "steps": 6, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 0.5}
+PASS {"spec": "argcommit.qnt", "main": "acmut2", "invariant": "W10EqualsStockOnValidSrs", "samples": 2000, "steps": 6, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 0.5}
+PASS {"spec": "argcommit.qnt", "main": "acmut3", "invariant": "TranscriptEqual", "samples": 2000, "steps": 6, "seed": "0x51515", "expect": "violated", "status": "violated", "pass": true, "seconds": 0.5}
+PASS {"spec": "argcommit_bmc.qnt", "main": "bmc_ok", "invariant": "Equal", "tool": "apalache", "steps": 2, "expect": "ok", "status": "ok", "pass": true, "seconds": 83.4}
+PASS {"spec": "argcommit_bmc.qnt", "main": "bmc_mut1", "invariant": "Equal", "tool": "apalache", "steps": 2, "expect": "violated", "status": "violated", "pass": true, "seconds": 10.6}
+ALL PASS

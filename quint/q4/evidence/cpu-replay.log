@@ -1,0 +1,97 @@
+=== features=cuda 2026-10-25T07:56:31Z
+38 |     #[cfg(feature = "loki-profile")]
+
+40 |     #[cfg(not(feature = "loki-profile"))]
+
+warning: `loki-q4-srs-mbt` (lib test) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 2.02s
+     Running unittests src/lib.rs (target/release/deps/loki_q4_srs_mbt-5073c84bf7a31416)
+
+running 8 tests
+test w13::cuda::backend::q4_mbt::q4_legacy_release_failure_quarantines_handle ... ignored, repro for REPORT.md F2; expected to fail
+test w13::cuda::backend::q4_mbt::q4_point_encoding_matches_model ... ok
+test w13::cuda::backend::q4_mbt::q4_prepare_sync_error_leaks_untracked_allocation ... q4 replay: 0 steps, 0 GPU-path hits, 0 GPU-path misses
+ok
+test w13::cuda::backend::q4_mbt::replay_w13_legacy_cpu_surrogate ... == Running model based tests for replay_w13_legacy_cpu_surrogate
+   Generating 200 traces using `20261025` as random seed ...
+   Replaying traces ...
+q4 replay: 5000 steps, 132 GPU-path hits, 739 GPU-path misses
+q4 replay events: {"Disabled": 691, "Empty": 350, "GpuErr": 153, "GpuOk": 871, "err:invalid": 34, "err:invoke": 40, "err:other": 691, "err:prepare": 62, "err:release": 17, "evict": 471, "hit:n-1": 15, "miss:same-address-stale": 36}
+   [OK] replay_w13_legacy_cpu_surrogate
+ok
+test w13::cuda::backend::upload_tests::gpu_rejects_corrupted_resident_base ... ok
+test w13::cuda::convert::tests::cuda_conversion_layout_and_montgomery_constants ... ok
+test w13::cuda::convert::tests::cuda_conversion_matches_independent_big_integer_arithmetic ... ok
+test w13::cuda::convert::tests::cuda_conversion_rejects_invalid_output ... ok
+
+test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 74.39s
+
+   Doc-tests loki_q4_srs_mbt
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== features=cuda-srs-registry 2026-10-25T07:57:47Z
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+38 |     #[cfg(feature = "loki-profile")]
+
+40 |     #[cfg(not(feature = "loki-profile"))]
+
+warning: variable does not need to be mutable
+880 |     let mut set = |d: &mut W13, i: usize, p: MPoint| {
+
+warning: `loki-q4-srs-mbt` (lib test) generated 3 warnings (run `cargo fix --lib -p loki-q4-srs-mbt --tests` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 4.92s
+     Running unittests src/lib.rs (target/release/deps/loki_q4_srs_mbt-2e0be4599bd55559)
+
+running 13 tests
+test w13::cuda::backend::q4_mbt::q4_mixed_host_accounting ... mixed host: charged 3309568 bytes, sppark allocates 3131392 (+178176)
+q4 replay: 0 steps, 0 GPU-path hits, 1 GPU-path misses
+ok
+test w13::cuda::backend::q4_mbt::q4_point_encoding_matches_model ... ok
+test w13::cuda::backend::q4_mbt::q4_prepare_sync_error_leaks_untracked_allocation ... q4 replay: 0 steps, 0 GPU-path hits, 0 GPU-path misses
+ok
+test w13::cuda::backend::q4_mbt::q4_rewarm_then_mutate_same_address_misses ... q4 replay: 0 steps, 2 GPU-path hits, 4 GPU-path misses
+ok
+test w13::cuda::backend::q4_mbt::q4_sppark_formula_matches_backend ... ok
+test w13::cuda::backend::q4_mbt::replay_w13_registry_cpu_surrogate ... == Running model based tests for replay_w13_registry_cpu_surrogate
+   Generating 200 traces using `20261025` as random seed ...
+   Replaying traces ...
+q4 replay: 5000 steps, 283 GPU-path hits, 348 GPU-path misses
+q4 replay events: {"Disabled": 821, "Empty": 334, "GpuErr": 147, "GpuOk": 631, "err:budget": 35, "err:invalid": 34, "err:invoke": 22, "err:other": 821, "err:prepare": 14, "err:query": 38, "err:release": 4, "evict": 159, "hit:n-1": 89, "hit:prefix": 176, "miss:same-address-stale": 123, "par:spawned=0 err=-1 unwound=false": 35, "par:spawned=4 err=-1 unwound=false": 1, "par:spawned=4 err=0 unwound=false": 136, "par:spawned=4 err=1 unwound=false": 51, "par:spawned=4 err=2 unwound=false": 6, "par:spawned=4 err=3 unwound=false": 4}
+   [OK] replay_w13_registry_cpu_surrogate
+ok
+test w13::cuda::backend::upload_tests::gpu_rejects_corrupted_resident_base ... ok
+test w13::cuda::backend::upload_tests::registry_persistent_byte_accounting ... ok
+test w13::cuda::backend::upload_tests::registry_release_failure_retains_entry_and_disables_backend ... ok
+test w13::cuda::backend::upload_tests::registry_workers_join_after_errors_and_panics ... 
+thread 'loki-srs' (3851203) panicked at /home/charles/repos/loki-wt/quint-v2/quint/mbt/q4-srs/target/release/build/loki-q4-srs-mbt-65564f4fccb6c600/out/w13/backend.rs:487:13:
+synthetic worker failure
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'loki-srs' (3851202) panicked at /home/charles/repos/loki-wt/quint-v2/quint/mbt/q4-srs/target/release/build/loki-q4-srs-mbt-65564f4fccb6c600/out/w13/backend.rs:487:13:
+synthetic worker failure
+
+thread 'loki-srs' (3851204) panicked at /home/charles/repos/loki-wt/quint-v2/quint/mbt/q4-srs/target/release/build/loki-q4-srs-mbt-65564f4fccb6c600/out/w13/backend.rs:487:13:
+synthetic worker failure
+ok
+test w13::cuda::convert::tests::cuda_conversion_layout_and_montgomery_constants ... ok
+test w13::cuda::convert::tests::cuda_conversion_matches_independent_big_integer_arithmetic ... ok
+test w13::cuda::convert::tests::cuda_conversion_rejects_invalid_output ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 31.41s
+
+   Doc-tests loki_q4_srs_mbt
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+test w13::cuda::backend::q4_mbt::q4_legacy_release_failure_quarantines_handle ... FAILED
+thread 'w13::cuda::backend::q4_mbt::q4_legacy_release_failure_quarantines_handle' (3851262) panicked at /home/charles/repos/loki-wt/quint-v2/quint/mbt/q4-srs/src/driver.rs:819:9:
+handle whose release failed was dropped from the cache (not quarantined)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.14s
