@@ -10,6 +10,46 @@ use rayon::prelude::*;
 const PARALLEL_THRESHOLD: usize = 4096;
 const MIN_CHUNK: usize = 1024;
 
+/// Quotient by the monic product of `X - root`, dropping the remainder.
+/// Ported from midnight-zk #565. Unlike a chain of synthetic divisions this
+/// scans the coefficients once, skipping zero terms of the root product.
+/// `LokiLean/Multiopen.lean` models the Kate fold as division by this product;
+/// retain exactly `poly.len() - roots.len()` coefficients, including zeros.
+fn divide_by_roots<F: ff::Field>(poly: &[F], roots: &[F]) -> Vec<F> {
+    let degree = roots.len();
+    if degree == 0 {
+        return poly.to_vec();
+    }
+    if degree >= poly.len() {
+        return vec![];
+    }
+    let mut vanishing = vec![F::ONE];
+    for root in roots {
+        let mut next = vec![F::ZERO; vanishing.len() + 1];
+        for (i, coefficient) in vanishing.iter().enumerate() {
+            next[i + 1] += coefficient;
+            next[i] -= *coefficient * root;
+        }
+        vanishing = next;
+    }
+    let terms: Vec<_> = vanishing[..degree]
+        .iter()
+        .enumerate()
+        .filter(|(_, coefficient)| !bool::from(coefficient.is_zero()))
+        .map(|(j, coefficient)| (j, *coefficient))
+        .collect();
+    let mut remainder = poly.to_vec();
+    let mut quotient = vec![F::ZERO; poly.len() - degree];
+    for i in (degree..poly.len()).rev() {
+        let lead = remainder[i];
+        quotient[i - degree] = lead;
+        for (j, coefficient) in &terms {
+            remainder[i - degree + j] -= lead * coefficient;
+        }
+    }
+    quotient
+}
+
 /// Scale and add in polynomial order, parallelizing only coefficient ranges.
 /// The result retains the first polynomial's length, just like Polynomial Add;
 /// in particular, f may be padded longer than the q polynomials in the final fold.
@@ -65,7 +105,7 @@ pub(super) fn prepare<F: PrimeField + Hash + Ord>(
     x2: F,
     k: u32,
 ) -> Result<(Vec<Polynomial<F, Coeff>>, Polynomial<F, Coeff>), Error> {
-    let (map, point_sets) = construct_intermediate_sets(queries)?;
+    let (map, point_sets) = super::utils::construct_prover_sets(queries)?;
     let mut groups = vec![vec![]; point_sets.len()];
     for data in &map {
         groups[data.set_index].push(data.commitment.poly);
@@ -88,17 +128,7 @@ pub(super) fn prepare<F: PrimeField + Hash + Ord>(
     let (point_sets, q_polys): (Vec<_>, Vec<_>) = sets.into_iter().map(|(_, pair)| pair).unzip();
 
     let divide_set = |(points, q): (&Vec<F>, &Polynomial<F, Coeff>)| {
-        // Keep the root order and the serial kate_division recurrence intact.
-        // The first division borrows q directly; later divisions own the buffer.
-        let mut points = points.iter();
-        let mut values = if let Some(point) = points.next() {
-            kate_division(&q.values, *point)
-        } else {
-            q.values.clone()
-        };
-        for point in points {
-            values = kate_division(&values, *point);
-        }
+        let mut values = divide_by_roots(&q.values, points);
         values.resize(1 << k, F::ZERO);
         Polynomial {
             values,
