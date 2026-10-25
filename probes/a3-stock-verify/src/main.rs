@@ -233,7 +233,7 @@ fn run_under_doctorwatson(
     manifest_path: &std::path::Path,
 ) -> Result<i32, Box<dyn Error>> {
     let executable = env::current_exe()?;
-    let hypothesis = "Run 32 stock midnight-proofs 0.8.3 verifier attempts on saved public Sherlock A3 k20 material: accept the exact proof and reject 28 in-memory lane mutations plus corrupt, truncated, and appended proof encodings. Load the hash-pinned public SRS and VK once. No cost_model, keygen, proving, or GPU.";
+    let hypothesis = "Run 32 stock midnight-proofs 0.8.3 verifier attempts on saved public Sherlock A3 k20 material: accept the exact proof and reject 28 in-memory lane mutations plus corrupt, truncated, and appended proof encodings. A prior harness-only attempt stopped before SRS loading because it incorrectly expected one total VK instance column; stock A3 uses one committed identity column plus one ordinary public column, now covered by the pinned VK regression. No proof rejection occurred. Load the hash-pinned public SRS and VK once. No cost_model, keygen, proving, or GPU.";
     let status = Command::new("python3")
         .env("PYTHONPATH", DOCTORWATSON_MODULES)
         .env("DW_REPO", X2_REPO)
