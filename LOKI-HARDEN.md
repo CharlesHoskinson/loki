@@ -90,6 +90,44 @@ passed 44 tests, with 40 ignored; the forced-error and invalid-base regressions
 both passed. `resume-gpu-suite.log` records 462.671 seconds queued and 12.504
 seconds running, so queue delay is not a test or proof timing.
 
+## Completed full gate
+
+All 13 stages passed across the controlled resume. The original idle local
+wrapper was stopped to release its CPU reservation; its completed results and
+already-submitted host jobs were retained. The seven-stage host suffix returned
+exit 0 after 1,301.889 seconds queued and 601.473 seconds running. A transient
+AgentBus receive error required reattaching the result collector; no host test
+was cancelled. The superseded waiter also left one extra boundary job queued,
+which passed separately. The table below uses the definitive batch logs.
+
+| Stage | Result |
+| --- | --- |
+| Default `cargo test --release --offline -- --test-threads=4` | 34 unit, two integration, nine documentation tests pass; two timing tests ignored |
+| `./loki-harness/run.sh` | k10/k14/k17 cross-verify and equal VKs; no-lookup proof bytes equal; documented lookup-order differences remain |
+| `cargo run --release --offline --example cpu-bench -- 16 3 target/cpu-fixture` | Three verified proofs with identical hashes |
+| `cargo test --release --offline --manifest-path tests-stock/Cargo.toml` | Registry stock verifier accepts the fixture and rejects corruption |
+| GPU library, `cuda,cuda-ntt,loki-profile` | 40 pass, 40 ignored; forced NTT fallback and invalid-SRS rejection pass |
+| GPU MSM differential | Pass, 210.93 s test time |
+| GPU MSM large boundaries | Pass, 508.43 s test time |
+| GPU MSM proof and separate stock verifier | Both accept the 416-byte proof and reject mutated public input |
+| k17 NTT with separate stock verifier | Three proofs accepted, mutations rejected; 17 completed GPU transforms per proof |
+| Four concurrent provers, `cuda,cuda-ntt,loki-harden` | Pass, 1.58 s; every proof verifies and both successful-dispatch counts match the reference |
+| GPU library, `cuda,cuda-ntt,loki-harden,loki-cpu-budget` | 45 pass, 40 ignored |
+| Four concurrent provers with CPU budget | Pass, 1.64 s; same verification and dispatch assertions |
+
+The proof/stock-verifier row covers two separate gate stages. A final audit
+checked all 13 expected stage names and exit codes. Complete evidence is
+`target/w9-validation/resume-full-gate.log`, `gate/batch-results.tsv`,
+`gate/batch-runner-result.json` and the individual stage logs. The standalone
+NTT verifier lockfile now records the common runtime and restored BLST dependency.
+`cargo tree --offline --locked --manifest-path tests/ntt-stock/Cargo.toml
+--features gpu -i loki-cuda-runtime` checks that final lockfile without rebuilding.
+
+Curve/subgroup validation is serial on each new upload and has a cold-cache
+cost. The boundary regression includes CPU MSM oracles and does not isolate
+that cost; no GPU performance improvement is claimed here. Manual tests still
+ignored by the supplied gate were not implicitly run by the library suites.
+
 Existing stock limitations remain: mixed committed/plain multi-proof transcript
 ordering can cause stock rejection, and lookup-rich stock proofs are not a
 universal fixed-RNG byte oracle. See `LOKI-QUINT.md`. Rust 1.76 and 32-bit target

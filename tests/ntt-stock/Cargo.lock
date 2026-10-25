@@ -443,9 +443,14 @@ dependencies = [
  "blst",
  "cc",
  "home",
+ "loki-cuda-runtime",
  "midnight-curves",
  "sppark",
 ]
+
+[[package]]
+name = "loki-cuda-runtime"
+version = "0.1.0"
 
 [[package]]
 name = "loki-ntt-stock-check"
@@ -497,6 +502,7 @@ name = "midnight-proofs"
 version = "0.8.3"
 dependencies = [
  "blake2b_simd",
+ "blst",
  "ff",
  "getrandom",
  "group",
