@@ -22,7 +22,15 @@
 //!
 //! Only public synthetic artifacts are written (keys, proofs, instances and
 //! timing receipts). The decider's communication randomness exists only in
-//! memory and is never written.
+//! memory and is never written; it is drawn from a public benchmark seed (see
+//! `seeds`), so it is a synthetic fixture value, not a production secret.
+//!
+//! RNG policy (SUITE.md "seeds"): every proof RNG this adapter can reach is a
+//! `ChaCha20Rng` seeded from SHA-256 of
+//! `loki-bench-v1|CHAIN|<block>|<purpose>|<cache>|<stream>`, recorded in the
+//! stage and sample receipts and in the launcher's block.json. The two leaf
+//! proofs (A102, A80) stay UNSEEDED: the pinned `ChildKey::prove` and
+//! `ReturnChildKey::prove` hardcode `OsRng` with no injectable seam.
 
 #[path = "common.rs"]
 #[allow(dead_code)]
@@ -61,8 +69,90 @@ fn identity() -> Value {
             t.lines().find_map(|l| l.strip_prefix("Cpus_allowed_list:").map(|v| v.trim().to_string()))
         }),
         "pid": std::process::id(),
-        "rng_policy": "production entropy (OsRng/from_entropy inside the pinned APIs); not seeded",
+        "rng_policy": seeds::POLICY,
+        "seed_scheme": seeds::SCHEME,
     })
+}
+
+/// SUITE.md seed derivation for the CHAIN workload. Pure and feature-free so
+/// the launcher-facing labels are unit-tested in every build.
+mod seeds {
+    use super::common::hex_lower;
+    use serde_json::{json, Value};
+    use sha2::{Digest, Sha256};
+
+    pub const SCHEME: &str =
+        "seed = SHA-256(UTF-8 \"loki-bench-v1|CHAIN|<block>|<purpose>|<cache>|<stream>\"); RNG = rand_chacha 0.3.1 ChaCha20Rng::from_seed(seed)";
+    pub const POLICY: &str = "seeded per block (SUITE.md seeds): A3 proof, DEC comm_rand (witness purpose) and DEC proof; \
+A102/A80 leaf proofs UNSEEDED (pinned ChildKey::prove/ReturnChildKey::prove hardcode OsRng, no seam)";
+    /// Every seeded stream of one chain sample, as (purpose, stream).
+    pub const STREAMS: [(&str, &str); 3] = [("proof", "A3"), ("witness", "DEC.comm_rand"), ("proof", "DEC")];
+    pub const UNSEEDED: &str = "UNSEEDED: pinned mori-backend ChildKey::prove (sherlock_child.rs:384) and ReturnChildKey::prove (sherlock_link.rs:732) use OsRng internally";
+
+    pub fn label(block: &str, purpose: &str, cache: &str, stream: &str) -> String {
+        format!("loki-bench-v1|CHAIN|{block}|{purpose}|{cache}|{stream}")
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct Seed {
+        pub label: String,
+        pub bytes: [u8; 32],
+    }
+
+    impl Seed {
+        pub fn derive(block: &str, purpose: &str, cache: &str, stream: &str) -> Seed {
+            let label = label(block, purpose, cache, stream);
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(&Sha256::digest(label.as_bytes()));
+            Seed { label, bytes }
+        }
+
+        pub fn hex(&self) -> String {
+            hex_lower(&self.bytes)
+        }
+
+        pub fn receipt(&self) -> Value {
+            json!({"label": self.label, "seed": self.hex()})
+        }
+    }
+
+    /// Seeds of one sample, keyed `<purpose>|<stream>` (the launcher checks these).
+    pub fn sample(block: &str, cache: &str) -> Value {
+        let mut m = serde_json::Map::new();
+        for (purpose, stream) in STREAMS {
+            m.insert(format!("{purpose}|{stream}"), json!(Seed::derive(block, purpose, cache, stream).hex()));
+        }
+        Value::Object(m)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn label_and_seed_match_the_pinned_vector() {
+            let s = Seed::derive("0", "proof", "cold", "A3");
+            assert_eq!(s.label, "loki-bench-v1|CHAIN|0|proof|cold|A3");
+            // Independent: printf '%s' 'loki-bench-v1|CHAIN|0|proof|cold|A3' | sha256sum
+            assert_eq!(s.hex(), PINNED_A3_COLD_BLOCK0);
+        }
+
+        #[test]
+        fn every_stream_block_and_cache_gets_a_distinct_seed() {
+            let mut all = std::collections::BTreeSet::new();
+            for block in ["0", "1"] {
+                for cache in ["cold", "warm"] {
+                    for (p, st) in STREAMS {
+                        assert!(all.insert(Seed::derive(block, p, cache, st).hex()));
+                    }
+                }
+            }
+            assert_eq!(all.len(), 12);
+            assert_eq!(sample("0", "cold")["proof|A3"], json!(PINNED_A3_COLD_BLOCK0));
+        }
+
+        const PINNED_A3_COLD_BLOCK0: &str = "6dbbb26183eb727d4efbbaf7eb9f837b859efa3bc3133aeb231c0f369f073902";
+    }
 }
 
 const fn telemetry_available() -> bool {
@@ -346,7 +436,7 @@ fn run_parent_only(_: &Args) -> Result<()> {
 fn run_parent_only(a: &Args) -> Result<()> {
     let children = a.children.as_ref().ok_or_else(|| error("--children is required"))?;
     std::fs::create_dir_all(&a.out)?;
-    let stage = sherlock::parent(children, &a.out.join("parent"), &a.srs, &a.params_dir)?;
+    let stage = sherlock::parent(children, &a.out.join("parent"), &a.srs, &a.params_dir, &a.block, "standalone")?;
     println!("{}", json!({"schema": "loki-bench-stage/1", "arm": ARM, "stage": stage}));
     Ok(())
 }
@@ -391,7 +481,7 @@ fn run_chain(a: &Args) -> Result<()> {
         stages.push(s);
 
         let tel = telemetry_snapshot();
-        let mut s = sherlock::parent(&dir.join("children"), &dir.join("parent"), &a.srs, &a.params_dir)?;
+        let mut s = sherlock::parent(&dir.join("children"), &dir.join("parent"), &a.srs, &a.params_dir, &a.block, cache)?;
         s["telemetry"] = telemetry_since(&tel);
         s["profile"] = take_profile();
         let t = Instant::now();
@@ -400,7 +490,7 @@ fn run_chain(a: &Args) -> Result<()> {
         stages.push(s);
 
         let tel = telemetry_snapshot();
-        let mut s = sherlock::decider(&dir.join("parent"), &dir.join("terminal"), &a.srs)?;
+        let mut s = sherlock::decider(&dir.join("parent"), &dir.join("terminal"), &a.srs, &a.block, cache)?;
         s["telemetry"] = telemetry_since(&tel);
         s["profile"] = take_profile();
         let t = Instant::now();
@@ -436,6 +526,9 @@ fn run_chain(a: &Args) -> Result<()> {
             "g0_dispatch": match &dispatch { None => Value::Null, Some(Ok(v)) => v.clone(), Some(Err(e)) => json!({"passed": false, "error": e}) },
             "create_proof_sum_ms": create_proof_ms,
             "create_proof_scope": "sum of the externally timed proof calls of the four stage proofs (A102+A80 as one nested call)",
+            "seed_scheme": seeds::SCHEME,
+            "seeds": seeds::sample(&a.block, cache),
+            "unseeded": {"A102": seeds::UNSEEDED, "A80": seeds::UNSEEDED},
             "stages": stages,
             "status_start": status_start,
             "status_end": common::status_bytes(),
@@ -450,7 +543,7 @@ fn run_chain(a: &Args) -> Result<()> {
         if let Some(Err(e)) = dispatch {
             return Err(error(format!("G0 dispatch qualification failed ({cache}): {e}")));
         }
-        println!("{}", json!({"event": "sample", "arm": ARM, "cache": cache, "chain_ms": chain_ms, "production_chain_ms": production_chain_ms, "create_proof_sum_ms": create_proof_ms}));
+        println!("{}", json!({"event": "sample", "arm": ARM, "block": a.block, "cache": cache, "seeds": seeds::sample(&a.block, cache), "chain_ms": chain_ms, "production_chain_ms": production_chain_ms, "create_proof_sum_ms": create_proof_ms}));
         std::io::stdout().flush()?;
     }
     let verifier_rusage = verifier.finish();
@@ -485,15 +578,19 @@ mod sherlock {
     //! stock verifier, outside these timers.
 
     use super::common::{self, error, publish_dir, Result, Windows};
+    use super::seeds::{Seed, UNSEEDED};
     use ff::Field;
-    use group::Curve;
-    use midnight_curves::Bls12;
-    use midnight_proofs::{poly::kzg::params::ParamsKZG, utils::SerdeFormat};
+    use group::{prime::PrimeCurveAffine, Curve};
+    use midnight_curves::{Bls12, G2Affine};
+    use midnight_proofs::{
+        poly::{commitment::Params, kzg::params::ParamsKZG},
+        utils::SerdeFormat,
+    };
     use midnight_transient_crypto::{
         curve::Fr,
         proofs::{Proof, VerifierKey, PARAMS_VERIFIER},
     };
-    use midnight_zk_stdlib::{prove, setup_pk, verify, Relation};
+    use midnight_zk_stdlib::{cost_model, prove, setup_pk, verify, MidnightVK, Relation};
     use mori_backend::proving::{ProofOptions, MAX_K};
     use mori_backend::sherlock_child::ChildKey;
     use mori_backend::sherlock_link::{
@@ -506,18 +603,103 @@ mod sherlock {
     use mori_core::sherlock::layout_a::prepare_a;
     use mori_core::sherlock::{Expr, Program, Value as MValue, K_SOURCE_SHA256};
     use mori_recursion::{
-        child::SherlockChild,
+        child::{verify_sherlock_child_offcircuit, SherlockChild},
         decider::{DeciderRelation, DeciderWitness},
-        inner::{verify_offcircuit, vk_name},
+        inner::{reconstruct_acc, verify_offcircuit, vk_name},
         parent::{
-            keygen_sherlock_decider, prove_link_parent, sherlock_decider_relation, write_w_dir,
+            keygen_sherlock_decider, sherlock_decider_relation, write_w_dir, LinkParentProof,
             LinkPins, ParentKeygenPlan, SherlockLinkRelation, SherlockLinkWitness,
+            LINK_STATE_FIELDS,
         },
         template::Template,
         util::{f_from_hex, f_to_hex, sha256_hex, vk_bytes, vk_from_bytes, F},
     };
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
     use serde_json::{json, Value};
-    use std::{fs, io::Cursor, path::Path, sync::Arc, time::Instant};
+    use std::{collections::BTreeMap, fs, io::Cursor, path::Path, sync::Arc, time::Instant};
+
+    type Pos = midnight_circuits::hash::poseidon::PoseidonState<F>;
+
+    /// The one RNG constructor for every seeded proof stream: the same
+    /// ChaCha20 algorithm production uses for the parent, from a recorded seed.
+    pub fn seeded_rng(seed: &Seed) -> ChaCha20Rng {
+        ChaCha20Rng::from_seed(seed.bytes)
+    }
+
+    // Verbatim restatements of the private pinned helpers used by
+    // `prove_link_parent` (mori-recursion/src/parent.rs:792-820 at f2ea193).
+    fn check_srs(params: &ParamsKZG<Bls12>, s_g2: &G2Affine) -> std::result::Result<(), String> {
+        if bool::from(s_g2.is_identity())
+            || params.g2().to_affine() != G2Affine::generator()
+            || params.s_g2().to_affine() != *s_g2
+        {
+            return Err("SRS g2 is not the generator or its [tau]_2 differs from the pin".into());
+        }
+        Ok(())
+    }
+
+    fn vk_roundtrip(vk: &MidnightVK) -> std::result::Result<Vec<u8>, String> {
+        let b = vk_bytes(vk);
+        if vk_bytes(&vk_from_bytes(&b).map_err(|e| e.to_string())?) != b {
+            return Err("key bytes do not round-trip".into());
+        }
+        Ok(b)
+    }
+
+    /// Seeded transcription of the pinned `mori_recursion::parent::prove_link_parent`
+    /// (parent.rs:974-1030 at f2ea193): the same checks, relation, work and order.
+    /// The single change is `ChaCha20Rng::from_entropy()` -> `seeded_rng(seed)`
+    /// (SUITE.md: inject RNG where production calls entropy; same algorithm).
+    fn prove_link_parent_seeded(
+        params: &ParamsKZG<Bls12>,
+        s_g2: &G2Affine,
+        rel: &SherlockLinkRelation,
+        vk: &MidnightVK,
+        w: &SherlockLinkWitness,
+        seed: &Seed,
+    ) -> std::result::Result<LinkParentProof, String> {
+        rel.check_witness(w)?;
+        check_srs(params, s_g2)?;
+        vk_roundtrip(vk)?;
+        let vp = &params.verifier_params();
+        let k = vk.k() as u32;
+        if params.max_k() != k || cost_model(rel, None).k != k {
+            return Err(format!(
+                "parent needs key and SRS at its cost-model degree; key 2^{k}, SRS 2^{}",
+                params.max_k()
+            ));
+        }
+        for (cvk, inst, proof) in [
+            (&rel.a102_vk, &w.a102_instance, &w.a102_proof),
+            (&rel.a80_vk, &w.a80_instance, &w.a80_proof),
+        ] {
+            let child = SherlockChild {
+                name: vk_name("sherlock", cvk),
+                vk: cvk.clone(),
+                instance: inst.clone(),
+                proof: proof.clone(),
+            };
+            verify_sherlock_child_offcircuit(vp, &child)?;
+        }
+        let instance = rel.instance(w)?;
+        let acc = reconstruct_acc(&instance[LINK_STATE_FIELDS..]).ok_or("parent accumulator malformed")?;
+        if !acc.check(vp, &BTreeMap::new()) {
+            return Err("folded child accumulator fails its pairing".into());
+        }
+        let pk = setup_pk(rel, vk);
+        let proof = prove::<SherlockLinkRelation, Pos>(params, &pk, rel, &instance, w.clone(), &mut seeded_rng(seed))
+            .map_err(|e| format!("prove parent: {e:?}"))?;
+        drop(pk);
+        verify::<SherlockLinkRelation, Pos>(vp, vk, &instance, None, &proof)
+            .map_err(|e| format!("parent stdlib verify: {e:?}"))?;
+        verify_offcircuit(vp, vk, &vk_name("w", vk), &instance, &proof, true)?;
+        Ok(LinkParentProof {
+            vk: vk.clone(),
+            instance,
+            proof,
+        })
+    }
 
     const REFERENCE_RS: &[u8] =
         include_bytes!("../deps/moriarty/crates/mori-core/src/sherlock/reference.rs");
@@ -641,13 +823,15 @@ mod sherlock {
             json!({
                 "k": {"a102": ks[0], "a80": ks[1]},
                 "create_proof_scope": "prove_linked_children: both key reconstructions plus both proofs (nested; not separable through the pinned API)",
+                "rng": {"a102": UNSEEDED, "a80": UNSEEDED},
                 "artifacts": artifact_ids(out, &["a102", "a80"])?,
             }),
         ))
     }
 
     /// A3: SherlockLinkRelation at k20 from the published children.
-    pub fn parent(children: &Path, out: &Path, srs: &Path, params_dir: &Path) -> Result<Value> {
+    pub fn parent(children: &Path, out: &Path, srs: &Path, params_dir: &Path, block: &str, cache: &str) -> Result<Value> {
+        let seed = Seed::derive(block, "proof", cache, "A3");
         let opts = options(params_dir);
         let mut w = Windows::start();
         for name in ["a102", "a80"] {
@@ -723,7 +907,7 @@ mod sherlock {
         let vk = plan.keygen(&params, &s_g2, &tmp_key.join("key"))?;
         w.lap("keygen_vk_pk");
         let t = Instant::now();
-        let parent = prove_link_parent(&params, &s_g2, &relation, &vk, &witness).map_err(error)?;
+        let parent = prove_link_parent_seeded(&params, &s_g2, &relation, &vk, &witness, &seed).map_err(error)?;
         let prove_ms = t.elapsed().as_secs_f64() * 1e3;
         if parent.instance.len() != 28 || parent.proof.is_empty() {
             return Err(error("A3 produced an unexpected instance/proof shape"));
@@ -741,7 +925,9 @@ mod sherlock {
             prove_ms,
             json!({
                 "k": k,
-                "create_proof_scope": "prove_link_parent: off-circuit child checks, proof and its production verifications",
+                "create_proof_scope": "seeded transcription of prove_link_parent (parent.rs:974-1030): off-circuit child checks, proof and its production verifications",
+                "rng": {"proof": seed.receipt()},
+                "proof_sha256": sha256_hex(&parent.proof),
                 "model": model,
                 "model_internal_ms": model_ms,
                 "artifacts": artifact_ids(out, &["w"])?,
@@ -750,7 +936,9 @@ mod sherlock {
     }
 
     /// DEC: terminal decider over the published parent (offline preparation).
-    pub fn decider(parent_dir: &Path, out: &Path, srs: &Path) -> Result<Value> {
+    pub fn decider(parent_dir: &Path, out: &Path, srs: &Path, block: &str, cache: &str) -> Result<Value> {
+        let comm_seed = Seed::derive(block, "witness", cache, "DEC.comm_rand");
+        let proof_seed = Seed::derive(block, "proof", cache, "DEC");
         let mut w = Windows::start();
         for suffix in ["vk", "proof", "instance.json"] {
             let p = parent_dir.join(format!("w.{suffix}"));
@@ -794,15 +982,15 @@ mod sherlock {
         let candidate = vk_bytes(&vk);
         let k = vk.k();
         w.lap("keygen_vk");
-        // The communication opening exists only in memory, never persisted.
-        let mut rng = rand::rngs::OsRng;
+        // The communication opening exists only in memory, never persisted;
+        // it is drawn from the public `witness` seed of this block.
         let instance_id = f_from_hex(INSTANCE_ID)?;
         let witness = DeciderWitness {
             w_instance: parent_instance,
             w_proof: parent_proof,
             instance_id,
             batch_no: F::ZERO,
-            comm_rand: F::random(&mut rng),
+            comm_rand: F::random(&mut seeded_rng(&comm_seed)),
         };
         let stmt = relation.stmt(&witness.w_instance, witness.instance_id, witness.batch_no);
         let public = relation
@@ -812,7 +1000,7 @@ mod sherlock {
         let pk = setup_pk(&relation, &vk);
         w.lap("setup_pk");
         let t = Instant::now();
-        let proof = prove::<DeciderRelation, blake2b_simd::State>(&params, &pk, &relation, &public, witness, &mut rng)
+        let proof = prove::<DeciderRelation, blake2b_simd::State>(&params, &pk, &relation, &public, witness, &mut seeded_rng(&proof_seed))
             .map_err(|e| error(format!("DEC prove: {e:?}")))?;
         let prove_ms = t.elapsed().as_secs_f64() * 1e3;
         w.lap("create_proof");
@@ -849,12 +1037,137 @@ mod sherlock {
             json!({
                 "k": k,
                 "create_proof_scope": "midnight_zk_stdlib::prove of the decider",
+                "rng": {"comm_rand": comm_seed.receipt(), "proof": proof_seed.receipt()},
                 "relation_sha256": sha256_hex(&relation_bytes),
                 "vk_sha256": sha256_hex(&candidate),
                 "proof_sha256": sha256_hex(&proof),
                 "public_lanes": public.len(),
             }),
         ))
+    }
+}
+
+/// SUITE.md seeds: the adapter's seeded RNG makes the prover reproducible.
+/// Tiny lookup-free fixture on CPU (SUITE: lookup HashMap ordering may still
+/// vary proof bytes, so this fixture has no lookups), one PK for all proofs.
+#[cfg(all(test, feature = "circuits"))]
+mod seed_determinism_tests {
+    use super::seeds::Seed;
+    use super::sherlock::seeded_rng;
+    use ff::Field;
+    use midnight_curves::{Bls12, Fq};
+    use midnight_proofs::{
+        circuit::{Layouter, SimpleFloorPlanner, Value},
+        plonk::{
+            create_proof, keygen_pk, keygen_vk_with_k, Advice, Circuit, Column, ConstraintSystem,
+            Constraints, Error, Fixed, Instance, ProvingKey,
+        },
+        poly::{
+            kzg::{params::ParamsKZG, KZGCommitmentScheme},
+            Rotation,
+        },
+        transcript::{CircuitTranscript, Transcript},
+    };
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+
+    const K: u32 = 5;
+
+    #[derive(Clone)]
+    struct Tiny {
+        witness: bool,
+    }
+
+    #[derive(Clone, Debug)]
+    struct Cfg {
+        x: Column<Advice>,
+        y: Column<Advice>,
+        q: Column<Fixed>,
+        public: Column<Instance>,
+    }
+
+    impl Circuit<Fq> for Tiny {
+        type Config = Cfg;
+        type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
+
+        fn without_witnesses(&self) -> Self {
+            Tiny { witness: false }
+        }
+
+        fn configure(meta: &mut ConstraintSystem<Fq>) -> Cfg {
+            let (x, y, q, public) = (meta.advice_column(), meta.advice_column(), meta.fixed_column(), meta.instance_column());
+            meta.enable_equality(x);
+            meta.enable_equality(public);
+            meta.create_gate("square", |meta| {
+                let q = meta.query_fixed(q, Rotation::cur());
+                let x = meta.query_advice(x, Rotation::cur());
+                let y = meta.query_advice(y, Rotation::cur());
+                Constraints::without_selector(vec![q * (y - x.clone() * x)])
+            });
+            Cfg { x, y, q, public }
+        }
+
+        fn synthesize(&self, c: Cfg, mut layouter: impl Layouter<Fq>) -> std::result::Result<(), Error> {
+            let first = layouter.assign_region(
+                || "squares",
+                |mut region| {
+                    let mut first = None;
+                    for row in 0..8 {
+                        let x = Fq::from(row as u64 + 3);
+                        let known = |v| if self.witness { Value::known(v) } else { Value::unknown() };
+                        region.assign_fixed(|| "q", c.q, row, || Value::known(Fq::ONE))?;
+                        let cell = region.assign_advice(|| "x", c.x, row, || known(x))?;
+                        region.assign_advice(|| "y", c.y, row, || known(x.square()))?;
+                        first.get_or_insert(cell.cell());
+                    }
+                    Ok(first.expect("rows"))
+                },
+            )?;
+            layouter.constrain_instance(first, c.public, 0)
+        }
+    }
+
+    fn setup() -> (ParamsKZG<Bls12>, ProvingKey<Fq, KZGCommitmentScheme<Bls12>>) {
+        let params = ParamsKZG::<Bls12>::unsafe_setup(K, ChaCha20Rng::from_seed([0x53; 32]));
+        let blank = Tiny { witness: false };
+        let vk = keygen_vk_with_k::<_, KZGCommitmentScheme<Bls12>, _>(&params, &blank, K).unwrap();
+        let pk = keygen_pk(vk, &blank).unwrap();
+        (params, pk)
+    }
+
+    fn proof(params: &ParamsKZG<Bls12>, pk: &ProvingKey<Fq, KZGCommitmentScheme<Bls12>>, seed: &Seed) -> Vec<u8> {
+        let public = [Fq::from(3)];
+        let instances: &[&[Fq]] = &[&public];
+        let mut transcript = CircuitTranscript::<blake2b_simd::State>::init();
+        create_proof::<Fq, KZGCommitmentScheme<Bls12>, _, _>(
+            params,
+            pk,
+            &[Tiny { witness: true }],
+            0,
+            &[instances],
+            &mut transcript,
+            seeded_rng(seed),
+        )
+        .unwrap();
+        transcript.finalize()
+    }
+
+    #[test]
+    fn same_seed_gives_byte_identical_proofs_and_different_seeds_differ() {
+        let (params, pk) = setup();
+        let a3_cold = Seed::derive("0", "proof", "cold", "A3");
+        let first = proof(&params, &pk, &a3_cold);
+        let again = proof(&params, &pk, &Seed::derive("0", "proof", "cold", "A3"));
+        assert!(!first.is_empty());
+        assert_eq!(first, again, "same recorded seed must reproduce the proof bytes");
+        for other in [
+            Seed::derive("1", "proof", "cold", "A3"),
+            Seed::derive("0", "proof", "warm", "A3"),
+            Seed::derive("0", "proof", "cold", "DEC"),
+        ] {
+            assert_ne!(first, proof(&params, &pk, &other), "{} must change the proof", other.label);
+        }
     }
 }
 

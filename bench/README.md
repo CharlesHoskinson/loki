@@ -29,7 +29,8 @@ order is never sorted to force it. An arm is `FAILED` in these cases:
 - nonzero exit;
 - missing samples;
 - G0 dispatch qualification failed;
-- surviving descendants.
+- surviving descendants;
+- a sample event that does not report the block's recorded seeds.
 
 An arm is `INVALID` on any host swap I/O. `TIMEOUT`, `CANCELLED` and
 `DEFERRED` are reported as such. On cancellation the controller exits 130.
@@ -58,6 +59,45 @@ If the controller itself is SIGKILLed, only the direct arm process
 (PDEATHSIG, armed by the driver) are guaranteed to die. Both check the
 expected parent after arming. Arbitrary grandchildren are not covered. `campaign/sigkill-receipt.sh <bench-driver>` is the process receipt for this guarantee: it uses the real driver and a fake worker that never reports ready, so nothing is proved. Post-exit cleanup is bounded at 15 s. Survivors, or stdout that never reaches EOF, fail the arm, and the locks are released anyway.
 
+## RNG seeds
+
+SUITE.md derives every public seed from SHA-256 of
+`loki-bench-v1|<workload>|<block>|<purpose>`, with cold and warm substreams
+named by suffix. Here the label is
+`loki-bench-v1|CHAIN|<block>|<purpose>|<cache>|<stream>`, where `<block>` is the
+manifest block ID that the launcher passes as `--block`. Each seed feeds
+`rand_chacha 0.3.1 ChaCha20Rng::from_seed`, the algorithm production already
+uses for the parent.
+
+| Stream | Purpose | Replaces |
+|---|---|---|
+| `A3` | `proof` | `ChaCha20Rng::from_entropy()` inside `prove_link_parent` |
+| `DEC.comm_rand` | `witness` | `OsRng` in the decider's communication opening |
+| `DEC` | `proof` | `OsRng` passed to the decider's `prove` |
+
+Each seed is recorded in three places:
+
+- the stage receipt (`rng`);
+- the sample receipt (`seeds`) and the driver's stdout sample event;
+- `block.json` (`rng_seeds`), computed by the launcher before any lock.
+
+The launcher fails an arm whose sample events report other seeds. The labels
+do not depend on the arm, so S0, L0 and G0 use identical seeds.
+
+The A102 and A80 leaf proofs are not seeded. The pinned
+`ChildKey::prove` (`mori-backend/src/sherlock_child.rs:384`) and
+`ReturnChildKey::prove` (`sherlock_link.rs:732`) call `OsRng` internally, and
+the pinned tree has no seam for injecting an RNG. Closing this gap needs an
+owner-side API such as `prove_with_rng`. Until then, leaf proof bytes, and
+therefore everything downstream of them, differ between runs. SUITE.md also
+notes that lookup HashMap ordering can change proof bytes even with a fixed
+RNG.
+
+`seed_determinism_tests` (built with `--features circuits`) proves a tiny
+lookup-free circuit on the CPU. It checks that the same seed gives
+byte-identical proofs and that a different block, cache or stream gives
+different proofs.
+
 ## Provenance and licence
 
 The stage bodies in `adapter/driver.rs` and the checks in `adapter/verifier.rs`
@@ -67,6 +107,10 @@ are transcribed and adapted from the pinned Moriarty tree at
 
 - `crates/mori-backend/tests/sherlock_linked_children.rs` (leaves)
 - `crates/mori-recursion/tests/sherlock_parent.rs` (parent)
+- `crates/mori-recursion/src/parent.rs:974-1030` (`prove_link_parent`) and
+  `:792-820` (`check_srs`, `vk_roundtrip`). These are transcribed as
+  `prove_link_parent_seeded` so that the parent RNG can be seeded. The checks,
+  their order and the work are unchanged.
 - `crates/mori-recursion/tests/sherlock_terminal.rs` (decider)
 - `crates/mori-recursion/examples/verify_chain.rs` (stock verification checks)
 - `crates/mori-core/src/sherlock/reference.rs` and
@@ -78,6 +122,8 @@ Modifications:
 - the test assertions were turned into error returns;
 - non-overlapping timing windows were added around production calls;
 - artifacts are published atomically (`.partial`, then rename);
-- the decider's communication randomness stays in memory and is never written.
+- the decider's communication randomness stays in memory and is never written;
+- the parent and decider RNGs are seeded from recorded public seeds (see "RNG
+  seeds" above).
 
 Copyright remains with the original authors.

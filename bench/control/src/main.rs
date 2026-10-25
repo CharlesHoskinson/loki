@@ -268,6 +268,8 @@ fn run(args: &[String]) -> Result<i32, String> {
     let block_id = cli.block.clone().unwrap_or_default();
     let block = &m.blocks[&block_id];
     let budget = &m.budgets[&block.budget];
+    // Recorded before any lock or process; every arm must report these.
+    let seeds = expected_seeds(&block_id, &m.samples, host::sha256_text)?;
 
     if m.heavy == HeavyMode::Dw {
         // The outer runner request must stay non-GPU-classified (SUITE).
@@ -308,7 +310,8 @@ fn run(args: &[String]) -> Result<i32, String> {
         .with("controller_binary_sha256", std::env::current_exe().ok().and_then(|e| host::sha256_file(&e).ok()))
         .with("host_before", host_record())
         .with("swap_before", swap_json(host::swap_counters()))
-        .with("identities", J::Obj(p.identities.iter().map(|(k, v)| (k.clone(), J::Raw(v.clone()))).collect()));
+        .with("identities", J::Obj(p.identities.iter().map(|(k, v)| (k.clone(), J::Raw(v.clone()))).collect()))
+        .with("rng_seeds", seeds_json(&seeds));
     ev.log("prepared", J::obj().with("run_dir", run_dir.display().to_string()));
 
     // ---- locks: heavy THEN gpu
@@ -388,6 +391,7 @@ fn run(args: &[String]) -> Result<i32, String> {
             arm,
             budget,
             block: &block_id,
+            seeds: &seeds,
             run_dir: &run_dir,
             nvml_csv: m.nvml.then_some(nvml_path.as_path()),
             nvml_pid,
@@ -491,6 +495,73 @@ fn qualify(
     (if reasons.is_empty() { "PASS" } else { "FAIL" }, reasons)
 }
 
+/// SUITE.md seeds (identical across arms). Mirrors `seeds::STREAMS` in
+/// adapter/driver.rs; the A102/A80 leaf proofs are unseeded upstream.
+const SEED_STREAMS: [(&str, &str); 3] = [("proof", "A3"), ("witness", "DEC.comm_rand"), ("proof", "DEC")];
+const SEED_SCHEME: &str = "seed = SHA-256(UTF-8 \"loki-bench-v1|CHAIN|<block>|<purpose>|<cache>|<stream>\"); RNG = ChaCha20Rng::from_seed(seed)";
+
+#[derive(Clone, Debug, PartialEq)]
+struct SeedRow {
+    cache: String,
+    key: String,
+    label: String,
+    seed: String,
+}
+
+fn seed_label(block: &str, purpose: &str, cache: &str, stream: &str) -> String {
+    format!("loki-bench-v1|CHAIN|{block}|{purpose}|{cache}|{stream}")
+}
+
+fn expected_seeds(
+    block: &str,
+    samples: &str,
+    sha: impl Fn(&str) -> Result<String, String>,
+) -> Result<Vec<SeedRow>, String> {
+    let mut rows = Vec::new();
+    for cache in samples.split(',') {
+        for (purpose, stream) in SEED_STREAMS {
+            let label = seed_label(block, purpose, cache, stream);
+            rows.push(SeedRow { cache: cache.into(), key: format!("{purpose}|{stream}"), seed: sha(&label)?, label });
+        }
+    }
+    Ok(rows)
+}
+
+fn seeds_json(rows: &[SeedRow]) -> J {
+    J::obj()
+        .with("scheme", SEED_SCHEME)
+        .with(
+            "streams",
+            J::Arr(
+                rows.iter()
+                    .map(|r| J::obj().with("cache", r.cache.as_str()).with("key", r.key.as_str()).with("label", r.label.as_str()).with("seed", r.seed.as_str()))
+                    .collect(),
+            ),
+        )
+        .with("unseeded", J::Arr(vec![
+            J::from("A102 leaf proof: pinned ChildKey::prove uses OsRng (no seam)"),
+            J::from("A80 leaf proof: pinned ReturnChildKey::prove uses OsRng (no seam)"),
+        ]))
+}
+
+/// Every driver sample event must report exactly the block's expected seeds
+/// for its cache (pure; unit-tested). Returns the failure reasons.
+fn seed_mismatches(sample_lines: &[String], expected: &[SeedRow]) -> Vec<String> {
+    let mut reasons = Vec::new();
+    for line in sample_lines {
+        let Some(cache) = ["cold", "warm"].into_iter().find(|c| line.contains(&format!("\"cache\":\"{c}\""))) else {
+            reasons.push("sample event without a cold/warm cache".into());
+            continue;
+        };
+        for r in expected.iter().filter(|r| r.cache == cache) {
+            if !line.contains(&format!("\"{}\":\"{}\"", r.key, r.seed)) {
+                reasons.push(format!("{cache} sample did not use the recorded seed {} ({})", r.key, r.label));
+            }
+        }
+    }
+    reasons
+}
+
 /// Arm cell status from the observed process facts (pure; unit-tested).
 fn classify(
     outcome: Option<&'static str>,
@@ -526,6 +597,26 @@ mod tests {
         assert_eq!(classify(None, Some(0), 1, 2, true, (0, 0), 0), "FAILED");
         assert_eq!(classify(None, Some(1), 2, 2, true, (0, 0), 0), "FAILED");
         assert_eq!(classify(Some("TIMEOUT"), None, 0, 2, false, (0, 0), 0), "TIMEOUT");
+    }
+
+    #[test]
+    fn expected_seeds_follow_the_suite_labels_and_the_driver_must_report_them() {
+        let sha = |l: &str| host::sha256_text(l);
+        let rows = expected_seeds("0", "cold,warm", sha).unwrap();
+        assert_eq!(rows.len(), 6);
+        assert_eq!(rows[0].label, "loki-bench-v1|CHAIN|0|proof|cold|A3");
+        // Same pinned vector as the driver's seeds::tests.
+        assert_eq!(rows[0].seed, "6dbbb26183eb727d4efbbaf7eb9f837b859efa3bc3133aeb231c0f369f073902");
+        let line = |cache: &str| {
+            let fields: Vec<String> =
+                rows.iter().filter(|r| r.cache == cache).map(|r| format!("\"{}\":\"{}\"", r.key, r.seed)).collect();
+            format!("{{\"event\":\"sample\",\"cache\":\"{cache}\",\"seeds\":{{{}}}}}", fields.join(","))
+        };
+        assert!(seed_mismatches(&[line("cold"), line("warm")], &rows).is_empty());
+        let swapped = line("cold").replace("\"cache\":\"cold\"", "\"cache\":\"warm\"");
+        assert_eq!(seed_mismatches(&[swapped], &rows).len(), 3);
+        let unseeded = "{\"event\":\"sample\",\"cache\":\"cold\",\"chain_ms\":1}".to_string();
+        assert_eq!(seed_mismatches(&[unseeded], &rows).len(), 3);
     }
 
     #[test]
@@ -620,6 +711,7 @@ struct ArmCtx<'a> {
     arm: &'a Arm,
     budget: &'a Budget,
     block: &'a str,
+    seeds: &'a [SeedRow],
     run_dir: &'a Path,
     nvml_csv: Option<&'a Path>,
     nvml_pid: Option<i32>,
@@ -802,6 +894,7 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
     let mut events = J::Arr(Vec::new());
     let mut gates = J::Arr(Vec::new());
     let mut samples_seen = 0u64;
+    let mut sample_lines: Vec<String> = Vec::new();
     let mut exit_seen = false;
     let mut cancel_signal = None;
     let (status, ru) = loop {
@@ -829,6 +922,7 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
                 }
             } else if line.contains("\"event\":\"sample\"") {
                 samples_seen += 1;
+                sample_lines.push(line.clone());
                 events.push(J::Raw(line));
             } else if line.contains("\"event\":\"exit\"") {
                 exit_seen = true;
@@ -873,6 +967,7 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
     while let Ok(line) = rx.try_recv() {
         if line.contains("\"event\":\"sample\"") {
             samples_seen += 1;
+            sample_lines.push(line.clone());
             events.push(J::Raw(line));
         } else if line.contains("\"event\":\"exit\"") {
             exit_seen = true;
@@ -891,13 +986,18 @@ fn run_arm(ctx: &ArmCtx, ev: &mut Events) -> J {
     let exit_code = if libc::WIFEXITED(status) { Some(libc::WEXITSTATUS(status)) } else { None };
     let signal = if libc::WIFSIGNALED(status) { Some(libc::WTERMSIG(status)) } else { None };
     let mut reasons = Vec::new();
-    let status_str = classify(outcome, exit_code, samples_seen, expected, exit_seen, swapped, orphan_count);
+    let mut status_str = classify(outcome, exit_code, samples_seen, expected, exit_seen, swapped, orphan_count);
+    let seed_reasons = seed_mismatches(&sample_lines, ctx.seeds);
+    if !seed_reasons.is_empty() && matches!(status_str, "ACCEPTED" | "INVALID") {
+        status_str = "FAILED";
+    }
     if exit_code != Some(0) || samples_seen != expected || !exit_seen {
         reasons.push(format!("exit {exit_code:?} signal {signal:?}, samples {samples_seen}/{expected}, exit record {exit_seen}"));
     }
     if swapped != (0, 0) {
         reasons.push(format!("host swap I/O during the arm process: pswpin +{} pswpout +{}", swapped.0, swapped.1));
     }
+    reasons.extend(seed_reasons);
     if orphan_count > 0 {
         reasons.push(format!(
             "orphan processes after arm exit: group {group_left:?}, escaped {escaped}, still in group {still_in_group:?}, unreaped {:?}, stdout EOF {stdout_eof}",

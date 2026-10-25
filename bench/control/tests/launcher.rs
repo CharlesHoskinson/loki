@@ -162,6 +162,24 @@ fn recorded_vk_mismatch_is_reported_but_does_not_fail() {
 }
 
 #[test]
+fn the_block_records_its_seeds_and_an_arm_reporting_other_seeds_fails() {
+    let e = Env::new("seeds-ok", "ok", "");
+    let out = e.cmd().output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+    let b = e.block_json();
+    assert!(b.contains("\"rng_seeds\""), "{b}");
+    assert!(b.contains("loki-bench-v1|CHAIN|B000|proof|cold|A3"), "{b}");
+    assert!(b.contains("loki-bench-v1|CHAIN|B000|witness|warm|DEC.comm_rand"), "{b}");
+
+    let e = Env::new("seeds-wrong", "wrongseed", "");
+    let out = e.cmd().output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let b = e.block_json();
+    assert!(b.contains("\"status\":\"FAILED\""), "{b}");
+    assert!(b.contains("did not use the recorded seed"), "{b}");
+}
+
+#[test]
 fn a_descendant_that_escapes_the_group_fails_the_arm_and_is_killed() {
     let e = Env::new("escape", "escape", "");
     let out = e.cmd().output().unwrap();

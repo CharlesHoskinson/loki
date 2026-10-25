@@ -18,7 +18,23 @@ case "$1" in
   *) exit 2 ;;
 esac
 out=""
-while [ $# -gt 0 ]; do [ "$1" = "--out" ] && out=$2; shift; done
+block=""
+while [ $# -gt 0 ]; do
+  [ "$1" = "--out" ] && out=$2
+  [ "$1" = "--block" ] && block=$2
+  shift
+done
+# The SUITE seeds a real driver reports (mode wrongseed reports another block's).
+seeds() {
+  b=$block; [ "$mode" = wrongseed ] && b="other"
+  s=""
+  for ps in proof:A3 witness:DEC.comm_rand proof:DEC; do
+    p=${ps%%:*}; st=${ps#*:}
+    h=$(printf '%s' "loki-bench-v1|CHAIN|$b|$p|$1|$st" | sha256sum | cut -d' ' -f1)
+    s="$s${s:+,}\"$p|$st\":\"$h\""
+  done
+  printf '{%s}' "$s"
+}
 mkdir -p "$out/sample-0-cold/children"
 env | sort > "$here/env.$$"
 grep Cpus_allowed_list /proc/self/status > "$here/affinity.$$"
@@ -30,9 +46,9 @@ case "$mode" in
   deep) setsid "$0" level 8 & ;;
 esac
 cat "$here/vk" 2>/dev/null > "$out/sample-0-cold/children/a.vk" || echo vk-bytes > "$out/sample-0-cold/children/a.vk"
-echo '{"event":"sample","cache":"cold"}'
+echo "{\"event\":\"sample\",\"cache\":\"cold\",\"seeds\":$(seeds cold)}"
 echo '{"event":"gate","before":"warm"}'
 read go
 [ "$go" = go ] || exit 3
-echo '{"event":"sample","cache":"warm"}'
+echo "{\"event\":\"sample\",\"cache\":\"warm\",\"seeds\":$(seeds warm)}"
 echo '{"event":"exit","record":{}}'

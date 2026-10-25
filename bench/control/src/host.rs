@@ -316,6 +316,29 @@ pub fn sha256_file(path: &Path) -> Result<String, String> {
         .ok_or_else(|| "sha256sum: no output".into())
 }
 
+/// SHA-256 of a UTF-8 string, via `sha256sum` on stdin (std-only crate).
+pub fn sha256_text(text: &str) -> Result<String, String> {
+    let mut child = Command::new("sha256sum")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("sha256sum: {e}"))?;
+    {
+        use std::io::Write;
+        let mut stdin = child.stdin.take().ok_or("sha256sum: no stdin")?;
+        stdin.write_all(text.as_bytes()).map_err(|e| format!("sha256sum stdin: {e}"))?;
+    }
+    let out = child.wait_with_output().map_err(|e| format!("sha256sum: {e}"))?;
+    if !out.status.success() {
+        return Err("sha256sum failed".into());
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .next()
+        .map(str::to_string)
+        .ok_or_else(|| "sha256sum: no output".into())
+}
+
 pub fn command_text(cmd: &str, args: &[&str]) -> String {
     Command::new(cmd)
         .args(args)
