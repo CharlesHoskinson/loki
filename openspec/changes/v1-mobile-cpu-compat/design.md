@@ -2,7 +2,7 @@
 
 ## Context
 
-The crate has no mobile-specific source path, CI workflow, FFI surface, or phone budget. Its Rust 1.76/edition 2021 identity and default feature set are declared in `Cargo.toml:13-16,45-74`; CUDA compilation is isolated behind `cuda` in `build.rs:1-6`. Rayon is part of CPU execution (`src/utils/multicore.rs:1-7`). The existing W2 harness compares Loki with an independent registry stock dependency, but its current commands run natively (`loki-harness/README.md:3-10,21-41`). The local machine lacks Xcode and Android NDK, so this lab has not established mobile build or runtime success.
+**Existing-code anchor:** The crate has no mobile-specific source path, CI workflow, FFI surface, or phone budget. Its Rust 1.76/edition 2021 identity and default feature set are declared in `Cargo.toml:13-16,45-74`; CUDA compilation is isolated behind `cuda` in `build.rs:1-6`. Rayon is part of CPU execution (`src/utils/multicore.rs:1-7`). The existing W2 harness compares Loki with an independent registry stock dependency, but its current commands run natively (`loki-harness/README.md:3-10,21-41`). The local machine lacks Xcode and Android NDK, so this lab has not established mobile build or runtime success.
 
 ## Goals / Non-Goals
 

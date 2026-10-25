@@ -76,8 +76,8 @@ Quint models and Rust replays SHALL distinguish stock 0.8.3 default behavior fro
 - **WHEN** `./loki-harness/run.sh` and `cargo test --locked --manifest-path quint/mbt/Cargo.toml --features release-mbt -- --test-threads=1` run with the manifest fixture IDs
 - **THEN** Loki-produced supported proofs SHALL pass the unmodified stock verifier and stock-produced fixtures SHALL pass Loki, while T03 mixed-instance rejection and lookup-order nondeterminism remain classified as documented stock outcomes; the existing harness gates and limitations are `loki-harness/README.md:1-19,49-74`.
 
-### Requirement: Quint evidence does not replace target-specific or feature documentation gates
-The release SHALL run Quint and Apalache as host-side CPU-only checks and SHALL report WASM/mobile runtime compatibility separately; each covered feature SHALL link its verification commands, evidence, limits, and rustdoc/module documentation in the coverage manifest. Known affected v1 obligations SHALL have explicit coverage rows or named release blockers, including cache identity/retention (T20, T33), cancellation no-retry (T28), transcript shape coverage (T30), and NTT fallback/replay (T31).
+### Requirement: Host model checks remain separate from target runtime gates
+The release SHALL run Quint and Apalache as host-side CPU-only checks and SHALL report WASM/mobile runtime compatibility separately. Each covered feature SHALL link its verification evidence, limits, and module documentation in the coverage manifest.
 
 #### Scenario: CPU-only release checks run without acceleration
 - **WHEN** `python3 quint/ci/run_models.py --release --seed 20261025` runs on host CI
@@ -86,3 +86,17 @@ The release SHALL run Quint and Apalache as host-side CPU-only checks and SHALL 
 #### Scenario: Feature docs and external QA mappings are complete
 - **WHEN** the release coverage audit checks a feature row
 - **THEN** it SHALL require a module documentation link, fuzz entry, Lean contract identifier or explicit owner-approved N/A, and the precise result artifact for the current SHA; cache rows SHALL identify the current Rust source or remain blocked if their only replay source is historical, building on `quint/pk_cache.qnt:1-84`, `quint/mbt/src/pk_driver.rs:1-219`, and `docs/modules/quint.md:1-28`.
+
+### Requirement: Cache coverage follows the release-source inventory
+The release SHALL determine cache obligations from its source inventory and SHALL NOT infer that modeled recl9 or deferred W12 code ships.
+
+#### Scenario: Cache obligations are inventoried
+- **WHEN** `python3 quint/ci/check_coverage.py --base "$V1_BASE_SHA" --head "$V1_RELEASE_SHA"` evaluates the immutable release source inventory
+- **THEN** it SHALL require T20 identity and T33 retention model, Rust replay, Lean and documentation mappings for cache code actually included in that tree, or explicit deferrals when none is present, building on `quint/pk_cache.qnt:1-84`, `quint/mbt/src/pk_driver.rs:1-219`, and the source-snapshot caveat at `quint/mbt/README.md:22-39`.
+
+### Requirement: Known stateful QA obligations have explicit coverage status
+The release manifest SHALL map or explicitly block the known cancellation, liveness, transcript-shape, and NTT fallback obligations.
+
+#### Scenario: The coverage gate checks known obligations
+- **WHEN** `python3 quint/ci/check_coverage.py --base "$V1_BASE_SHA" --head "$V1_RELEASE_SHA"` checks the release manifest
+- **THEN** it SHALL report T28 cancellation no-retry, T29 temporal liveness, T30 transcript shapes, and T31 NTT fallback/replay as covered or as named release blockers, building on `quint/scheduler.qnt:73-83`, `quint/transcript.qnt:124-170`, `quint/q2/dispatch.qnt:1-397`, and `quint/q2/REPORT.md:124-130`.

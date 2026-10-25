@@ -13,11 +13,11 @@ P7 release status remains provisional until the reviewed reservation design is f
 
 #### Scenario: Admit work within the single-heavy policy
 - **WHEN** one ready heavy proof has reserved its required device budget
-- **THEN** it may run while other heavy jobs wait without holding resident leases or large buffers, and all allocation high-water remains within the configured hard budget. Verification: after Task 4.1 creates the planned test, `cd loki-gpu && cargo test -p loki-gpu --test scheduler_contract`; source artifact: `loki-gpu/design/PLAN.md:130-142` (planned scheduler integration; Loki implementation is on unmerged branch `loki/p7-chain`) and `loki-gpu/crates/loki-gpu/src/runtime.rs:439-448`.
+- **THEN** it may run while other heavy jobs wait without holding resident leases or large buffers, and all allocation high-water remains within the configured hard budget. Verification: after Task 4.1 creates the planned test, `cd loki-gpu && cargo test -p loki-gpu --test scheduler_contract`; source artifact: `loki/p7-chain:loki-gpu/crates/loki-gpu/src/schedule.rs:11-25,31-43` (actual branch prototype; lines 31-40 explicitly say reservations are admission holds, not redeemed allocations), `loki/p7-chain:loki-gpu/crates/loki-gpu/tests/scheduler_contract.rs:1-20`, and main P2 `loki-gpu/crates/loki-gpu/src/runtime.rs:439-448` (reservation accounting seam).
 
 #### Scenario: Reject stale or over-budget admission
 - **WHEN** a reservation is stale, generation-mismatched, or exceeds available accounted bytes
-- **THEN** the scheduler rejects or queues the job before device work and publishes no partial proof artifact. Verification: after Task 4.1 creates the planned test, `cd loki-gpu && cargo test -p loki-gpu --test scheduler_contract`, plus the Quint MBT replay owned by area 7; source artifact: `loki-gpu/design/PLAN.md:130-142` (planned; Loki implementation on unmerged branch `loki/p7-chain`) and `loki-gpu/design/RUNTIME.md:160-177`.
+- **THEN** the scheduler rejects or queues the job before device work and publishes no partial proof artifact. Verification: after Task 4.1 creates the planned test, `cd loki-gpu && cargo test -p loki-gpu --test scheduler_contract`, plus the Quint MBT replay owned by area 7; source artifact: `loki/p7-chain:loki-gpu/crates/loki-gpu/src/schedule.rs:31-40,220-229` (prototype, with reservation redemption unresolved) and `loki-gpu/design/RUNTIME.md:160-177`.
 
 #### Scenario: Freeze scheduler reservation ownership before release
 - **WHEN** the P7 scheduler is proposed for release qualification
@@ -28,11 +28,11 @@ The scheduler SHALL preserve each proof's stock transcript and event order, and 
 
 #### Scenario: Complete independent work out of order
 - **WHEN** independent ready jobs finish in a different order from submission
-- **THEN** each proof's transcript events and output slots remain in stock order and no cross-proof buffer is aliased. Verification: after Task 4.1 creates the planned test, `cd loki-gpu && cargo test -p loki-gpu --test scheduler_contract` and area-7 Quint MBT replay; source artifact: `src/plonk/prover.rs:397-810` and `loki-gpu/design/PLAN.md:130-142` (planned; Loki integration on unmerged branch `loki/p7-chain`).
+- **THEN** each proof's transcript events and output slots remain in stock order and no cross-proof buffer is aliased. Verification: after Task 4.1 creates the planned test, `cd loki-gpu && cargo test -p loki-gpu --test scheduler_contract` and area-7 Quint MBT replay; source artifact: `src/plonk/prover.rs:397-810` plus `loki/p7-chain:loki-gpu/crates/loki-gpu/src/schedule.rs:3-9,220-229` (actual scheduler scope excludes transcript/proof bytes; P7 integration is unmerged).
 
 #### Scenario: Cancel an in-flight proof
 - **WHEN** cancellation occurs before or after a device operation is enqueued
-- **THEN** the proof is terminal, publishes no output, releases only resources whose completion is known, and is never transparently CPU-retried. Verification: after Task 4.1 creates the planned test, `cd loki-gpu && cargo test -p loki-gpu --test scheduler_contract`; source artifact: `loki-gpu/crates/loki-gpu/src/runtime.rs:25-35,424-437` and `loki-gpu/design/RUNTIME.md:257-261`.
+- **THEN** the proof is terminal, publishes no output, releases only resources whose completion is known, and is never transparently CPU-retried. Verification: after Task 4.1 creates the planned test, `cd loki-gpu && cargo test -p loki-gpu --test scheduler_contract`; source artifact: main P2 `loki-gpu/crates/loki-gpu/src/runtime.rs:25-35,424-437`, actual P7 branch `loki/p7-chain:loki-gpu/crates/loki-gpu/src/schedule.rs:22-29`, and `loki-gpu/design/RUNTIME.md:257-261`.
 
 ### Requirement: Recursive proofs interoperate with stock 0.8.3
 The GPU-enabled Loki path SHALL preserve the stock API/default path and proof semantics, and its generated proofs, verifying keys, SRS bytes, and supported key serialization MUST interoperate with an unmodified `midnight-proofs` 0.8.3 verifier in both directions.
@@ -57,5 +57,5 @@ The release Lean coverage ledger SHALL name the P7 scheduler admission, cancella
 
 #### Scenario: Audit the P7 release coverage row
 - **WHEN** the P7 scheduler is included in the release source manifest
-- **THEN** the Lean coverage ledger links its abstract state/order contracts to Rust MBT and native fault evidence, lists every remaining external assumption, and the release project has no sorry/admit/sorryAx or new custom axioms. Verification: `lake build LokiLean.Backend LokiLean.Refinement`, `lake exe axiom-audit --allow propext,Classical.choice,Quot.sound`, and `lake env lean scripts/AxiomSweep.lean`; source artifact: `loki-gpu/design/TEST-PLAN.md:93-105` and `loki-gpu/design/PLAN.md:130-142` (planned P7; Loki integration is on unmerged branch `loki/p7-chain`).
+- **THEN** the Lean coverage ledger links its abstract state/order contracts to Rust MBT and native fault evidence, lists every remaining external assumption, and the release project has no sorry/admit/sorryAx or new custom axioms. Verification: `lake build LokiLean.Backend LokiLean.Refinement`, `lake exe axiom-audit --allow propext,Classical.choice,Quot.sound`, and `lake env lean scripts/AxiomSweep.lean`; source artifact: `loki-gpu/design/TEST-PLAN.md:93-105`, actual P7 branch `loki/p7-chain:loki-gpu/crates/loki-gpu/src/schedule.rs:31-43`, and `loki-gpu/design/PLAN.md:130-142` (planned full-chain integration; runtime implementation remains unmerged).
 

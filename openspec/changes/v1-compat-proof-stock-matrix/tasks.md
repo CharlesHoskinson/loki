@@ -2,7 +2,7 @@
 
 ## 1. Independent stock workspaces
 
-- [ ] 1.1 Add `./compat-proof-stock/run.sh` and isolated locked workspaces for stock 0.8.1 and stock 0.8.3, consuming `loki-harness/fixtures/v1/manifest.jsonl`; verify provenance, the 0.8.1 `.crate` checksum, exact versions, and lockfile digests with `cargo tree --locked` in each workspace. Invoke k20 directly without `loki-harness/run.sh`'s 292-second timeout and record elapsed time/host; document runner arguments.
+- [ ] 1.1 Add `./compat-proof-stock/run.sh` and isolated locked workspaces for stock 0.8.1 and stock 0.8.3, consuming `loki-harness/fixtures/v1/manifest.jsonl`; verify provenance, the 0.8.1 `.crate` checksum, exact versions, and lockfile digests with `cargo tree --locked` in each workspace. Invoke k20 directly with a 1800-second hard timeout (timeout is failure, not a passing/skipped row) and record elapsed time/host; document runner arguments.
 - [ ] 1.2 Add k20 rows for declared circuit/instance/batch shapes and stock 0.8.1/0.8.3 lanes; verify with `./compat-proof-stock/run.sh --versions 0.8.1,0.8.3 --k 20 --serial` and archived JSONL rows showing circuit, k, stock version, Loki revision, both verifier results, and VK identity.
 
 ## 2. T04 differential and negative evidence

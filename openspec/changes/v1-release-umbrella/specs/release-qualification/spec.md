@@ -60,6 +60,14 @@ The release Lean tree SHALL build without proof holes or new custom axioms, bind
 - **WHEN** the GPU-spec merge introduces `sorry`, `admit` or a transitive `sorryAx` dependency
 - **THEN** the Lean owner's build/trust audit fails M4 until the proof hole is closed; citation drift and unresolved shipped-feature obligations also remain blockers. Verification: the Lean change's full-build, axiom-audit and release-drift commands plus manifest audit. Sources: `TODO.md:39`, `TODO.md:63`, `TODO.md:67`, `docs/ARCHITECTURE.md:57`.
 
+#### Scenario: Historical Lean pins disagree
+- **WHEN** proposed `python3 scripts/release/check-manifest.py --milestone M4 --manifest <path>` compares the merged Lean source pin, release drift baseline and proof receipts to `LOKI_RELEASE_SHA`
+- **THEN** any mismatch or missing reviewed citation, full-build, coverage or axiom report fails M4; changing only `SYNCED-LOKI-COMMIT` cannot pass. Stock 0.8.3 retains a separately pinned oracle identity. Verification: manifest comparison plus the Lean change's release drift/build/trust gates. Sources: `/home/charles/repos/loki-lean/SYNCED-LOKI-COMMIT:1`, `/home/charles/repos/loki-lean-wt/gpu-spec/SYNCED-LOKI-COMMIT:1`, `/home/charles/repos/loki-lean/scripts/drift.py:41-45`.
+
+#### Scenario: Deferred P6 shares a module with required P3 contracts
+- **WHEN** the release Lean inventory excludes unfinished segmented MSM while P3 remains in scope
+- **THEN** the inventory and trust audit reject any retained hole-dependent declaration or missing nonsegmented BackendMsm/P3 contract; split/extract the segmented-only source or prove it, and audit both the full release source and built library. Verification: Lean coverage, full build and no-hole/axiom audit. Source: `/home/charles/repos/loki-lean-wt/gpu-spec/LokiLean/BackendMsm.lean:132-154,270-282`.
+
 ### Requirement: Performance closing evidence measures the complete chain
 Release qualification SHALL include the perf-owned repeated matched stock 0.8.3/Loki complete Sherlock chain experiment and a published head-to-head table, with independent stock acceptance, raw samples, dispersion and all CPU phases; target resource budgets SHALL independently pass.
 

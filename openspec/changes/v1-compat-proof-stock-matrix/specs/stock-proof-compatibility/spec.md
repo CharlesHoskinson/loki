@@ -17,11 +17,11 @@ Release evidence SHALL include an unmodified stock 0.8.1 dependency in a separat
 
 ### Requirement: T04 SHALL verify k20 proofs and keys in both directions
 
-The pinned stock 0.8.1 lane SHALL cover k20 proof verification in both directions for `Fixture<false>` and `Fixture<true>`, independently generated VK byte equality, supported PK/verifier-parameter serialization round trips, and version-appropriate negative controls.
+The pinned stock 0.8.1 lane SHALL cover k20 proof verification in both directions for `Fixture<false>` and `Fixture<true>`, independently generated VK byte equality, supported PK/verifier-parameter serialization round trips, and version-appropriate negative controls. The new runner SHALL enforce a 1800-second hard timeout for k20; timeout SHALL be reported as a failed, non-passing result.
 
 #### Scenario: k20 T04 acceptance
 
-- **WHEN** `./compat-proof-stock/run.sh --versions 0.8.1,0.8.3 --k 20 --serial` runs k20 fixtures from the canonical manifest
+- **WHEN** `./compat-proof-stock/run.sh --versions 0.8.1,0.8.3 --k 20 --serial` runs k20 fixtures from the canonical manifest under the 1800-second hard timeout
 - **THEN** both fixture forms verify in both directions, VK bytes match, key/parameter round trips pass, and all declared negative outcomes match their stock-version expectations; verification is the named T04 version gate, building on `loki-harness/README.md:1-10`, `loki-harness/tests/differential.rs:25-32`, `loki-harness/src/backend.rs:45-111`, `loki-harness/src/lib.rs:87-115`, and `TODO.md:19-21`
 
 ### Requirement: Version-specific malformed multiproof behavior SHALL be preserved

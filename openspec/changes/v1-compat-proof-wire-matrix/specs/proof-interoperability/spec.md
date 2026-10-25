@@ -105,14 +105,23 @@ With fixed seeds and one Rayon worker, no-lookup proofs SHALL be byte-identical.
 - **WHEN** `RAYON_NUM_THREADS=1 ./loki-harness/run.sh 10 14 17` runs the deterministic controls
 - **THEN** no-lookup bytes match and lookup cases report lengths and first difference while preserving verification/VK checks; `LOKI_STRICT_LOOKUP_BYTES=1 ./loki-harness/run.sh 10` SHALL fail on any lookup byte difference; verification is the named determinism gate, building on `loki-harness/src/lib.rs:148-153` and `loki-harness/src/lib.rs:171-191`
 
+### Requirement: Default permutation and lookup rewrites SHALL match stock arithmetic
+
+The default-path permutation and lookup product rewrites SHALL be compared against unmodified stock 0.8.3 over randomized input sizes, fixed seeds, and worker counts 1, 2, and 20, matching the compat-api default-delta gate. Each comparison SHALL inventory output values and transcript effects; proof bytes SHALL be required to match only under fixed no-lookup deterministic controls and matched ordering conditions.
+
+#### Scenario: Default-path arithmetic differential coverage
+
+- **WHEN** `for workers in 1 2 20; do RAYON_NUM_THREADS="$workers" CARGO_BUILD_JOBS=4 cargo test --release --locked --manifest-path loki-harness/Cargo.toml --test differential default_rewrites_match_stock -- --test-threads=1; done` runs randomized sizes with fixed seeds and replays supported fixtures through both verifiers
+- **THEN** permutation and lookup product outputs match stock 0.8.3, transcript/proof comparisons follow the determinism policy, and each result records seed, size, worker count, and stock/Loki outcome; verification is the named default-rewrite differential and W2 gate, building on `src/plonk/permutation/prover.rs:107-145`, `src/plonk/lookup/prover.rs:198-235`, and `loki-harness/src/lib.rs:87-115`
+
 ### Requirement: W2 SHALL publish one canonical fixture manifest
 
-Compat-proof SHALL publish `loki-harness/fixtures/v1/manifest.jsonl`. Each row SHALL identify schema version, fixture ID, stock version/source pin, Loki revision, circuit ID, k, instance mode, batch shape, `SerdeFormat`, transcript mode, lookup-order mode, worker schedule, feature set, seed ID, expected outcome, transcript vector ID, artifact paths, and SHA-256 digests.
+Compat-proof SHALL publish `loki-harness/fixtures/v1/manifest.jsonl`. Each row SHALL identify schema version, fixture ID, fixture origin, stock version/source pin, Loki revision, circuit ID, k, instance mode, batch shape, `SerdeFormat`, transcript mode, lookup-order mode, worker schedule, feature set, seed ID, expected outcome, transcript vector ID, artifact paths, and SHA-256 digests.
 
 #### Scenario: Shared manifest and transcript replay
 
 - **WHEN** `python3 loki-harness/fixtures/v1/validate_manifest.py` reads `loki-harness/fixtures/v1/manifest.jsonl`
-- **THEN** every case has all required fields, including the lookup-order mode and worker schedule, and verifies its referenced artifact digests; verification is the manifest schema test, extending the result structures at `loki-harness/src/lib.rs:22-78` and building on proof/key generation at `loki-harness/src/backend.rs:198-299`
+- **THEN** every case has all required fields, including fixture origin, lookup-order mode, and worker schedule, and verifies its referenced artifact digests; verification is the manifest schema test, extending the result structures at `loki-harness/src/lib.rs:22-78` and building on proof/key generation at `loki-harness/src/backend.rs:198-299`
 
 ### Requirement: Canonical fixture artifacts SHALL cover proof and key inputs
 

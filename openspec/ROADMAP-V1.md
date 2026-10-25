@@ -2,13 +2,13 @@
 
 ## Status
 
-Draft R2, 2026-10-25. Planning lab in progress; author ACKs and reviewed specifications pending. This roadmap does not claim implementation or release acceptance. Baseline inspected: Loki `eaf09d8302b66b87983a5cce6a165b6756dbca58`. Documentation contains older evidence pins; they are historical, not current qualification.
+**M0 contract freeze: planning complete** — R3, 2026-10-25. Fourteen changes / 133 requirements pass strict validation; all ten authors ACKed R2 and R3, and all twenty author/scout DONE posts are recorded below. The reported planning review findings are resolved. M1–M6 implementation and qualification remain pending. Package/publication identity remains an open owner decision. This roadmap does not claim implementation or release acceptance. Baseline inspected: Loki `eaf09d8302b66b87983a5cce6a165b6756dbca58`. Documentation contains older evidence pins; they are historical, not current qualification.
 
 ## Release contract
 
 Stock `midnight-proofs` 0.8.3 is the compatibility oracle. Preserve every public item, signature, trait, feature and default behavior; mechanically check the API superset and `[patch.crates-io]` consumers. Preserve Rust 1.76/edition 2021 contract. Proofs, VKs, existing PK representations, transcripts and challenges must interoperate in both directions. All Loki-only behavior remains explicitly opt-in. Stock limitations, including mixed committed/plain multiproof rejection, remain visible compatibility cases, not invitations to change the default protocol.
 
-`v1.0.0` names the Loki project release. The required patch artifact retains package `midnight-proofs` version `0.8.3`, including exact-version consumers. The project cannot upload a replacement for an existing crates.io name/version. Any separately publishable registry identity requires an owner decision and is additional to, not a substitute for, the compatible git/path artifact. Sources: `Cargo.toml:13`, `README.md:81`, `README.md:92`.
+`v1.0.0` names the Loki project release. The required patch artifact retains package `midnight-proofs` version `0.8.3`, including exact-version consumers. The project cannot upload a replacement for an existing crates.io name/version. Package/publication identity remains an open owner decision; the compatible artifact is a release constraint, not evidence of an owner selection. Any separately publishable registry identity requires an owner decision and is additional to, not a substitute for, the compatible git/path artifact. Sources: `Cargo.toml:13`, `README.md:81`, `README.md:92`.
 
 First-class targets are native CPU; `wasm32-unknown-unknown` in browser and Node, single-thread and opt-in threads; iOS device `aarch64-apple-ios` and simulator `aarch64-apple-ios-sim`; Android `aarch64-linux-android`. Compilation alone never satisfies runtime compatibility. Platform gates execute stock 0.8.3 and Loki on target and also exchange portable fixtures with native. Target support includes a measured workload envelope, numeric resource budgets, CI, limits and an explicit acceleration path.
 
@@ -16,7 +16,7 @@ Every shipped feature has named differential fuzz, Quint/real-Rust MBT, Lean and
 
 ## Owners and change registry
 
-Each Luna N owns its area, paired with Haiku N. IDs below are the convergence candidates; the final registry must equal all `v1-*` changes on disk.
+Each Luna N owns its area, paired with Haiku N. The registry below equals the fourteen active `v1-*` changes on disk; archive directories are excluded.
 
 | Area | Owner / reviewer | Change IDs | Acceptance responsibility |
 |---|---|---|---|
@@ -84,13 +84,13 @@ Default-on textual changes also require an inventory and stock comparison: permu
 
 P2 is a landed prerequisite, not an unmerged branch: standalone loki-gpu main has commits reported as `eb27233` / `09fd92a` by the GPU scout; the final release must record the actual integrated subtree revision and qualify it, not treat those historical pins as current receipts. Initial CUDA evidence is RTX 5090/sm_120, CUDA 13.4.3, WSL2 (`docs/GPU.md:18`); other hardware/toolkits remain unqualified until explicit receipts. Scratchpad/branch-only native receipt scripts in `deps.yaml` must become repository-owned reproducible scripts before M3 qualification.
 
-Formal baseline reconciliation is owned by Lean: main `SYNCED-LOKI-COMMIT` is `a256a9a`, gpu-spec is `877114d`, inspected Loki is `eaf09d8`. Scout-reported drift against eaf09d8 found 81 CHANGED, 143 MOVED and 597 OK citations; these are reported diagnostic counts, not a repeated supervisor proof run. M4 requires review of every changed/moved/guessed citation. gpu-spec contains proof holes at `LokiLean/BackendMsm.lean:282` (deferred P6) and `LokiLean/BackendQuotient.lean:182` (required P5), with compiler lowering open at `:387`. P5 input/safety/lowering obligations block shipping; P6 research exclusion must split/extract unfinished segmented-only source from the entire release bundle while retaining non-segmented BackendMsm/P3 contracts, an explicit deferral record and all shipped-feature coverage.
+Formal baseline reconciliation is owned by Lean: main `SYNCED-LOKI-COMMIT` is `a256a9a`, gpu-spec is `877114d`, inspected Loki is `eaf09d8`. Scout-reported drift against eaf09d8 found 81 CHANGED, 143 MOVED and 597 OK citations; these are reported diagnostic counts, not a repeated supervisor proof run. M4 requires review of every changed/moved/guessed citation. The canonical rule is `LOKI_RELEASE_SHA` from the immutable release manifest = merged Lean `SYNCED-LOKI-COMMIT` = the Loki revision selected by `MAIN_REV`/release drift. The stock oracle keeps its separate immutable pin. Updating a pin alone does not qualify anything: every retained main/GPU citation, full build, coverage inventory and no-hole/axiom audit must be reconciled and rerun against that same release SHA. gpu-spec contains proof holes at `LokiLean/BackendMsm.lean:282` (deferred P6) and `LokiLean/BackendQuotient.lean:182` (required P5), with compiler lowering open at `:387`. P5 input/safety/lowering obligations block shipping; P6 research exclusion must split/extract unfinished segmented-only source from the entire release bundle while retaining non-segmented BackendMsm/P3 contracts, an explicit deferral record and all shipped-feature coverage.
 
 ## Milestones and exit gates
 
 | Milestone | Deliverables and exit gates |
 |---|---|
-| M0 — contract freeze | Strict-valid planning artifacts; all ten author ACKs; all twenty author/scout DONEs; exhaustive TODO/branch registry; frozen fixture schema, valid feature matrix, target runner matrix and numeric budget-selection procedure; package identity decision recorded. Planning completion does not imply later milestones passed. |
+| M0 — contract freeze | Strict-valid planning artifacts; all ten author ACKs; all twenty author/scout DONEs; exhaustive TODO/branch registry; specified fixture schema, valid feature/target matrix contracts and deterministic runner/budget freeze procedures; package identity recorded as an open owner decision. Concrete runners and measured budgets remain later milestone gates. Planning completion does not imply later milestones passed. |
 | M1 — stock oracle and reproducible CPU baseline | Mechanical API/feature checks against pinned stock 0.8.3; Rust 1.76 consumers with `=0.8.3` and `^0.8`; bidirectional supported proof/key/transcript matrix and expected stock-rejection rows; independent stock 0.8.1/k20 evidence; clean locked workspace builds and fixtures; no unresolved default drift; valid docs.rs/rustdoc feature sets replace conflicting all-features configuration. |
 | M2 — first-class target baseline | Browser/Node single+thread lanes, iOS device/simulator and Android runtime stock gates; CPU-only dependency audit; deterministic fixture replay; named physical-device memory/thermal observations; numeric memory/size/time budgets frozen from recorded baselines before qualification; named BLST native/WASM and SIMD/Rayon measurements plus target-neutral chain workload evidence (T80/T89). Missing runners or missing budgets fail this milestone. |
 | M3 — integrated CUDA and stateful paths | P4→P3 and W10→P5 integration plus P7; MERGE-CPU after each merge; native receipts on integrated SHA; P3/P4/P5 arithmetic equality, positive GPU dispatch, cancellation-no-retry, complete host fallback, memory budget and lifetime fault injection; full chain stock-accepted. |
@@ -178,17 +178,17 @@ Every item remains open until its owning implementation acceptance gate produces
 | T07 (`TODO.md:31`) | Derive the quotient memory budget | `v1-gpu-core` | Required: live-buffer memory derivation |
 | T08 (`TODO.md:35`) | Review witness-dependent timing in rational inversion | `v1-docs-release-readiness` | Required: deployment-specific timing review |
 | T09 (`TODO.md:39`) | Synchronize the Lean source pin with current Loki | `v1-lean-component-refinement` | Required: release source pin |
-| T10 (`TODO.md:43`) | Close stock-trace-faithful | `v1-lean-component-refinement` | Required: named obligation discharge/review for shipped paths; explicit external assumptions cannot imply proved Rust correspondence |
+| T10 (`TODO.md:43`) | Close stock-trace-faithful | `v1-lean-component-refinement` | Required: abstract stock refinement; full Rust-to-event extraction may remain an explicitly inventoried external correspondence assumption with owner review and compatibility evidence. Formal bridge deferred if unproved; no Rust-equivalence claim |
 | T11 (`TODO.md:47`) | Close quot-inputs | `v1-lean-component-refinement` | Required: named obligation discharge/review for shipped paths; explicit external assumptions cannot imply proved Rust correspondence |
 | T12 (`TODO.md:51`) | Establish stock-complete-any-order | `v1-lean-component-refinement` | Required: named obligation discharge/review for shipped paths; explicit external assumptions cannot imply proved Rust correspondence |
-| T13 (`TODO.md:55`) | Discharge keygen-deterministic | `v1-lean-component-refinement` | Required: named obligation discharge/review for shipped paths; explicit external assumptions cannot imply proved Rust correspondence |
+| T13 (`TODO.md:55`) | Discharge keygen-deterministic | `v1-lean-component-refinement` | Conditional on shipped PK-cache code: required if present; otherwise explicitly defer with release-source inventory. The modeled recl9 cache and deferred W12 adoption do not establish Loki package inclusion |
 | T14 (`TODO.md:59`) | Prove shipped exact-prefix registry refinement | `v1-lean-component-refinement` | Required: exact-prefix registry refinement for shipped opt-in cuda-srs-registry; not default behavior |
-| T15 (`TODO.md:63`) | Prove msm-segmented-partition | `v1-lean-component-refinement` | Deferred with P6: exclude unfinished research source and claim from entire release bundle or prove it; global no-hole rule unchanged |
+| T15 (`TODO.md:63`) | Prove msm-segmented-partition | `v1-lean-component-refinement` | Deferred with P6: split/extract segmented-only declarations and their hole-dependent closure from the release source/library or prove them; retain nonsegmented BackendMsm/P3 contracts; global no-hole rule unchanged |
 | T16 (`TODO.md:67`) | Prove quotient-interpreter-safety | `v1-lean-component-refinement` | Required: named obligation discharge/review for shipped paths; explicit external assumptions cannot imply proved Rust correspondence |
 | T17 (`TODO.md:71`) | Prove quotient-compiler-lowering | `v1-lean-component-refinement` | Required: named obligation discharge/review for shipped paths; explicit external assumptions cannot imply proved Rust correspondence |
-| T18 (`TODO.md:75`) | Relate P2 runtime code to its Lean transition model | `v1-lean-component-refinement` | Required: named obligation discharge/review for shipped paths; explicit external assumptions cannot imply proved Rust correspondence |
+| T18 (`TODO.md:75`) | Relate P2 runtime code to its Lean transition model | `v1-lean-component-refinement` | Required: abstract P2 transition contracts, actual-source Quint replay and T19 lifetime evidence. Any unproved Rust/runtime extraction remains a named external correspondence assumption and formal deferral, never a proved fact |
 | T19 (`TODO.md:79`) | Close runtime-lifetime evidence | `v1-gpu-qualification` | Required: native lifetime fault/sanitizer evidence |
-| T20 (`TODO.md:83`) | Specify digest-binds and disk integrity | `v1-lean-component-refinement`, `v1-quint-model-coverage` | Required: shipped cache identity/integrity contract, explicit assumptions |
+| T20 (`TODO.md:83`) | Specify digest-binds and disk integrity | `v1-lean-component-refinement`, `v1-quint-model-coverage` | Conditional on shipped cache code: require identity/integrity contract and explicit assumptions if present; otherwise defer with release-source inventory. W12/recl9 inclusion is not assumed |
 | T21 (`TODO.md:87`) | Resolve future digest-keyed SRS identity | `v1-gpu-core` | Deferred: retain exact-coordinate identity |
 | T22 (`TODO.md:91`) | Complete P3 legacy adapter and SRS integration | `v1-gpu-core` | Required: P3 |
 | T23 (`TODO.md:95`) | Complete P4 resident NTT/coset pipeline | `v1-gpu-core` | Required: P4 |
@@ -201,7 +201,7 @@ Every item remains open until its owning implementation acceptance gate produces
 | T30 (`TODO.md:123`) | Expand transcript replay fixtures | `v1-quint-model-coverage` | Required: expanded transcript fixtures |
 | T31 (`TODO.md:127`) | Replay current dispatch/NTT implementation | `v1-quint-model-coverage` | Required: current-source dispatch/NTT replay |
 | T32 (`TODO.md:131`) | Improve proof and soundness fuzz input coverage | `v1-fuzz-components` | Required: structured generators and coverage |
-| T33 (`TODO.md:135`) | Document key-cache retention and caller assumptions | `v1-quint-model-coverage`, `v1-docs-release-readiness` | Required: shipped cache retention/caller assumptions |
+| T33 (`TODO.md:135`) | Document key-cache retention and caller assumptions | `v1-quint-model-coverage`, `v1-docs-release-readiness` | Conditional on release-source inventory: require retention/caller assumptions for shipped cache code; otherwise record explicit deferral |
 | T34 (`TODO.md:139`) | Measure W13 on production chain shapes | `v1-perf-benchmarks` | Required: W13 production-chain measurements |
 | T35 (`TODO.md:143`) | Validate multi-device and additional hardware behavior | `v1-gpu-qualification` | Required: named supported CUDA matrix; multi-device and broader hardware deferred |
 | T36 (`TODO.md:147`) | Integrate W10 with P1/W13 | `v1-gpu-core` | Required: W10/P1/W13 integration |
@@ -275,6 +275,91 @@ Every item remains open until its owning implementation acceptance gate produces
 
 ## Decisions for the owner and release loop
 
-The owner must choose any additional registry package identity, fund/name persistent platform runners, approve the measured client workload/budget envelope, and assign sustained formal proof ownership. No decision can waive stock compatibility, required CPU targets, or the no-hole/no-new-axiom gate. Accelerator scope expansions and Track B require a new change rather than a hidden release exception.
+The owner has not decided package/publication identity. The required stock-compatible artifact must remain available; any additional registry name/version needs explicit owner selection. The owner must also fund/name persistent platform runners, approve the measured client workload/budget envelope, and assign sustained formal proof ownership. No decision can waive stock compatibility, required CPU targets, or the no-hole/no-new-axiom gate. Accelerator scope expansions and Track B require a new change rather than a hidden release exception.
 
 Recommended coordinator order: freeze compatible identity/fixtures/feature matrix; run M1 CPU gates; begin target probes and formal closure concurrently; integrate P4, P3 and W10, then P5 and P7 in dependency order using MERGE-CPU; collect integrated native receipts; execute target runtime and resource gates; complete fuzz, actual-source Quint replay and Lean closure; publish repeated complete-chain results; reconcile docs/security/distribution; freeze the release manifest and rerun affected checks before authorizing publication. This lab does not execute that loop.
+
+
+## R3 review closure and coverage audit
+
+The resumed supervisor checked the source anchors and final author corrections against the historical scout findings. These are closed **planning** findings; their implementation and qualification gates remain open. Historical scout DONE posts are retained as review evidence, not represented as fresh post-reboot signoffs.
+
+| Finding | Planning resolution and owning artifact |
+|---|---|
+| T80/T89 missing from perf | `v1-perf-benchmarks/specs/benchmark-evidence/spec.md` now has named CPU WASM chain, portable BLST native/WASM, and separate whole-Loki SIMD128/Rayon scenarios; tasks 3.5/3.6 own delivery. Perf owns smoke configuration, compat-proof owns schema/IDs, WASM owns runtime and budgets. Required smoke passes on each lane; only larger out-of-envelope chains may be reported unsupported. |
+| Unsupported host citation in perf design:23 | The invented attribution to SUITE.md was removed. Design and hardware scenario require a newly frozen runner manifest; SUITE N=4/20 methodology is not host identity evidence. Numeric native policy fails a median chain slowdown greater than 5% versus matched stock at either budget, after validity/noise qualification. |
+| T15 BackendMsm split | GPU arithmetic requirement and Lean design/tasks preserve nonsegmented P3 contracts. Split/extract only segmented P6 declarations plus transitive hole dependencies from both release source and built library, or prove them. Removing the whole required module is not accepted. |
+| Scheduler anchors | GPU chain scenarios cite actual `loki/p7-chain:loki-gpu/crates/loki-gpu/src/schedule.rs:31-40` and branch scheduler tests; the inspected prototype explicitly lacks reservation redemption. P2 accounting is a separate seam, and reviewed allocation ownership plus actual-source replay remain release gates. |
+| Scratch native receipt scripts | GPU qualification task 2.5 requires tracked repository scripts, DAG path checks, native execution and receipts at the exact merged SHA; scratch references in `deps.yaml:15,22,28,36` do not qualify. |
+| Stock-matrix differential citation | The T04 source anchor is now `loki-harness/tests/differential.rs:25-32`, within the 32-line file. It is an existing ignored determinism test, not evidence that the proposed two-fixture k20/version matrix ran. |
+| k20 versus run.sh timeout | Stock-matrix spec/design/task 1.1 prescribe a new direct runner with a 1800-second hard ceiling, bypassing the existing 292-second wrapper at `loki-harness/run.sh:8`. Timeout fails; the ceiling is not a measured performance estimate. |
+| 0.8.1 acquisition | Stock-matrix specifies the immutable `https://static.crates.io/crates/midnight-proofs/midnight-proofs-0.8.1.crate` URL, checksum/provenance capture and isolated locked lane; stock 0.8.3 remains the oracle. Acquisition/build/run evidence is not claimed by this lab. |
+| Untested default permutation/lookup rewrites | API default-delta and wire arithmetic requirements enumerate `src/plonk/permutation/prover.rs:107` and `src/plonk/lookup/prover.rs:198`; workers 1/2/20 compare arithmetic and both proof directions. Byte equality requires controlled order/schedule; random-order differences are diagnostic. No passing source-bound artifact means NOT QUALIFIED. |
+| Three Lean source pins disagree | The single manifest-SHA baseline rule now appears in roadmap/config/umbrella and Lean design/task 1.1. Fresh citation/coverage/build/trust receipts are mandatory; historical pins and changing the pin text alone cannot pass M4. |
+| Remaining paired-review coherence | Mobile budget directions and proposed-path labels were corrected. Quint requires a mutation/counterexample for every invariant and reproducible offline dependencies; T29 temporal verification remains a future blocker. Lean normative wording distinguishes required abstract proofs from explicitly scoped external correspondence assumptions. |
+
+The following mapping checks every in-scope roadmap row against an owning specification. Common feature coverage is independently enforced by the umbrella's “Shipped features have complete QA and documentation coverage,” Quint's source inventory, Lean's component inventory and docs-release's feature trace requirement. These overlapping checks consume one owner contract; they do not establish competing target thresholds or fixture schemas.
+
+| In-scope feature group | Owning specification / named requirement coverage |
+|---|---|
+| API, defaults, MSRV and patch consumers | `v1-compat-api-contract/specs/compat-api/spec.md`: public API, Cargo features, stock compiler/package contracts, patch consumer and default-delta requirements |
+| Proof/key/transcript and supplemental 0.8.1 | `v1-compat-proof-wire-matrix/specs/proof-interoperability/spec.md`: both proof directions, SerdeFormat, transcript, instance/batch and default rewrite requirements; `v1-compat-proof-stock-matrix/specs/stock-proof-compatibility/spec.md`: locked 0.8.1 and k20 |
+| WASM CPU single/thread modes | `v1-wasm-cpu/specs/wasm-cpu/spec.md`: browser/Node, entropy, threading, on-target interoperability, resource budgets, BLST, smoke chain, unsupported-feature and documentation requirements |
+| Mobile CPU devices/simulators | `v1-mobile-cpu-compat/specs/mobile-cpu-support/spec.md`: compile/runtime, physical numeric budgets, interruption integrity and client data/circuit limits |
+| P3/P4/P5/P7 and retained CUDA opt-ins | `v1-gpu-core/specs/gpu-arithmetic/spec.md`, `specs/gpu-chain/spec.md`; `v1-gpu-qualification/specs/gpu-feature-policy/spec.md`, `specs/gpu-native-qualification/spec.md`: arithmetic, scheduler, feature isolation, resource and native receipt requirements |
+| Existing CPU work, W13 and all public opt-ins | API default/opt-in inventory; GPU legacy feature policy; `v1-perf-benchmarks/specs/benchmark-evidence/spec.md`: CPU attribution and W13 production-shape scenario; shared QA/docs feature inventory |
+| Structured and continuous differential fuzz | `v1-fuzz-components/specs/differential-fuzz-coverage/spec.md`: component/corpus/target coverage; `v1-fuzz-continuous/specs/continuous-fuzz-operations/spec.md`: campaigns, triage, sanitizer and revision-bound evidence |
+| Quint and real Rust replay | `v1-quint-model-coverage/specs/quint-release-qa/spec.md`: source mapping, invariant/witness/mutation, real replay, temporal liveness and conditional cache requirements |
+| Lean source refinement and proof closure | `v1-lean-component-refinement/specs/lean-component-refinement/spec.md`: component/refinement, exact-release drift, no holes/axioms, GPU merge and reproducible proof CI |
+| Docs, security, provenance and distribution | All three `v1-docs-release-readiness/specs/*/spec.md` capabilities: documentation/QA trace, governance/archive/CI, T08, threat model, notices and dependency/SBOM evidence |
+| Full Sherlock closing table | `v1-perf-benchmarks/specs/benchmark-evidence/spec.md`: matched inputs, complete four-stage chain, phase attribution, qualified numeric regression and publication/mirror requirements |
+
+No unowned in-scope feature or unresolved planning overlap remains in this audit. The T80/T89 overlap uses platform-owned budgets and perf-owned measurements; compat-api inventories default deltas while compat-proof owns canonical oracle fixtures. T13/T20/T33 are conditional on actual shipped cache source, not the existence of a historical model. The complete T01–T92 and six-workstream disposition tables remain authoritative.
+
+
+## Final planning evidence
+
+R3 final audit: 2026-10-25 19:08 UTC. Fresh `openspec validate --all --strict` exited 0: **14 passed, 0 failed (14 items)**. `git diff --check` exited 0. All 133 requirements have normative language, measurable WHEN/THEN scenarios, named verification and file:line source anchors; structure was scanned mechanically and reported findings reviewed against source. The 14-change registry matches the umbrella, all 92 TODO rows are unique, and all six named workstreams have dispositions. These checks do not execute the proposed release commands.
+
+| Change | Requirement count |
+|---|---:|
+| `v1-compat-api-contract` | 9 |
+| `v1-compat-proof-stock-matrix` | 4 |
+| `v1-compat-proof-wire-matrix` | 17 |
+| `v1-docs-release-readiness` | 13 |
+| `v1-fuzz-components` | 10 |
+| `v1-fuzz-continuous` | 10 |
+| `v1-gpu-core` | 10 |
+| `v1-gpu-qualification` | 11 |
+| `v1-lean-component-refinement` | 6 |
+| `v1-mobile-cpu-compat` | 7 |
+| `v1-perf-benchmarks` | 5 |
+| `v1-quint-model-coverage` | 9 |
+| `v1-release-umbrella` | 12 |
+| `v1-wasm-cpu` | 10 |
+| **Total** | **133** |
+
+Durable AgentBus message IDs below are the audit trail (`agentbus --cwd ~/repos/loki-wt/ids/astra-v1 log --all`). All ten authors ACKed R2 and R3 and posted DONE; all ten scouts posted DONE before the reboot. Scout 2 delivered its review to its paired author; that durable post is included. Scout DONEs with findings are closed by the explicit R3 resolution table and resumed author/supervisor review, not by an invented new scout approval.
+
+| Area / pair N | Author ACK R2 | Author ACK R3 | Author DONE | Scout DONE |
+|---|---|---|---|---|
+| 1 | `01M5T76HJJDPNBW0NCB7E8AXDS` | `01M5T77AW3RCET6X0ZN9CP9G8W` | `01M5T77AZ4VHVB7XTD0ZD8Y31B` | `01M5T5FQDC6831EQJ49YYTAZ0X` |
+| 2 | `01M5T75TYGFVC8CA9AZJGP7PRA` | `01M5T777ZQQEP1YV3KFKME45RC` | `01M5T7782Z07T99W3XBRKGT38T` | `01M5T5CZ8CTQC5YW0WA621ADX2` |
+| 3 | `01M5T745YK1W9MSQFN0DHP6Z65` | `01M5T774XTXK36A1EBEQWHKBJT` | `01M5T77523PHXFHQJ71BMY89NT` | `01M5T5ECTTECT37KX7BR10C8EA` |
+| 4 | `01M5T73J9E8JFG7C1SJXQP39QD` | `01M5T776S0AVHK504D7YB5GQZJ` | `01M5T776XA3G8CZJA1MAXGSGD9` | `01M5T5FS7J47WHEEGME0CP3VKR` |
+| 5 | `01M5T73KFJHV5S2WWP0CCHEC9C` | `01M5T774SWC1YSQDJ20QA1MRB5` | `01M5T774XQ3SKFW28QCMBVZPBQ` | `01M5T5ES31AY3A62NX3WN8JPFX` |
+| 6 | `01M5T73PHXWB3ET5KT06JR2CQQ` | `01M5T774KNB368QNG716JDXSQS` | `01M5T774PG7Y3DZCH4W5B7F26X` | `01M5T5FA7J15AJ4NW7NCDN4DCK` |
+| 7 | `01M5T73SK54Z12TB1RYJFP0E06` | `01M5T781MFCGVGAEKSXV5BYHNM` | `01M5T79TJ0H0WGB2WD6JZ7RDKD` | `01M5T5ERMWYY9P4TZ3KRMMWF74` |
+| 8 | `01M5T74F5KAWW72ETQS2HQ10ZC` | `01M5T7765HD02XP0DYN3N1DFVF` | `01M5T78P3PCFE256SEWETC4CX7` | `01M5T5EHBZVXMV67M28DJDXR19` |
+| 9 | `01M5T76GB1HTYHD0MG5HND6AQY` | `01M5T777FACAFNJAJGTSX598H0` | `01M5T77TZGN7052RZGTZJBN1CW` | `01M5T5EY4EAXGBTYWC9CTRVAQH` |
+| 10 | `01M5T73TR5YB7S99RD3KCTZ6DY` | `01M5T777RSRRDQ6K0Y5EAC5SY3` | `01M5T777RSRRDQ6K0Y5EAC5SY3` | `01M5T5FF456CB207F12YPDS1MD` |
+
+Validation output tail:
+
+```text
+✓ change/v1-perf-benchmarks
+✓ change/v1-quint-model-coverage
+✓ change/v1-release-umbrella
+✓ change/v1-wasm-cpu
+Totals: 14 passed, 0 failed (14 items)
+```

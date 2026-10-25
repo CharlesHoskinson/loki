@@ -9,7 +9,8 @@ Loki v1 must be usable as a drop-in replacement for stock `midnight-proofs` 0.8.
 - **Must-have:** define and enforce bidirectional proof and key serialization interoperability against an independent, unmodified stock 0.8.3 dependency, including checked read/write paths and transcript/challenge vectors.
 - **Must-have:** extend W2 coverage across supported circuit families and k=10, 14, 17; plain and committed instances; single proofs and batch shapes. Explicitly classify the T03 mixed committed/plain multi-proof case and preserve the observed stock rejection until a protocol decision permits a wire-compatible change.
 - **Must-have:** distinguish protocol interoperability from byte determinism. Require fixed-seed no-lookup proof equality; report lookup byte differences because stock leftover lookup placement has randomized `HashMap` iteration.
-- **Must-have:** define one shared, target-neutral fixture and result schema for W2 and its fuzz, Quint/MBT, Lean, WASM, mobile, and performance consumers.
+- **Must-have:** qualify default-path permutation and lookup product rewrites against stock 0.8.3 across randomized sizes, fixed seeds, and declared worker counts; compare arithmetic outputs and transcript/proof behavior under the existing determinism policy.
+- **Must-have:** define one shared, target-neutral fixture and result schema, including fixture origin, for W2 and its fuzz, Quint/MBT, Lean, WASM, mobile, and performance consumers.
 - **Nice-to-have:** broaden deterministic seeds/property cases beyond the required W2 matrix.
 - Add proof/key/transcript malformed-input and wrong-instance negative controls, and retain source pins, commands, logs, and a machine-readable result manifest.
 - Feed the same fixture schema to differential fuzzing, Quint/Rust MBT, Lean, and WASM/mobile CPU compatibility gates; document the supported matrix and its known limitations.

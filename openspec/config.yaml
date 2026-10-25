@@ -20,6 +20,12 @@ context: |
   Only planning artifacts may be edited during the lab; do not commit. Do not inspect
   open-icicle source or H21.md. Heavy tests, proofs and GPU runs are outside this lab.
   Proposed verification commands are future acceptance gates, not evidence of execution.
+  Package/publication identity is an open owner decision; do not describe it as frozen.
+  The compatible midnight-proofs 0.8.3 git/path artifact remains mandatory regardless.
+  Lean release evidence uses one immutable Loki manifest SHA for SYNCED-LOKI-COMMIT,
+  MAIN_REV/release drift, coverage and build/audit receipts. Historical pins do not qualify.
+  Deferring P6 removes only unfinished segmented declarations and hole-dependent source;
+  retain required nonsegmented BackendMsm/P3 coverage with no holes in the release bundle.
 rules:
   proposal:
     - 'Use change IDs v1-<area>-<topic>; list scope, exclusions with reasons, risks, owner and dependencies.'

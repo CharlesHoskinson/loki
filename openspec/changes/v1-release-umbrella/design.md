@@ -32,15 +32,15 @@ Alternative: include every accelerator in v1. Rejected because unqualified kerne
 
 ### Product release identity remains compatible
 
-The project tag is v1.0.0 while the required patched package retains `midnight-proofs` 0.8.3. Additional registry distribution requires an independently approved identity. Existing registry versions cannot be replaced, and exact-version consumers cannot be silently excluded.
+The project tag is v1.0.0 while the required patched package retains `midnight-proofs` 0.8.3. Package/publication identity remains an open owner decision. Additional registry distribution requires an independently approved identity. Existing registry versions cannot be replaced, and exact-version consumers cannot be silently excluded.
 
 ### Formal evidence retains explicit boundaries
 
-No proof holes/new custom axioms enter the release Lean project. External kernel/compiler/runtime assumptions remain named hypotheses. Required shipped-feature obligations cannot be relabeled as passing tests; actual-source model replay and native receipts are complementary evidence. gpu-spec proof holes are not silently dropped during merge.
+No proof holes/new custom axioms enter the release Lean project. External kernel/compiler/runtime assumptions remain named hypotheses. Required shipped-feature obligations cannot be relabeled as passing tests; actual-source model replay and native receipts are complementary evidence. gpu-spec proof holes are not silently dropped during merge. If P6 remains deferred, split/extract its segmented-only declarations and transitive hole-dependent source while retaining the nonsegmented BackendMsm/P3 contracts. The entire release source and built library remain hole-free. Bind merged Lean SYNCED-LOKI-COMMIT and MAIN_REV/release drift to the manifest LOKI_RELEASE_SHA; historical a256a9a/877114d/eaf09d8 pins are inventory only, and pin edits require fresh citation, coverage, build and trust evidence.
 
 ## Referenced change registry
 
-The following list must equal all active v1 changes, including this umbrella. IDs will be reconciled with author-confirmed final names before lab completion.
+The following list must equal all active v1 changes, including this umbrella. The fourteen IDs have been reconciled against the active on-disk changes; archive directories are excluded.
 
 - `v1-compat-api-contract`
 - `v1-compat-proof-wire-matrix`
