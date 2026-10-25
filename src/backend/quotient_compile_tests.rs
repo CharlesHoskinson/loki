@@ -968,7 +968,11 @@ fn harness_k10_two_circuits_match_stock_compute_nu_poly() {
 #[test]
 #[ignore = "timing probe: LOKI_P5_DUMP=<path> cargo test --release -- --ignored harness_timing_probe"]
 fn harness_timing_probe() {
-    let path = std::env::var_os("LOKI_P5_DUMP").expect("LOKI_P5_DUMP");
+    // A blanket `--ignored` run (e.g. for k11-k14) skips the probe.
+    let Some(path) = std::env::var_os("LOKI_P5_DUMP") else {
+        eprintln!("harness_timing_probe: LOKI_P5_DUMP unset, skipping");
+        return;
+    };
     let k: u32 = std::env::var("LOKI_P5_K").ok().and_then(|v| v.parse().ok()).unwrap_or(19);
     harness::check_timed(k, 1, Some(std::path::Path::new(&path)));
 }
