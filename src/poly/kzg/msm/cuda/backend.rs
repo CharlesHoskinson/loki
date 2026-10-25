@@ -143,7 +143,16 @@ impl std::fmt::Display for Failure {
 struct Cache {
     entries: VecDeque<Entry>,
     failed: bool,
+    /// Live handles returned with a preparation error (quint-q4 F4: the
+    /// constructor allocated, then the completing sync failed). They are
+    /// never used or destroyed on the faulted context, only kept reachable.
+    retained: Vec<Retained>,
 }
+
+struct Retained(#[allow(dead_code)] *mut c_void);
+
+// Held only for reachability under CACHE; never dereferenced.
+unsafe impl Send for Retained {}
 
 #[cfg(test)]
 static GPU_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -151,6 +160,7 @@ static GPU_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CACHE: Mutex<Cache> = Mutex::new(Cache {
     entries: VecDeque::new(),
     failed: false,
+    retained: Vec::new(),
 });
 
 fn status(error: sppark::Error) -> Result<(), String> {
@@ -222,7 +232,8 @@ fn device_sm_count() -> Result<usize, String> {
 }
 
 impl Cache {
-    #[cfg(feature = "cuda-srs-registry")]
+    /// Release one entry, removing it only after the release succeeded
+    /// (quint-q4 F2 for the legacy two-entry path as well as the registry).
     fn release_entry(
         &mut self,
         index: usize,
@@ -239,6 +250,16 @@ impl Cache {
         }
         self.entries.remove(index);
         Ok(())
+    }
+
+    /// Keep a handle returned together with a preparation error reachable
+    /// (quint-q4 F4). The error is a device fault, so the cache is disabled
+    /// by the caller and the handle is never released through that context.
+    fn track_prepare(&mut self, prepared: Result<(), String>, resident: *mut c_void) -> Result<(), String> {
+        if prepared.is_err() && !resident.is_null() {
+            self.retained.push(Retained(resident));
+        }
+        prepared
     }
 
     fn run(&mut self, scalars: &[Fq], bases: &[G1Projective]) -> Result<G1Projective, Failure> {
@@ -334,14 +355,14 @@ impl Cache {
             };
             #[cfg(not(feature = "cuda-srs-registry"))]
             if self.entries.len() == 2 {
-                let old = self.entries.pop_front().unwrap();
-                status(unsafe { loki_gpu_release(old.resident) })?;
+                self.release_entry(0, |resident| status(unsafe { loki_gpu_release(resident) }))?;
             }
             let wire: Vec<_> = affine.iter().map(convert::affine).collect();
             let mut resident = std::ptr::null_mut();
             // SAFETY: live, correctly sized/aligned arrays; C++ copies them.
             let upload = PrepareTimer::start("msm.prepare.upload", wire.len());
-            status(unsafe { loki_gpu_prepare(&mut resident, wire.as_ptr(), wire.len()) })?;
+            let prepared = status(unsafe { loki_gpu_prepare(&mut resident, wire.as_ptr(), wire.len()) });
+            self.track_prepare(prepared, resident)?;
             drop(upload);
             record(
                 "msm.prepare.upload_bytes",
@@ -412,13 +433,8 @@ pub(super) fn clear_cache() -> Result<(), String> {
     if cache.failed {
         return Err("GPU backend disabled".into());
     }
-    #[cfg(feature = "cuda-srs-registry")]
     while !cache.entries.is_empty() {
         cache.release_entry(0, |resident| status(unsafe { loki_gpu_release(resident) }))?;
-    }
-    #[cfg(not(feature = "cuda-srs-registry"))]
-    while let Some(entry) = cache.entries.pop_front() {
-        status(unsafe { loki_gpu_release(entry.resident) })?;
     }
     Ok(())
 }
@@ -438,7 +454,6 @@ mod upload_tests {
     use super::*;
     use ff::Field;
 
-    #[cfg(feature = "cuda-srs-registry")]
     #[test]
     fn registry_release_failure_retains_entry_and_disables_backend() {
         let mut cache = Cache::default();
@@ -446,6 +461,7 @@ mod upload_tests {
             address: 123,
             source: vec![G1Projective::default()],
             resident: std::ptr::null_mut(),
+            #[cfg(feature = "cuda-srs-registry")]
             device_bytes: 1,
         });
         let error = cache
@@ -462,6 +478,21 @@ mod upload_tests {
             .contains("disabled"));
         let disabled = cache.run(&[Fq::ONE], &[G1Projective::default()]).unwrap_err();
         assert!(disabled.message.contains("disabled") && disabled.is_device());
+    }
+
+    /// quint-q4 F4: a handle returned with a preparation error stays
+    /// reachable; a clean preparation or a null handle records nothing.
+    #[test]
+    fn prepare_error_with_live_handle_is_retained() {
+        let mut cache = Cache::default();
+        let live = std::ptr::NonNull::<u8>::dangling().as_ptr().cast::<c_void>();
+        assert_eq!(cache.track_prepare(Err("sync failed".into()), live).unwrap_err(), "sync failed");
+        assert_eq!(cache.retained.len(), 1);
+        assert!(cache.track_prepare(Err("alloc failed".into()), std::ptr::null_mut()).is_err());
+        assert!(cache.track_prepare(Ok(()), live).is_ok());
+        assert_eq!(cache.retained.len(), 1);
+        // The error is a device fault: classified_msm disables the cache.
+        assert!(Failure::from(String::from("sync failed")).is_device());
     }
 
     #[cfg(feature = "cuda-srs-registry")]
