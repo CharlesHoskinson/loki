@@ -122,8 +122,10 @@ script are under `target/cpu-validation/`.
 
 ## One CPU budget
 
-BLST is built with `no-threads`; BLS G1 MSM partitions scalar/base pairs into
-serial BLST Pippenger calls scheduled on the active Rayon pool. Nested callers
+With the opt-in `loki-cpu-budget` feature, BLST is built with `no-threads`;
+BLS G1 MSM partitions scalar/base pairs into serial BLST Pippenger calls
+scheduled on the active Rayon pool. W9 restores stock BLST threading and a
+single `multi_exp` call by default. Nested callers
 share that pool. Applications can set `RAYON_NUM_THREADS` or install a custom
 Rayon pool; the library does not change the global pool configuration.
 
@@ -133,7 +135,8 @@ backend creates no additional workers. A separate arithmetic test compares
 against individual group multiplications at 1/2/4 workers, including empty and
 all-zero scalars, identity bases, ONE, minus ONE, random scalars and chunk edges.
 
-**Integration caveat:** Cargo feature unification applies `blst/no-threads` to
+**Integration caveat (opt-in only):** Enabling `loki-cpu-budget` applies
+`blst/no-threads` through Cargo feature unification to
 every user of the same resolved BLST instance, including direct G2 MSMs and
 aggregate operations outside this crate. Those operations remain correct but
 may lose their own parallelism. Only `msm_specific` schedules BLST chunks on
@@ -206,3 +209,61 @@ The actual final verification used
 `LOKI_CPU_FIXTURE="$PWD/target/cpu-final-paired"` and passed acceptance plus
 corruption rejection. The standalone lockfile resolves the verifier to registry
 0.8.3, with no path patch. Logs are saved in `target/cpu-validation/`.
+
+## W9 feature isolation
+
+The default build no longer enables `blst/no-threads`. `msm_specific` calls
+BLST's single `multi_exp` entry point, allowing BLST to use its stock worker
+pool. `loki-cpu-budget` explicitly enables `blst/no-threads` and schedules
+serial BLST chunks on the active Rayon pool. It does not change the global
+Rayon configuration. The feature is also declared in `Cargo.toml.orig`.
+
+Feature-tree checks, saved under `target/w9-validation/`, show no `no-threads`
+for either the default crate or the mixed Loki/registry W2 harness; only the
+opt-in tree contains it. Enabling the feature still affects other users of the
+same resolved BLST package through Cargo feature unification. Applications that
+use those other operations must opt in knowingly and measure their workloads.
+
+The arithmetic differential passes in both configurations. The Linux process
+thread-count test runs only with `loki-cpu-budget`, where it confirms that nested
+MSMs create no additional OS workers. Default, hardened, CPU-budget+hardened,
+and no-default-feature hardened suites also exercise the respective paths.
+
+The W9 benchmark script is `scripts/w9-cpu-matrix.sh`. It builds and saves a
+release binary for each configuration, holds the shared `heavy.lock`, and runs
+one synthetic public proof at a time. The required matrix uses k16/k17 and
+`RAYON_NUM_THREADS=20` or `4`, with all 20 CPUs available to each process.
+Consequently, in the 4-worker default case BLST may still use its stock pool of
+20 workers; only the opt-in configuration promises a total Rayon CPU budget.
+Each cell has three verified proofs. Setup and verification are outside the
+proof timer; allocations and transfers within proving remain included. Feature
+modes alternate order across k to reduce fixed order bias. This is a shared
+host and three samples do not establish a production performance claim.
+
+| Rayon workers | k | Default samples (ms) | Default median (ms) | CPU-budget samples (ms) | CPU-budget median (ms) |
+| --- | --- | --- | --- | --- | --- |
+| 20 | 16 | 1044.227, 1004.920, 998.326 | 1004.920 | 1018.703, 1065.614, 991.937 | 1018.703 |
+| 20 | 17 | 1836.799, 1852.976, 1942.211 | 1852.976 | 2017.420, 1921.379, 1881.135 | 1921.379 |
+| 4 | 16 | 1058.684, 1062.044, 1084.403 | 1062.044 | 1706.948, 1722.545, 1691.230 | 1706.948 |
+| 4 | 17 | 2092.797, 2074.171, 2083.973 | 2083.973 | 3252.329, 3284.355, 3245.633 | 3252.329 |
+
+All 24 measured proofs verify, repeat identically within a cell, and match
+across feature modes at the same worker count. At 20 workers the budget
+medians are 1.4% (k16) and 3.7% (k17) higher. At four workers they are 60.7%
+and 56.1% higher. These compare a four-worker total budget with stock BLST
+using the full host; they do not imply a same-total-thread-count speedup.
+Raw output: `target/w9-validation/cpu-{default,budget}-t{20,4}-k{16,17}.log`.
+
+Command: `CARGO_BUILD_JOBS=4 LOKI_BENCH_K20=1 bash scripts/w9-cpu-matrix.sh`.
+The optional k20 extension is a synthetic lookup/copy circuit, with the same
+setup, timing and verification rules; it is not the downstream recursive
+Sherlock workload.
+
+At k20 and `RAYON_NUM_THREADS=4`, the synthetic default samples are
+19,268.129, 18,988.225 and 19,168.340 ms (median **19,168.340 ms**);
+CPU-budget samples are 27,000.581, 26,817.868 and 26,893.461 ms
+(median **26,893.461 ms**, 40.3% higher). All six proofs verify and
+match bytes across modes. Logs are `target/w9-validation/cpu-*-t4-k20.log`.
+This supports retaining stock threading by default; no recursive A3 timing
+was run in this worktree. The 32-bit target and Rust 1.76 toolchain were not
+installed, so portability checks for those configurations remain unrun.
