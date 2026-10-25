@@ -1,0 +1,39 @@
+# Loki merge dependency DAG. Read by scripts/loki-dag and scripts/train.sh.
+# repo: loki = loki-proofs; gpu = ~/repos/loki-gpu (needs subtree pull after merge)
+# tier cpu = MERGE-CPU gate (no GPU locks); native receipts are RECEIPT-NATIVE, post-merge.
+# Keep shas current: loki-dag check flags stale ones.
+nodes:
+  p1-backend-seam:
+    branch: loki/p1-backend-seam
+    repo: loki
+    depends_on: []
+    status: merged
+  p4-ntt:
+    branch: loki/p4-ntt
+    repo: loki
+    gpu_branch: p4-ntt        # in ~/repos/loki-gpu-wt/p4-ntt; merge into loki-gpu main, then subtree pull
+    depends_on: [p1-backend-seam]
+    notes: owns runtime.rs; makes GpuRuntime::with_driver unsafe
+    native_receipt: scratchpad/p4-gates.sh
+  p3-srs:
+    branch: loki/p3-srs
+    repo: loki
+    gpu_branch: p3-srs
+    depends_on: [p4-ntt]
+    notes: after P4 rebase switch tests to with_fake; keep 85586f3 try_msm test
+    native_receipt: scratchpad/native.sh
+  p5-quotient:
+    branch: loki/p5-quotient
+    repo: loki
+    depends_on: [p4-ntt, p3-srs, w10-gpu-quotient]
+    native_receipt: patches/p5/receipts/slot-a.sh
+  w10-gpu-quotient:
+    branch: loki/w10-gpu-quotient
+    repo: loki
+    depends_on: [p1-backend-seam]
+  p7-chain:
+    branch: loki/p7-chain
+    repo: loki
+    depends_on: [p4-ntt]
+    notes: port scheduler tests to with_fake after P4 rebase
+    native_receipt: bench/run-smoke

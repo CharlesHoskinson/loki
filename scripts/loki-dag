@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Loki merge DAG. Usage: loki-dag [--file deps.yaml] next|order|check|show
+  next   nodes whose dependencies are all merged and which are not merged themselves
+  order  topological merge order of all unmerged nodes (one per line; feeds train.sh)
+  check  validate: unknown deps, cycles; report branches whose tip/merge-base moved (stale native receipts)
+"""
+import sys, os, subprocess, yaml
+args = sys.argv[1:]
+f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "deps.yaml")
+if args[:1] == ["--file"]:
+    f, args = args[1], args[2:]
+cmd = args[0] if args else "next"
+nodes = yaml.safe_load(open(f))["nodes"]
+merged = {n for n, v in nodes.items() if v.get("status") == "merged"}
+errs = [f"{n}: unknown dep {d}" for n, v in nodes.items() for d in v.get("depends_on", []) if d not in nodes]
+def topo():
+    out, state = [], {}
+    def visit(n, stack):
+        if state.get(n) == 2: return
+        if state.get(n) == 1: raise SystemExit("cycle: " + " -> ".join(stack + [n]))
+        state[n] = 1
+        for d in sorted(nodes[n].get("depends_on", [])):
+            if d in nodes: visit(d, stack + [n])
+        state[n] = 2; out.append(n)
+    for n in sorted(nodes): visit(n, [])
+    return out
+if errs: print("\n".join(errs), file=sys.stderr); sys.exit(2)
+if cmd == "order":
+    print("\n".join(n for n in topo() if n not in merged))
+elif cmd == "next":
+    for n in topo():
+        if n not in merged and all(d in merged for d in nodes[n].get("depends_on", [])): print(n)
+elif cmd == "show":
+    for n in topo():
+        v = nodes[n]; print(f"{n:18} {'MERGED' if n in merged else 'open':6} deps={','.join(v.get('depends_on', [])) or '-'}")
+elif cmd == "check":
+    topo(); bad = 0
+    for n, v in nodes.items():
+        if n in merged: continue
+        b = v["branch"]
+        r = subprocess.run(["git", "rev-parse", "--short", b], capture_output=True, text=True)
+        if r.returncode: print(f"MISSING {n}: {b}"); bad = 1; continue
+        mb = subprocess.run(["git", "merge-base", b, "main"], capture_output=True, text=True).stdout.strip()[:8]
+        head = subprocess.run(["git", "rev-parse", "--short=8", "main"], capture_output=True, text=True).stdout.strip()
+        tag = "needs-rebase" if mb != head else "on-main"
+        print(f"{n:18} tip={r.stdout.strip()} base={mb} {tag}"
+              + ("  (rebase invalidates sha-bound native receipts)" if tag == "needs-rebase" else ""))
+    sys.exit(bad)
+else:
+    sys.exit(__doc__)
