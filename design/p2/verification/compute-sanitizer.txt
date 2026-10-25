@@ -1,0 +1,69 @@
+$ flock gpu.lock compute-sanitizer --tool memcheck --leak-check full --error-exitcode 99 target/debug/deps/ffi_abi-8057cfce0db49ac9 --test-threads=1 native_ device_probe   # ba28793
+========= COMPUTE-SANITIZER
+
+running 7 tests
+test device_probe_reports_sm120 ... ok
+test native_bounds_and_stale_epoch_after_reset ... ok
+test native_full_slot_transfer_timing ... ok
+test native_pageable_fallback_round_trip ... ok
+test native_rejections_and_metadata_checks ... ok
+test native_runtime_lifetime_round_trip ... ok
+test rust_mirrors_match_native_layout ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.88s
+
+========= LEAK SUMMARY: 0 bytes leaked in 0 allocations
+========= ERROR SUMMARY: 0 errors
+exit=0
+
+$ flock gpu.lock compute-sanitizer --tool racecheck  --error-exitcode 99 target/debug/deps/ffi_abi-8057cfce0db49ac9 --test-threads=1 native_ device_probe   # ba28793
+========= COMPUTE-SANITIZER
+
+running 7 tests
+test device_probe_reports_sm120 ... ok
+test native_bounds_and_stale_epoch_after_reset ... ok
+test native_full_slot_transfer_timing ... ok
+test native_pageable_fallback_round_trip ... ok
+test native_rejections_and_metadata_checks ... ok
+test native_runtime_lifetime_round_trip ... ok
+test rust_mirrors_match_native_layout ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 1.87s
+
+========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)
+exit=0
+
+$ flock gpu.lock compute-sanitizer --tool synccheck  --error-exitcode 99 target/debug/deps/ffi_abi-8057cfce0db49ac9 --test-threads=1 native_ device_probe   # ba28793
+========= COMPUTE-SANITIZER
+
+running 7 tests
+test device_probe_reports_sm120 ... ok
+test native_bounds_and_stale_epoch_after_reset ... ok
+test native_full_slot_transfer_timing ... ok
+test native_pageable_fallback_round_trip ... ok
+test native_rejections_and_metadata_checks ... ok
+test native_runtime_lifetime_round_trip ... ok
+test rust_mirrors_match_native_layout ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.85s
+
+========= ERROR SUMMARY: 0 errors
+exit=0
+
+$ flock gpu.lock compute-sanitizer --tool initcheck  --error-exitcode 99 target/debug/deps/ffi_abi-8057cfce0db49ac9 --test-threads=1 native_ device_probe   # ba28793
+========= COMPUTE-SANITIZER
+
+running 7 tests
+test device_probe_reports_sm120 ... ok
+test native_bounds_and_stale_epoch_after_reset ... ok
+test native_full_slot_transfer_timing ... ok
+test native_pageable_fallback_round_trip ... ok
+test native_rejections_and_metadata_checks ... ok
+test native_runtime_lifetime_round_trip ... ok
+test rust_mirrors_match_native_layout ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.99s
+
+========= ERROR SUMMARY: 0 errors
+exit=0
+

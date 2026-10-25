@@ -1,0 +1,13 @@
+$ flock ~/.cache/doctorwatson/gpu.lock cargo test -p loki-gpu --locked --features cuda --lib   # ba28793
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (target/debug/deps/loki_gpu-8bd28fc02f521072)
+
+running 3 tests
+test ffi::tests::all_unsupported_stubs_leave_output_untouched ... ok
+test runtime::tests::reentrant_lock_panics ... ok
+test runtime::tests::lock_order_is_enforced ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit=0
