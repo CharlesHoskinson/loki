@@ -40,6 +40,15 @@ use manifest::{Arm, Budget, GpuLockMode, HeavyMode, IdleMode, Manifest};
 
 const TASKSET: &str = "/usr/bin/taskset";
 
+/// Absolute path of nvidia-smi (PATH, then the WSL driver directory).
+fn nvidia_smi() -> Option<PathBuf> {
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    dirs.push("/usr/lib/wsl/lib".into());
+    dirs.into_iter().map(|d| d.join("nvidia-smi")).find(|p| p.is_file())
+}
+
 fn main() {
     host::install_cancel_handlers();
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -93,6 +102,7 @@ struct Prepared {
     manifest_sha256: String,
     identities: Vec<(String, String)>,
     staged: Option<String>,
+    nvidia_smi: Option<PathBuf>,
 }
 
 fn prepare(cli: &Cli) -> Result<Prepared, String> {
@@ -146,11 +156,16 @@ fn prepare(cli: &Cli) -> Result<Prepared, String> {
         Some(p) => Some(fs::read_to_string(p).map_err(|e| format!("staged {}: {e}", p.display()))?),
         None => None,
     };
+    let nvidia_smi = nvidia_smi();
+    if m.nvml && nvidia_smi.is_none() {
+        return Err("nvml = on but nvidia-smi was not found".into());
+    }
     Ok(Prepared {
         m,
         manifest_sha256,
         identities,
         staged,
+        nvidia_smi,
     })
 }
 
@@ -204,7 +219,7 @@ fn host_record() -> J {
         .with(
             "gpu",
             host::command_text(
-                "nvidia-smi",
+                &nvidia_smi().map(|p| p.display().to_string()).unwrap_or_else(|| "nvidia-smi".into()),
                 &[
                     "--query-gpu=uuid,name,driver_version,memory.total,memory.used,clocks.sm,clocks.mem,power.limit,temperature.gpu,clocks_throttle_reasons.active",
                     "--format=csv,noheader",
@@ -319,7 +334,7 @@ fn run(args: &[String]) -> Result<i32, String> {
     let nvml_path = run_dir.join("nvml.csv");
     let mut nvml = if m.nvml {
         let f = File::create(&nvml_path).map_err(|e| e.to_string())?;
-        let mut c = Command::new("nvidia-smi");
+        let mut c = Command::new(p.nvidia_smi.as_ref().expect("resolved in prepare"));
         c.args([
             "--query-gpu=timestamp,memory.used,power.draw,utilization.gpu",
             "--format=csv,noheader,nounits",
