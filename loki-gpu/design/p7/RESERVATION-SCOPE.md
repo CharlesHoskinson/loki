@@ -56,23 +56,34 @@ pub struct ScopeSnapshot {
 pub struct ScopeClose { pub freed: u64, pub retained: u64, pub credit_returned: u64, pub context_spent: u64 }
 ```
 
-`ScopedResidentBackend<F, G>` (implemented by `GpuRuntime`) defines:
+The public surface is ONE scope-control trait plus a scoped view that
+implements the EXISTING `ResidentBackend` facets. No per-operation `_in`
+methods are added to any public trait. The charge source (`Available` or
+`Scope(id)`) is a private parameter of the runtime's internal allocation
+helpers.
 
-- `open_scope(&self, reservation: &ReservationToken) -> Result<ScopeToken, BackendError>`.
-  The token is **borrowed**. On success, the registry atomically removes the
-  `ReservationRecord` and creates a `ScopeRecord` whose `credit` is the
-  reservation's bytes, and no counter moves. On any error nothing changes, the
-  reservation still exists, and the caller still holds the token, so it can
-  release it.
-- `extend_scope(&self, s: &ScopeToken, bytes: u64) -> Result<Extend, BackendError>`.
-  It returns `Extend::Granted { credit_now }` or `Extend::Rejected {
-  requested_bytes, available_bytes }`. It is atomic and draws only from
-  `available`. No separate reservation exists, so it does not return a
-  `ReservationToken`.
-- `*_in(&self, s: &ScopeToken, ...)` is one variant per allocating v1 call
-  (upload scalars/bases, transform output, MSM workspace, copy, quotient).
-- `close_scope(&self, s: &ScopeToken, retain: &[AllocationId]) -> Result<ScopeClose, BackendError>`.
-- `scope_snapshot(&self, s: &ScopeToken) -> Result<ScopeSnapshot, BackendError>`.
+```rust
+pub trait ScopeControl {
+    /// Borrowed: on success the ReservationRecord is atomically replaced by a
+    /// ScopeRecord with credit = its bytes (no counter moves). On any error
+    /// nothing changes and the reservation stays releasable.
+    fn open_scope(&self, reservation: &ReservationToken) -> Result<ScopeToken, BackendError>;
+    /// Atomic, draws only from `available`. No separate reservation exists.
+    fn extend_scope(&self, s: &ScopeToken, bytes: u64) -> Result<Extend, BackendError>;
+    fn close_scope(&self, s: &ScopeToken, retain: &[AllocationId]) -> Result<ScopeClose, BackendError>;
+    fn scope_snapshot(&self, s: &ScopeToken) -> Result<ScopeSnapshot, BackendError>;
+}
+pub enum Extend { Granted { credit_now: u64 }, Rejected { requested_bytes: u64, available_bytes: u64 } }
+
+// loki-gpu: the only way to spend a scope.
+pub struct ScopedRuntime { runtime: Arc<GpuRuntime>, scope: ScopeToken }
+impl GpuRuntime { pub fn scoped(self: &Arc<Self>, s: ScopeToken) -> ScopedRuntime }
+impl<F, G> ResidentBackend<F, G> for ScopedRuntime { /* each call -> internal helper with ChargeSource::Scope(id) */ }
+```
+
+Every `ScopedRuntime` call validates its token at entry against the registry,
+using the same checks as `release_reservation`: id known, generation equal,
+and the record belongs to this runtime instance.
 
 The registry gains `scopes: HashMap<ScopeId, ScopeRecord { generation, state,
 granted, credit, in_flight, live, context_spent, active_ops }>`. `AllocRecord`
@@ -137,7 +148,7 @@ The *charge* of an op is everything it can newly consume:
   `reinitialize` zeroes the generation's counters.
 - **I4:** a byte is in exactly one place: `available`, one scope's `credit` or
   `in_flight`, `live`, or `local_backing`.
-- **I5:** only `*_in` calls on a matching, validated token spend scope credit.
+- **I5:** only scoped calls on a matching, validated token spend scope credit.
   Unscoped and default calls use `available` and can never touch a scope.
 
 ## Lifecycle: Open, then Closing, then Closed
@@ -153,7 +164,7 @@ first and then the registry lock, as in the existing lock order.
    allocation with `owner == Scope(id)`. If any id is not, the call returns
    `Err(InvalidInput)` and nothing changes. An allocation already `Persistent`
    cannot be in `retain` and is never freed by a close.
-2. **Closing.** `state = Closing`. New `*_in` calls and `extend_scope` on this
+2. **Closing.** `state = Closing`. New scoped calls and `extend_scope` on this
    scope are refused with `InvalidInput / NotStarted`.
 3. **Retire active ops.** While `active_ops > 0`, release BOTH locks (an
    active op needs the device lock to finish), wait on the scope's condition
@@ -174,7 +185,7 @@ first and then the registry lock, as in the existing lock order.
    without scopes. Set `state = Closed` and return the `ScopeClose` totals.
 
 After `reinitialize`, every scope of the old generation is dropped along with
-that generation's counters. Any later `*_in`, `extend_scope`, `close_scope` or
+that generation's counters. Any later `ScopedRuntime` op, `extend_scope`, `close_scope` or
 `scope_snapshot` on its token returns `Err(ContextLost)`.
 
 ### Release authority
@@ -192,7 +203,7 @@ This is a defined error, not undefined behaviour.
 - Allocations made by the SRS registry (P3) are `Persistent` from creation.
   They are never charged to a scope, even when the registry populates them
   during a scoped job. This keeps a job close from freeing a cached SRS. If an
-  SRS upload must be charged to the job's budget, it is uploaded with `*_in`
+  SRS upload must be charged to the job's budget, it is uploaded through `ScopedRuntime`
   and listed in `retain`, which moves it to `Persistent`.
 - A job may *borrow* a `Persistent` or `Unscoped` handle (read it as an
   input). Borrowing never changes ownership, and close never frees it.
@@ -202,7 +213,7 @@ This is a defined error, not undefined behaviour.
 ```rust
 // loki-gpu
 pub struct ScopedRuntime { runtime: Arc<GpuRuntime>, scope: ScopeToken }
-impl<F, G> ResidentBackend<F, G> for ScopedRuntime { /* forwards to *_in */ }
+// (defined above; implements the existing ResidentBackend facets)
 
 // Loki src/backend/dispatch.rs (feature-gated)
 pub struct Dispatcher<B> { backend: B, counters: ... }     // already generic in P1
@@ -262,13 +273,18 @@ All tests run on FakeDriver through the safe `with_fake` / `FakeControl` API.
 | `inputs_preserved_abort_returns_credit` / `poisoning_abort_returns_none` | rules 3 and 4 |
 | `free_returns_reusable_credit_only_after_device_free` | rule 5; failed `device_free` poisons with no credit |
 | `close_refuses_invalid_retain_without_mutation` | step 1 validation (persistent, foreign or quarantined id) |
-| `close_waits_for_active_ops_and_refuses_new_ones` | Closing state; a concurrent `*_in` gets `InvalidInput`; close completes after the in-flight op retires |
+| `close_waits_for_active_ops_and_refuses_new_ones` | Closing state; a concurrent `ScopedRuntime` op gets `InvalidInput`; close completes after the in-flight op retires |
 | `close_retains_outputs_as_persistent_and_frees_rest` | steps 4 to 6; retained handle usable after close and never freed by a later close |
 | `srs_registry_allocations_are_never_freed_by_close` | Persistent ownership |
 | `stale_token_is_context_lost_everywhere` | every scoped call after `reinitialize` |
 | `double_close_is_invalid_input` | release-authority edge |
 | `unscoped_and_global_dispatch_never_spend_scope_credit` | I5; a concurrent global-dispatcher MSM during a scoped job |
 | `concurrent_scoped_ops_preserve_i2` | Rayon stress; snapshot after every step |
+| `foreign_runtime_scope_token_is_invalid_input` | a token minted by runtime A is refused by runtime B (ids are per-instance) |
+| `forged_scope_metadata_is_invalid_input` | wrong id, or right id with wrong generation, on every ScopeControl call and every ScopedRuntime op |
+| `closed_scope_token_is_invalid_input` | spending or extending after close |
+| `duplicate_open_of_one_reservation_is_invalid_input` | the second `open_scope` on the same reservation token fails without mutation; the first scope is intact |
+| `scope_id_exhaustion_is_checked` | `fresh_id` overflow returns an error, never wraps or reuses an id (D1/D4 lesson) |
 | property: random op/fault sequences | I1–I5 after each step (mirrors Quint Q3) |
 
 Scheduler-side tests:
@@ -284,7 +300,7 @@ One native receipt on the RTX 5090 repeats
 ## Open questions for P4
 
 1. Does any current path allocate more than once per v1 call outside a single
-   registry section? If so, its `*_in` variant must pre-charge the sum under
+   registry section? If so, its scoped variant must pre-charge the sum under
    rule 1.
 2. Checkpoint bytes are host memory. They should stay outside scope
    accounting. Please confirm.
