@@ -33,7 +33,7 @@ The direct `prepare` + `Guard::verify` route verifies the saved VK and public la
 
 ## Execution gate and provenance
 
-This reads the full public k20 SRS, so run the eventual CPU verifier under DoctorWatson's normal heavy wrapper. It needs no GPU lock request beyond whatever the host runner imposes for the CPU command; do not add `cuda` features. Build jobs remain `CARGO_BUILD_JOBS=3`. Keep the standalone `Cargo.lock` and source-resolution output with the run receipt.
+This reads the full public k20 SRS, so run the eventual CPU verifier under DoctorWatson's normal heavy wrapper. It needs no GPU lock request beyond whatever the host runner imposes for the CPU command; do not add `cuda` features. Build jobs remain `CARGO_BUILD_JOBS=3`. Before the accepted-artifact run, verify the standalone Cargo.lock registry source and inspect the compiled dependency `.d` file to confirm the binary used registry `midnight-proofs 0.8.3`; retain the lock and dep-info hashes with the receipt. `cargo tree` is not available through the host runner allowlist, so the lock plus actual dep-info are the source-resolution evidence.
 
 Use the W10 run's exact `w.vk`, `w.proof`, and `w.instance.json`; this package pins the accepted public manifest at SHA-256 `f4e2c035e37f996ee0b13563cc2c8dc7e16e607b044f7f95228b12cb6e4531bb`. Name circuit `mori-recursion::SherlockLinkRelation`, Moriarty source commit `6ee918696ab907244c703bbd94bfea9acde7ddd1`, proof-producing Loki commit `053577f6083b329f2bbef1f3711f92cadc92a24f`, W10 feature set, prover Rayon=4/BLST=1, verifier Rayon=4/BLST no-threads, lab host, verifier commit, and raw DoctorWatson/runner log. No proof-generation or key-generation timing is included.
 
