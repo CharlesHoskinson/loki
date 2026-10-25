@@ -74,6 +74,25 @@ fn run(k: u32, proof_output: Option<&std::path::Path>) -> ProofReport {
         assert!(timing.calls > 0 && timing.wall_ns > 0, "empty {phase}");
     }
     let phase_sum: u64 = proof_report.phases.values().map(|p| p.wall_ns).sum();
+    #[cfg(feature = "cuda-argument-commit")]
+    {
+        let lookup = &proof_report.phases["lookup_prepare"].backends;
+        let coeff = lookup
+            .get("argument_commit.coeff")
+            .expect("missing lookup coefficient strategy");
+        assert_eq!(coeff.calls, 2);
+        assert_eq!(coeff.sizes.get(&(1 << k)), Some(&2));
+        let permutation = &proof_report.phases["permutation_products"].backends;
+        let coeff = permutation
+            .get("argument_commit.coeff")
+            .expect("missing permutation coefficient strategy");
+        assert!(coeff.calls > 0);
+        assert_eq!(coeff.sizes.get(&(1 << k)), Some(&coeff.calls));
+        assert!(proof_report
+            .phases
+            .values()
+            .all(|phase| !phase.backends.contains_key("argument_commit.lagrange")));
+    }
     assert_eq!(phase_sum, proof_report.total_wall_ns);
     assert!((phase_sum as f64 / elapsed as f64 - 1.0).abs() < 0.1);
     for counts in [&proof_report.msm, &proof_report.fft] {
@@ -87,6 +106,18 @@ fn run(k: u32, proof_output: Option<&std::path::Path>) -> ProofReport {
                 .map(|(size, calls)| *size as u64 * calls)
                 .sum::<u64>()
         );
+    }
+    // Dispatch attribution must account for every arithmetic entry exactly once.
+    for (prefix, total) in [("msm.", &proof_report.msm), ("ntt.", &proof_report.fft)] {
+        let mut sizes = std::collections::BTreeMap::new();
+        for phase in proof_report.phases.values() {
+            for (_, counts) in phase.backends.iter().filter(|(name, _)| name.starts_with(prefix)) {
+                for (size, calls) in &counts.sizes {
+                    *sizes.entry(*size).or_insert(0_u64) += calls;
+                }
+            }
+        }
+        assert_eq!(sizes, total.sizes, "unattributed {prefix} calls");
     }
     // Verify with the unchanged CPU verifier.
     let proof = transcript.finalize();

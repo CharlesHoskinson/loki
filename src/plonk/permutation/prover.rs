@@ -144,7 +144,12 @@ impl Argument {
             modified_values.extend((0..blinding_factors).map(|_| F::random(&mut *rng)));
             let z = domain.lagrange_from_vec(modified_values);
 
+            #[cfg(feature = "cuda-argument-commit")]
+            let (permutation_product_poly, permutation_product_commitment) =
+                crate::poly::commitment::commit_argument::<F, CS>(params, domain, z);
+            #[cfg(not(feature = "cuda-argument-commit"))]
             let permutation_product_commitment = CS::commit_lagrange(params, &z);
+            #[cfg(not(feature = "cuda-argument-commit"))]
             let permutation_product_poly = domain.lagrange_to_coeff(z);
 
             // Hash the permutation product commitment

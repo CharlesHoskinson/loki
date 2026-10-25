@@ -88,15 +88,22 @@ lookup proof byte difference; this is intentionally likely to fail on stock.
 Investigate byte differences outside the documented lookup nondeterminism.
 Lookup variation gives no evidence about unrelated prover changes.
 
-## Legacy sppark CUDA runs
+## CUDA gate and legacy sppark runs
 
 The harness `cuda` feature enables the legacy `loki/cuda` MSM path; the stock
 dependency keeps its default CPU features. Set `LOKI_GPU_MSM_MIN=1` to route
 the small k10 fixture to the GPU. The build also needs the CUDA toolkit and
 `nvcc`; see the root README for adapter-specific toolkit variables.
 
+The `cuda`, `cuda-ntt`, `cuda-argument-commit`, and `loki-profile` features
+forward to the Loki path dependency. `cuda-argument-commit` also enables `cuda`.
+Stock remains the unpatched registry package with its default CPU features.
+With the CUDA toolkit on `PATH` and `CUDA_HOME` set, compile the complete gate:
+
 ```sh
 RAYON_NUM_THREADS=1 LOKI_GPU_MSM_MIN=1 cargo run --release --manifest-path loki-harness/Cargo.toml --features cuda --bin gate -- 10
+CARGO_BUILD_JOBS=4 cargo check --locked --manifest-path loki-harness/Cargo.toml \
+  --features cuda,cuda-ntt,cuda-argument-commit,loki-profile --all-targets
 ```
 
 A CUDA build alone does not prove GPU dispatch; confirm the backend's dispatch
@@ -106,6 +113,33 @@ The separate `loki-gpu-backend` feature builds the P1 `loki-gpu` skeleton. Its
 current backend advertises no accelerated operations, so a passing harness gate
 with that feature checks compile and feature forwarding only. See
 [`LOKI-P1-SEAM.md`](../LOKI-P1-SEAM.md).
+
+Submit this wrapper through the host GPU runner from the Loki root:
+
+```sh
+CARGO_BUILD_JOBS=4 cargo run --release --locked --example loki-w2-gpu \
+  --features cuda-argument-commit
+# Optional targeted subset, for example k14 only:
+CARGO_BUILD_JOBS=4 cargo run --release --locked --example loki-w2-gpu \
+  --features cuda-argument-commit -- 14
+```
+
+The outer runner must hold the GPU/heavy lock for the whole invocation. Its
+feature list marks the nested child runs as GPU work; the wrapper inherits
+runner environment markers and does not acquire another lock. It runs `gate`
+sequentially for k10/k14/k17 by default, with one Rayon worker, four Cargo build
+jobs, `LOKI_GPU_MSM_MIN=1`, and `LOKI_NTT_CPU` removed. It uses the independent
+`loki-harness/target` build cache and fresh JSONL files under
+`target/w2-gpu/<run>/`. It supplies no Moriarty patch configuration.
+
+Compatibility and GPU dispatch are verified separately. The existing gate
+must succeed; then the wrapper requires every Loki profile to succeed, the
+requested size to be present, actual GPU MSM/NTT calls and coefficient argument
+commits in every proof, and zero GPU errors/fallback or retained Lagrange
+argument strategy. Profiles and launcher output contain only public timings,
+counts, sizes, and statuses. Raw determinism byte diagnostics from the child
+are captured without being printed or saved by the wrapper. A successful
+CUDA compilation alone does not establish GPU dispatch or a speed difference.
 
 ## Recorded validation (2026-10-24)
 

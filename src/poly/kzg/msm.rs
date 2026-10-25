@@ -172,6 +172,13 @@ pub fn msm_specific<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) ->
     if let Some(result) = cuda::try_msm::<C>(coeffs, bases) {
         return result;
     }
+    // Without the legacy adapter the work is CPU unless the P1 seam
+    // (`loki-gpu-backend`) routes it; then the backend dispatch
+    // counters, not this profile label, are authoritative.
+    #[cfg(all(feature = "loki-profile", not(feature = "cuda"), not(feature = "loki-gpu-backend")))]
+    crate::profile::record_backend("msm.cpu_no_feature", coeffs.len().min(bases.len()));
+    #[cfg(all(feature = "loki-profile", not(feature = "cuda"), feature = "loki-gpu-backend"))]
+    crate::profile::record_backend("msm.p1_dispatch", coeffs.len().min(bases.len()));
     // P1 seam: typed request through the Loki dispatcher (stock CPU adapter
     // unless an advertised accelerator completes it).
     #[cfg(feature = "loki-backend-api")]

@@ -114,6 +114,11 @@ impl<F: WithSmallOrderMulGroup<3> + Ord + Hash> Argument<F> {
         )?;
 
         // Closure to construct commitment to vector of values
+        #[cfg(feature = "cuda-argument-commit")]
+        let commit_values = |values: &Polynomial<F, LagrangeCoeff>| {
+            crate::poly::commitment::commit_argument::<F, CS>(params, &pk.vk.domain, values.clone())
+        };
+        #[cfg(not(feature = "cuda-argument-commit"))]
         let commit_values = |values: &Polynomial<F, LagrangeCoeff>| {
             let poly = pk.vk.domain.lagrange_to_coeff(values.clone());
             let commitment = CS::commit_lagrange(params, values);

@@ -416,6 +416,13 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         if Self::gpu_fft(a, omega, false) {
             return;
         }
+        // Without the legacy adapter the work is CPU unless the P1 seam
+        // (`loki-gpu-backend`) routes it; then the backend dispatch
+        // counters, not this profile label, are authoritative.
+        #[cfg(all(feature = "loki-profile", not(feature = "cuda-ntt"), not(feature = "loki-gpu-backend")))]
+        crate::profile::record_backend("ntt.cpu_no_feature", a.len());
+        #[cfg(all(feature = "loki-profile", not(feature = "cuda-ntt"), feature = "loki-gpu-backend"))]
+        crate::profile::record_backend("ntt.p1_dispatch", a.len());
         #[cfg(feature = "loki-backend-api")]
         crate::backend::dispatch::fft(a, omega, log_n);
         #[cfg(not(feature = "loki-backend-api"))]
@@ -426,10 +433,14 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     fn gpu_fft(a: &mut Vec<F>, omega: F, inverse: bool) -> bool {
         // The optional backend is deliberately restricted to this concrete field.
         // Any performs a checked downcast without assuming a generic F's layout.
-        if a.len() < (1 << 10)
-            || a.len() > (1 << 28)
-            || std::env::var_os("LOKI_NTT_CPU").is_some()
-        {
+        if a.len() < (1 << 10) || a.len() > (1 << 28) {
+            #[cfg(feature = "loki-profile")]
+            crate::profile::record_backend("ntt.cpu_size", a.len());
+            return false;
+        }
+        if std::env::var_os("LOKI_NTT_CPU").is_some() {
+            #[cfg(feature = "loki-profile")]
+            crate::profile::record_backend("ntt.cpu_forced", a.len());
             return false;
         }
         if let Some(values) = (a as &mut dyn std::any::Any)
@@ -441,14 +452,27 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             // LokiLean/Ntt.lean: idft includes exactly one 1/n. The adapter
             // preserves values on error; returning false selects best_fft and
             // its CPU divisor, whereas a successful sppark inverse is scaled.
-            match loki_cuda_ntt::fft(values, *root, inverse) {
-                Ok(()) => return true,
+            let result = loki_cuda_ntt::fft(values, *root, inverse);
+            #[cfg(feature = "loki-profile")]
+            crate::profile::record_backend(
+                if result.is_ok() {
+                    "ntt.gpu"
+                } else {
+                    "ntt.gpu_error"
+                },
+                values.len(),
+            );
+            return match result {
+                Ok(()) => true,
                 Err(error) => {
                     static LOGGED: std::sync::Once = std::sync::Once::new();
                     LOGGED.call_once(|| tracing::warn!(%error, "GPU NTT failed; using CPU FFT"));
+                    false
                 }
-            }
+            };
         }
+        #[cfg(feature = "loki-profile")]
+        crate::profile::record_backend("ntt.cpu_type", a.len());
         false
     }
 
@@ -460,6 +484,13 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         if Self::gpu_fft(a, omega_inv, true) {
             return;
         }
+        // Without the legacy adapter the work is CPU unless the P1 seam
+        // (`loki-gpu-backend`) routes it; then the backend dispatch
+        // counters, not this profile label, are authoritative.
+        #[cfg(all(feature = "loki-profile", not(feature = "cuda-ntt"), not(feature = "loki-gpu-backend")))]
+        crate::profile::record_backend("ntt.cpu_no_feature", a.len());
+        #[cfg(all(feature = "loki-profile", not(feature = "cuda-ntt"), feature = "loki-gpu-backend"))]
+        crate::profile::record_backend("ntt.p1_dispatch", a.len());
         #[cfg(feature = "loki-backend-api")]
         crate::backend::dispatch::ifft(a, omega_inv, log_n, divisor);
         #[cfg(not(feature = "loki-backend-api"))]

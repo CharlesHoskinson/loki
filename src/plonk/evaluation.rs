@@ -843,6 +843,8 @@ pub fn evaluate<F: Field, B: PolynomialRepresentation>(
     values
 }
 
+#[cfg(all(test, feature = "cuda-argument-commit", feature = "cuda-ntt"))]
+mod argument_commit_gpu_tests;
 
 #[cfg(all(test, feature = "loki-harden"))]
 mod edge_tests {

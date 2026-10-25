@@ -57,7 +57,16 @@ fn dispatch<C: CurveAffine>(
     min: usize,
     gpu: impl FnOnce(&[Fq], &[G1Projective]) -> Result<G1Projective, String>,
 ) -> Option<C::Curve> {
-    if coeffs.len().min(bases.len()) < min || TypeId::of::<C>() != TypeId::of::<G1Affine>() {
+    #[cfg(feature = "loki-profile")]
+    let size = coeffs.len().min(bases.len());
+    if coeffs.len().min(bases.len()) < min {
+        #[cfg(feature = "loki-profile")]
+        crate::profile::record_backend("msm.cpu_threshold", size);
+        return None;
+    }
+    if TypeId::of::<C>() != TypeId::of::<G1Affine>() {
+        #[cfg(feature = "loki-profile")]
+        crate::profile::record_backend("msm.cpu_type", size);
         return None;
     }
     // SAFETY: C is exactly midnight_curves::G1Affine, so its associated types
@@ -66,10 +75,24 @@ fn dispatch<C: CurveAffine>(
     let bases = unsafe { &*(bases as *const [C::Curve] as *const [G1Projective]) };
     match gpu(coeffs, bases) {
         Ok(point) => {
+            #[cfg(feature = "loki-profile")]
+            crate::profile::record_backend(
+                if size == 0 {
+                    "msm.cpu_empty"
+                } else {
+                    "msm.gpu"
+                },
+                size,
+            );
             // SAFETY: same concrete associated type checked above.
             Some(unsafe { std::mem::transmute_copy(&point) })
         }
         Err(error) => {
+            #[cfg(feature = "loki-profile")]
+            {
+                crate::profile::record_backend("msm.cpu_fallback", size);
+                eprintln!("LOKI_PROFILE GPU MSM failed size={size}: {error}");
+            }
             static LOGGED: Once = Once::new();
             LOGGED.call_once(|| tracing::warn!(%error, "GPU MSM failed; using CPU MSM"));
             None

@@ -232,6 +232,10 @@ fn gpu_proof() {
 #[test]
 #[ignore = "requires a GPU-less environment; run alone in the local sandbox"]
 fn cuda_no_device_fallback() {
+    #[cfg(feature = "loki-profile")]
+    let _serial = crate::profile::TEST_REPORTS.lock().unwrap();
+    #[cfg(feature = "loki-profile")]
+    let proof = crate::profile::ProofGuard::start(997, 1);
     std::env::set_var("LOKI_GPU_MSM_MIN", "1");
     let bases = vec![G1Projective::generator(); 17];
     let scalars: Vec<_> = (0..17)
@@ -253,6 +257,19 @@ fn cuda_no_device_fallback() {
         super::super::msm_specific::<G1Affine>(&scalars, &bases),
         expected
     );
+    #[cfg(feature = "loki-profile")]
+    {
+        drop(proof);
+        let report = crate::profile::take_report()
+            .proofs
+            .into_iter()
+            .find(|p| p.k == 997)
+            .unwrap();
+        assert_eq!(report.msm.calls, 2);
+        let backends = &report.phases["other"].backends;
+        assert_eq!(backends.len(), 1);
+        assert_eq!(backends["msm.cpu_fallback"].sizes[&17], 2);
+    }
 }
 
 #[test]
@@ -275,6 +292,261 @@ fn gpu_large_boundaries() {
                 "size {n}"
             );
             eprintln!("GPU large boundary {n}: passed");
+        }
+    }
+}
+
+#[cfg(feature = "loki-profile")]
+#[test]
+fn profile_attributes_dispatch_outcomes() {
+    let _serial = crate::profile::TEST_REPORTS.lock().unwrap();
+    let proof = crate::profile::ProofGuard::start(999, 1);
+    let phase = crate::profile::PhaseGuard::start("dispatch_test");
+    let scalars = [Fq::ONE; 2];
+    let bases = [G1Projective::generator(); 2];
+    assert!(super::dispatch::<G1Affine>(&scalars, &bases, 3, |_, _| unreachable!()).is_none());
+    assert!(super::dispatch::<midnight_curves::G2Affine>(
+        &scalars,
+        &[midnight_curves::G2Projective::generator(); 2],
+        0,
+        |_, _| unreachable!()
+    )
+    .is_none());
+    assert!(
+        super::dispatch::<G1Affine>(&scalars, &bases, 0, |_, _| Err("test failure".into()))
+            .is_none()
+    );
+    assert!(super::dispatch::<G1Affine>(&scalars, &bases, 0, |_, _| Ok(bases[0])).is_some());
+    assert!(
+        super::dispatch::<G1Affine>(&[], &[], 0, |_, _| Ok(G1Projective::identity())).is_some()
+    );
+    drop(phase);
+    drop(proof);
+    let report = crate::profile::take_report()
+        .proofs
+        .into_iter()
+        .find(|p| p.k == 999)
+        .unwrap();
+    let backends = &report.phases["dispatch_test"].backends;
+    assert_eq!(backends.len(), 5);
+    for name in [
+        "msm.cpu_threshold",
+        "msm.cpu_type",
+        "msm.cpu_fallback",
+        "msm.gpu",
+    ] {
+        assert_eq!(backends[name].sizes[&2], 1, "{name}");
+    }
+    assert_eq!(backends["msm.cpu_empty"].sizes[&0], 1);
+}
+
+#[test]
+#[ignore = "requires GPU; run alone through gpu-runner"]
+fn gpu_structured_scalars() {
+    use std::time::Instant;
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(4)
+        .build()
+        .unwrap();
+    pool.install(|| {
+        eprintln!(
+            "structured MSM rayon_threads={} blst_threads={} loki_cpu_budget={}",
+            rayon::current_num_threads(),
+            if cfg!(feature = "loki-cpu-budget") {
+                "1"
+            } else {
+                "unknown"
+            },
+            cfg!(feature = "loki-cpu-budget")
+        );
+        eprintln!("k,pattern,repetition,cpu_ms,gpu_ms");
+        let mut rng = ChaCha20Rng::from_seed([109; 32]);
+        for k in [16, 18] {
+            let n = 1 << k;
+            let mut point = G1Projective::random(&mut rng);
+            let step = G1Projective::random(&mut rng);
+            let bases: Vec<_> = (0..n)
+                .map(|_| {
+                    let p = point;
+                    point += step;
+                    p
+                })
+                .collect();
+            let constant = Fq::random(&mut rng);
+            let patterns = [
+                (
+                    "random",
+                    (0..n).map(|_| Fq::random(&mut rng)).collect::<Vec<_>>(),
+                ),
+                (
+                    "small_repeat",
+                    (0..n).map(|i| Fq::from((i % 16) as u64)).collect(),
+                ),
+                ("wide_repeat", vec![constant; n]),
+                ("one", vec![Fq::ONE; n]),
+                (
+                    "zero_one",
+                    (0..n).map(|i| Fq::from((i % 2) as u64)).collect(),
+                ),
+            ];
+            let expected: Vec<_> = patterns
+                .iter()
+                .map(|(_, scalars)| {
+                    let started = Instant::now();
+                    let result = cpu(scalars, &bases);
+                    (result, started.elapsed().as_secs_f64() * 1000.0)
+                })
+                .collect();
+            backend::clear_cache().unwrap();
+            assert_eq!(backend::msm(&patterns[0].1, &bases).unwrap(), expected[0].0);
+            let calls = backend::gpu_calls();
+            for repetition in 0..3 {
+                for offset in 0..patterns.len() {
+                    let index = (offset + repetition) % patterns.len();
+                    let (name, scalars) = &patterns[index];
+                    let started = Instant::now();
+                    let result = backend::msm(scalars, &bases).unwrap();
+                    let gpu_ms = started.elapsed().as_secs_f64() * 1000.0;
+                    assert_eq!(result, expected[index].0, "synthetic {name} at k{k}");
+                    eprintln!(
+                        "{k},{name},{repetition},{:.3},{gpu_ms:.3}",
+                        expected[index].1
+                    );
+                }
+            }
+            assert_eq!(backend::gpu_calls() - calls, (3 * patterns.len()) as usize);
+            assert!(!backend::failed());
+        }
+    });
+}
+
+/// Bounded synthetic comparison of the two bases used by argument commitments.
+/// This does not measure an A3 proof or establish a proof-level speedup.
+#[cfg(all(feature = "cuda-argument-commit", feature = "cuda-ntt"))]
+#[test]
+#[ignore = "requires CUDA; parent runs through GPU runner with --ignored --nocapture --test-threads=1"]
+fn gpu_argument_basis_small_synthetic() {
+    use midnight_curves::{fft::best_fft, Bls12};
+    use std::time::Instant;
+
+    use crate::poly::{kzg::params::ParamsKZG, EvaluationDomain};
+
+    // Independent, unfiltered CPU group sum. Neither the GPU dispatcher nor
+    // the production CPU MSM implementation computes the expected commitment.
+    let oracle = |scalars: &[Fq], bases: &[G1Projective]| {
+        scalars
+            .iter()
+            .zip(bases)
+            .fold(G1Projective::identity(), |sum, (scalar, base)| {
+                sum + *base * scalar
+            })
+    };
+    let mut rng = ChaCha20Rng::from_seed([0xBA; 32]);
+    eprintln!("gpu_argument_basis: public synthetic sizes; milliseconds; not an A3 speed claim");
+    eprintln!("k,pattern,conversion_ms,cpu_oracle_ms,lagrange_cold_ms,lagrange_warm_ms,coeff_cold_ms,coeff_warm_ms");
+    for k in [8, 10] {
+        let domain = EvaluationDomain::<Fq>::new(4, k);
+        let params = ParamsKZG::<Bls12>::unsafe_setup(k, &mut rng);
+        let n = 1usize << k;
+        assert_eq!(params.g.len(), n);
+        assert_eq!(params.g_lagrange.len(), n);
+        let repeated: Vec<_> = (0..16).map(|_| Fq::random(&mut rng)).collect();
+        let edges = [
+            Fq::ZERO,
+            Fq::ONE,
+            -Fq::ONE,
+            Fq::from(1u64 << 63),
+            Fq::from_raw([u64::MAX; 4]),
+        ];
+        for pattern in 0..7 {
+            let lagrange: Vec<_> = (0..n)
+                .map(|i| match pattern {
+                    0 => Fq::ZERO, // Identity commitment.
+                    1 => Fq::ONE,
+                    2 => -Fq::ONE,
+                    3 => Fq::from((i % 16) as u64), // Repeated low values.
+                    4 => repeated[i % repeated.len()], // Repeated full-width values.
+                    5 => Fq::random(&mut rng),
+                    _ => edges[i % edges.len()],
+                })
+                .collect();
+
+            // Independent CPU interpolation (including inverse-FFT scaling).
+            let mut cpu_coeff = lagrange.clone();
+            best_fft(&mut cpu_coeff, domain.get_omega_inv(), k);
+            let inverse_n = Fq::from(n as u64).invert().unwrap();
+            for coefficient in &mut cpu_coeff {
+                *coefficient *= inverse_n;
+            }
+            let start = Instant::now();
+            let expected = oracle(&cpu_coeff, &params.g);
+            let cpu_oracle_ms = start.elapsed().as_secs_f64() * 1000.0;
+            assert!(
+                oracle(&lagrange, &params.g_lagrange) == expected,
+                "k {k} pattern {pattern}: CPU basis identity failed"
+            );
+            if pattern == 0 {
+                assert!(bool::from(expected.is_identity()), "k {k}: zero commitment");
+            }
+
+            let before = loki_cuda_ntt::completed_calls();
+            let start = Instant::now();
+            let coeff = domain.lagrange_to_coeff(domain.lagrange_from_vec(lagrange.clone()));
+            let conversion_ms = start.elapsed().as_secs_f64() * 1000.0;
+            if k >= 10 {
+                assert!(
+                    loki_cuda_ntt::completed_calls() > before,
+                    "k {k} pattern {pattern}: interpolation did not complete a GPU FFT"
+                );
+            }
+            if let Some(index) = coeff.iter().zip(&cpu_coeff).position(|(a, b)| a != b) {
+                panic!("k {k} pattern {pattern}: interpolation mismatch at index {index} of {n}");
+            }
+
+            let mut timings = [0.0; 4];
+            for (basis, (scalars, bases)) in [
+                (lagrange.as_slice(), params.g_lagrange.as_slice()),
+                (coeff.as_ref(), params.g.as_slice()),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                backend::clear_cache().expect("basis cache reset must succeed");
+                let before = backend::gpu_calls();
+                let start = Instant::now();
+                let actual =
+                    backend::msm(scalars, bases).expect("direct GPU basis MSM must succeed");
+                timings[basis * 2] = start.elapsed().as_secs_f64() * 1000.0;
+                assert!(
+                    actual == expected,
+                    "k {k} pattern {pattern} basis {basis}: cold commitment mismatch"
+                );
+                assert!(
+                    backend::gpu_calls() > before,
+                    "k {k} pattern {pattern} basis {basis}: no cold GPU MSM call"
+                );
+                let before = backend::gpu_calls();
+                let start = Instant::now();
+                for repetition in 0..3 {
+                    let actual = backend::msm(scalars, bases)
+                        .expect("direct warm GPU basis MSM must succeed");
+                    assert!(actual == expected,
+                        "k {k} pattern {pattern} basis {basis} repetition {repetition}: warm commitment mismatch");
+                }
+                timings[basis * 2 + 1] = start.elapsed().as_secs_f64() * 1000.0 / 3.0;
+                assert!(
+                    backend::gpu_calls() >= before + 3,
+                    "k {k} pattern {pattern} basis {basis}: missing warm GPU MSM calls"
+                );
+            }
+            assert!(
+                !backend::failed(),
+                "k {k} pattern {pattern}: GPU backend disabled"
+            );
+            eprintln!(
+                "{k},{pattern},{conversion_ms:.3},{cpu_oracle_ms:.3},{:.3},{:.3},{:.3},{:.3}",
+                timings[0], timings[1], timings[2], timings[3]
+            );
         }
     }
 }
