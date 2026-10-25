@@ -1,0 +1,66 @@
+# P2-fix no-GPU gates (fake driver), 2026-10-25T06:58:17Z
+$ cargo test -p loki-gpu --test review_regressions --test p2_fix_regressions --test runtime_contract --lib
+     Running unittests src/lib.rs (target/debug/deps/loki_gpu-b547fe4e0be71735)
+test runtime::identity_tests::identity_counter_fails_instead_of_wrapping ... ok
+test runtime::tests::lock_order_is_enforced ... ok
+test runtime::tests::reentrant_lock_panics ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/p2_fix_regressions.rs (target/debug/deps/p2_fix_regressions-3684b745814d4d11)
+test foreign_reservation_is_rejected ... ok
+test healthy_teardown_without_faults_still_frees_everything ... ok
+test foreign_checkpoint_cannot_be_recovered ... ok
+test foreign_release_and_duplicate_are_rejected_without_effect ... ok
+test identities_are_unique_across_runtimes ... ok
+test cancellation_reports_the_cancelled_kind ... ok
+test sticky_timing_failures_poison_upload_download_and_launch ... ok
+test transient_timing_failures_are_ignored ... ok
+test setup_cleanup_stops_at_every_failure_boundary ... ok
+test teardown_stops_at_every_failure_boundary ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/review_regressions.rs (target/debug/deps/review_regressions-b18065195f825226)
+test setup_cleanup_stops_after_sticky_destroy_error ... ok
+test healthy_drop_stops_destructing_after_new_sticky_sync_error ... ok
+test sticky_timing_failure_cannot_publish_upload ... ok
+test foreign_runtime_handle_is_rejected ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/runtime_contract.rs (target/debug/deps/runtime_contract-7b3150778c3ece1e)
+test budget_is_lower_of_cap_and_free_minus_headroom ... ok
+test asynchronous_kernel_fault_surfaces_at_sync_and_poisons ... ok
+test duplicate_release_is_rejected_and_accounted_once ... ok
+test cancellation_with_failed_drain_poisons_and_retains ... ok
+test device_allocation_failure_is_transient_and_not_started ... ok
+test empty_upload_is_rejected_without_allocation ... ok
+test budget_exhaustion_rejects_before_device_allocation ... ok
+test allocation_ids_are_never_reused ... ok
+test admission_and_snapshot_do_not_wait_for_device_work ... ok
+test corrupt_device_bytes_fail_decode_without_publication ... ok
+test driverless_runtime_is_unsupported ... ok
+test checkpoint_budget_is_bounded ... ok
+test context_loss_then_reinitialize_rejects_stale_handles ... ok
+test cancellation_drains_retires_and_publishes_nothing ... ok
+test event_record_failure_drains_stream_and_preserves ... ok
+test event_record_failure_with_failed_drain_poisons ... ok
+test event_sync_failure_is_uncertain_completion_and_poisons ... ok
+test forged_handle_metadata_is_rejected_before_device_work ... ok
+test healthy_runtime_advertises_resident_buffers_only ... ok
+test host_checkpoint_distinguishes_recoverable_from_resident_only_loss ... ok
+test invalid_config_is_rejected_before_probe ... ok
+test non_sm120_device_is_unsupported_and_allocates_nothing ... ok
+test launch_success_publishes_fresh_handle_after_completion ... ok
+test no_pinned_memory_disables_overlap_capability ... ok
+test pinned_staging_probe_reports_capability ... ok
+test pinned_cap_falls_back_to_pageable_and_still_round_trips ... ok
+test multi_chunk_round_trip_never_reuses_a_live_slot ... ok
+test points_have_no_generic_wire_encoding_and_are_unsupported ... ok
+test poisoned_h2d_failure_poisons_generation_and_quarantines ... ok
+test reservations_are_checked_authoritative_and_single_use ... ok
+test teardown_frees_every_healthy_resource ... ok
+test uninitialized_runtime_fabricates_no_generation ... ok
+test transient_d2h_failure_publishes_nothing_and_keeps_source ... ok
+test telemetry_separates_paths_and_reports_waits ... ok
+test pre_cancelled_token_does_not_start ... ok
+test transient_launch_failure_frees_scratch_and_keeps_source ... ok
+test reinitialize_of_healthy_generation_is_refused ... ok
+test transient_h2d_failure_after_partial_work_drains_and_frees ... ok
+test streams_and_events_are_long_lived ... ok
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

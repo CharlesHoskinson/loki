@@ -1,0 +1,2 @@
+   Compiling loki-gpu v0.1.0 (/home/charles/repos/loki-gpu/crates/loki-gpu)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s

@@ -1,0 +1,15 @@
+name: Rust
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check the CPU-only workspace
+        run: cargo check --workspace --locked
+

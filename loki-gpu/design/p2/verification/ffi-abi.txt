@@ -1,0 +1,25 @@
+$ flock ~/.cache/doctorwatson/gpu.lock cargo test -p loki-gpu --locked --features cuda --test ffi_abi -- --nocapture   # ba28793; CUDA_HOME=~/.local/opt/cuda-13.4.3; LOKI_GPU_REQUIRE_DEVICE=1; Cuda compilation tools, release 13.4, V13.4.92
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running tests/ffi_abi.rs (target/debug/deps/ffi_abi-8057cfce0db49ac9)
+
+running 11 tests
+test measure_pinned_budget ... ignored
+test v1_operation_stubs_are_unsupported_and_leave_output_untouched ... ok
+test malformed_handles_and_null_pointers_are_rejected_before_use ... ok
+test rust_mirrors_match_native_layout ... ok
+test status_and_kind_constants_match_header ... ok
+32 MiB upload wall 80.712579ms, download wall 243.431994ms; gpu event total 80.656 ms; event wait 2.652 ms; init 19.938 ms; staging Some(StagingCapability { pinned_slots: 2, pageable_slots: 0, slot_bytes: 33554432, async_overlap_available: true })
+test native_full_slot_transfer_timing ... ok
+device: NVIDIA GeForce RTX 5090 cc 12.0 total 32579 MiB free 30927 MiB runtime 13040 driver 13040 SMs 170 copy engines 1
+test device_probe_reports_sm120 ... ok
+test native_bounds_and_stale_epoch_after_reset ... ok
+test native_pageable_fallback_round_trip ... ok
+test native_rejections_and_metadata_checks ... ok
+staging: StagingCapability { pinned_slots: 2, pageable_slots: 0, slot_bytes: 4096, async_overlap_available: true }
+telemetry: RuntimeTelemetry { init_ns: 892350, pinned_slots: 2, pageable_slots: 0, pinned_bytes: 8192, pinned_probe_failures: 0, h2d_pinned_bytes: 80056, h2d_pageable_bytes: 0, d2h_pinned_bytes: 160112, d2h_pageable_bytes: 0, transfers: 3, launches: 1, live_high_water: 160112, quarantined_bytes: 0, quarantined_allocations: 0, poison_events: 0, event_wait_ns: 973716, gpu_event_ms: 6.145888239145279 }
+test native_runtime_lifetime_round_trip ... ok
+
+test result: ok. 10 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.78s
+
+exit=0

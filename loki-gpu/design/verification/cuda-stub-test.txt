@@ -1,0 +1,20 @@
+   Compiling tap v1.0.1
+   Compiling radium v0.7.0
+   Compiling funty v2.0.0
+   Compiling wyz v0.5.1
+   Compiling subtle v2.6.1
+   Compiling rand_core v0.6.4
+warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
+   Compiling bitvec v1.1.1
+   Compiling ff v0.13.1
+   Compiling group v0.13.0
+   Compiling loki-backend-api v0.1.0 (/home/charles/repos/loki-gpu/crates/loki-backend-api)
+   Compiling loki-gpu v0.1.0 (/home/charles/repos/loki-gpu/crates/loki-gpu)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.39s
+     Running unittests src/lib.rs (target/debug/deps/loki_gpu-4583f080cc6f92ff)
+
+running 1 test
+test ffi::tests::all_unsupported_stubs_leave_output_untouched ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

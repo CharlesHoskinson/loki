@@ -1,0 +1,34 @@
+   Compiling loki-gpu v0.1.0 (/home/charles/repos/loki-gpu/crates/loki-gpu)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running tests/review_regressions.rs (target/debug/deps/review_regressions-b18065195f825226)
+
+running 4 tests
+
+thread 'setup_cleanup_stops_after_sticky_destroy_error' (2996142) panicked at crates/loki-gpu/tests/review_regressions.rs:53:5:
+setup cleanup touched a newly poisoned context: [DestroyThroughPoisonedContext { call: EventDestroy }, DestroyThroughPoisonedContext { call: StreamDestroy }, DestroyThroughPoisonedContext { call: StreamDestroy }, DestroyThroughPoisonedContext { call: StreamDestroy }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'sticky_timing_failure_cannot_publish_upload' (2996143) panicked at crates/loki-gpu/tests/review_regressions.rs:62:5:
+upload published despite observed sticky timing failure: Ok(ResidentBuffer { generation: DeviceGeneration { device_ordinal: 0, context_epoch: 1, generation: 1 }, allocation: AllocationId(1), len: 4, bytes: 32 })
+
+thread 'healthy_drop_stops_destructing_after_new_sticky_sync_error' (2996141) panicked at crates/loki-gpu/tests/review_regressions.rs:44:5:
+teardown touched a newly poisoned context: [DestroyThroughPoisonedContext { call: DeviceFree }, DestroyThroughPoisonedContext { call: EventDestroy }, DestroyThroughPoisonedContext { call: HostFree }, DestroyThroughPoisonedContext { call: EventDestroy }, DestroyThroughPoisonedContext { call: HostFree }, DestroyThroughPoisonedContext { call: EventDestroy }, DestroyThroughPoisonedContext { call: EventDestroy }, DestroyThroughPoisonedContext { call: EventDestroy }, DestroyThroughPoisonedContext { call: EventDestroy }, DestroyThroughPoisonedContext { call: StreamDestroy }, DestroyThroughPoisonedContext { call: StreamDestroy }, DestroyThroughPoisonedContext { call: StreamDestroy }]
+
+thread 'foreign_runtime_handle_is_rejected' (2996140) panicked at crates/loki-gpu/tests/review_regressions.rs:34:5:
+foreign handle silently returned another runtime's data: Ok([Toy(0xbfc846100bfc1e42), Toy(0x987bbcbfdd7e532f), Toy(0xc3f2827affe7f664), Toy(0x4fc446b53f17fb29)])
+test setup_cleanup_stops_after_sticky_destroy_error ... FAILED
+test healthy_drop_stops_destructing_after_new_sticky_sync_error ... FAILED
+test sticky_timing_failure_cannot_publish_upload ... FAILED
+test foreign_runtime_handle_is_rejected ... FAILED
+
+failures:
+
+failures:
+    foreign_runtime_handle_is_rejected
+    healthy_drop_stops_destructing_after_new_sticky_sync_error
+    setup_cleanup_stops_after_sticky_destroy_error
+    sticky_timing_failure_cannot_publish_upload
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p loki-gpu --test review_regressions`

@@ -1,0 +1,12 @@
+MEASURED — 2026-10-25 UTC
+Worktree: /home/charles/repos/loki-lean-wt/gpu-spec
+Command: export PATH="$HOME/.elan/bin:$PATH"; lake build
+Toolchain: leanprover/lean4:v4.34.1
+Exit: 0
+Result: Build completed successfully (8939 jobs).
+Warnings: linter warnings and two explicitly marked theorem sorry obligations in new modules; no sorry in their definitions.
+Raw log: /tmp/loki-gpu-final-lake-build.log
+Raw log SHA-256: b1fdadd77d006b17d1d5e4ee82a87993b69ce8921e45f58457746a1358482734
+Axiom audit command: lake env lean /tmp/loki-gpu-final-axioms.lean
+Axiom audit exit: 0
+Axiom audit result: lean-axioms.txt

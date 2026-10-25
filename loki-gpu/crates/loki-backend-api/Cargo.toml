@@ -1,0 +1,10 @@
+[package]
+name = "loki-backend-api"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Curve-typed backend contracts for Loki proof operations"
+
+[dependencies]
+ff = "0.13.1"
+group = "0.13.0"

@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/loki-backend-api",
+    "crates/loki-gpu",
+]
+default-members = [
+    "crates/loki-backend-api",
+    "crates/loki-gpu",
+]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.76"
+
