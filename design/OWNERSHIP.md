@@ -27,3 +27,27 @@ CODE (recovery): gluna-6 never acknowledged the assignment or produced files bef
 CODE (NTT review recovery): after gluna-5 delivered the initial NTT draft and MSM review, blocking finite-state/algorithm-composition revisions remained unacknowledged through the announced 05:20 UTC deadline. Lead revoked those two paths before transfer: BackendNtt to gluna-3, NTT.md to lead. Lead independently reviews the correction; the original peer findings remain recorded.
 
 CODE (final verification handoff): after accepting gluna-8’s frozen build/FFI work, lead sent STOP and took temporary `.cargo/config.toml`, final runner submissions and BUILD.md receipt edits. The temporary file supplies only toolkit environment variables, is excluded from commits, and is removed after the checks. All other engineer files are frozen; initial ownership/credits above remain historical.
+
+## Opus implementation handoffs
+
+CODE (coordination, 2026-10-25): the table above records initial design-team
+credits; all original design engineers/scouts were sent STOP after handoff.
+Implementation ownership below supersedes those historical credits for new
+work. The coordinator creates worktrees and controls integration; one writer
+per logical file remains required even when drafts use separate worktrees.
+
+| Active owner | Scope and handoff constraint |
+|---|---|
+| loki-p2, corrective `p2-fix` | Runtime/FFI/native-runtime/header and associated tests for REVIEW.md D1–D5. Owns cancellation mappings after the API addition at `cefecbc`. P3/P4 may propose patches but cannot take these shared files until correction review/merge and explicit handoff. P2 owns any correction to `Backend.lean` runtime model. |
+| loki-p3 | P3 SRS registry and legacy adapter files assigned by the coordinator; newly approved `gpu-spec/LokiLean/BackendSrs.lean` and its import in `gpu-spec/LokiLean.lean`. Claim both before writing. Prefix/capacity proof and actual registry gates are required before P3 promotion. Runtime byte-form seam waits for P2-fix and a serialized P3/P4 handoff. Loki manifests/dispatch file ownership is coordinated separately; disjoint functions do not authorize simultaneous file writers. |
+| loki-p4 | P4-owned NTT kernels/oracles/tests and NTT specification. Proposed runtime launch/FFI/header seam waits for P2-fix and an explicit shared-file handoff, sequenced with P3. Vendored permitted sppark field headers require exact source/version/hash, preserved headers and NOTICE/PROVENANCE updates. |
+| astra-gpu | Independent design reviews and coordination; review/build/runtime docs and API edits require a fresh claim. The `Cancelled` API and P2 review are committed at `cefecbc`; those claims were released. No implementation worktree is edited by the lead. |
+
+CODE: P3's point codec must bind concrete type, curve ABI and wire version;
+mutable registration cannot reinterpret existing leases. A local adapter type
+can implement an external codec trait without implementing it for a foreign
+curve type. Any registry design still needs concrete validation and exact
+snapshot comparisons. The new SRS Lean module must prove consumed-prefix
+refinement, generation rejection and lease/accounting properties with concrete
+nonempty examples, not merely restate an assumed cache-hit predicate. Existing
+full-sequence `SoundHit` does not already prove capacity/prefix reuse.
