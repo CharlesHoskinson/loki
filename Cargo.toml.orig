@@ -32,9 +32,19 @@ name = "zswap_output"
 required-features = ["bench-internal"]
 harness = false
 
+[[test]]
+name = "backend_default_stock"
+required-features = ["committed-instances"]
+
+[[test]]
+name = "backend_cpu_equivalence"
+required-features = ["committed-instances", "loki-backend-api"]
+
 [dependencies]
 loki-cuda-runtime = { path = "cuda-runtime", optional = true }
 loki-cuda-ntt = { path = "cuda-ntt", optional = true }
+loki-backend-api = { path = "../loki-gpu/crates/loki-backend-api", optional = true }
+loki-gpu = { path = "../loki-gpu/crates/loki-gpu", optional = true }
 ff = { workspace = true }
 group = { workspace = true }
 midnight-curves = "0.3.1"
@@ -67,6 +77,7 @@ midnight-zk-stdlib = { path = "../zk_stdlib" }
 sha2 = { workspace = true }
 rand = { workspace = true }
 criterion = "0.7"
+stock = { package = "midnight-proofs", version = "=0.8.3" }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
@@ -91,6 +102,17 @@ truncated-challenges = []
 loki-profile = []
 loki-cpu-budget = ["blst/no-threads"]
 loki-harden = []
+
+# P1 backend seam. `loki-backend-api` enables the typed dispatcher and the
+# stock CPU reference adapter. `loki-sppark` selects the legacy sppark
+# adapters; `loki-gpu-backend` selects the new loki-gpu crate. The two
+# accelerators are mutually exclusive (compile-time guard in src/lib.rs).
+loki-backend-api = ["dep:loki-backend-api"]
+loki-sppark = ["loki-backend-api", "cuda", "cuda-ntt"]
+loki-gpu-backend = ["loki-backend-api", "dep:loki-gpu", "loki-gpu/cuda"]
+# Opt-in deterministic leftover-lookup placement. Changes lookup proof bytes
+# relative to stock; never enabled by a backend feature.
+loki-deterministic-lookup-order = []
 
 # This feature adds a new argument to prover and verifier functions, which
 # represents instances in committed form (e.g. in the form of a polynomial

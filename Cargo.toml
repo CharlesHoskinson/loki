@@ -60,6 +60,18 @@ loki-profile = []
 loki-multiopen = []
 loki-cpu-budget = ["blst/no-threads"]
 loki-harden = []
+loki-backend-api = ["dep:loki-backend-api"]
+loki-sppark = [
+    "loki-backend-api",
+    "cuda",
+    "cuda-ntt",
+]
+loki-gpu-backend = [
+    "loki-backend-api",
+    "dep:loki-gpu",
+    "loki-gpu/cuda",
+]
+loki-deterministic-lookup-order = []
 
 [lib]
 name = "midnight_proofs"
@@ -106,6 +118,19 @@ path = "tests/cpu.rs"
 [[test]]
 name = "plonk_api"
 path = "tests/plonk_api.rs"
+
+[[test]]
+name = "backend_default_stock"
+path = "tests/backend_default_stock.rs"
+required-features = ["committed-instances"]
+
+[[test]]
+name = "backend_cpu_equivalence"
+path = "tests/backend_cpu_equivalence.rs"
+required-features = [
+    "committed-instances",
+    "loki-backend-api",
+]
 
 [[bench]]
 name = "commit_zk"
@@ -189,6 +214,10 @@ version = "1"
 [dev-dependencies.rand]
 version = "0.8"
 
+[dev-dependencies.stock]
+version = "=0.8.3"
+package = "midnight-proofs"
+
 [dev-dependencies.serde_json]
 version = "1"
 
@@ -218,4 +247,14 @@ optional = true
 
 [dependencies.loki-cuda-runtime]
 path = "cuda-runtime"
+optional = true
+
+# CUDA-neutral backend contracts (P1 seam); never enabled by default.
+[dependencies.loki-backend-api]
+path = "../loki-gpu/crates/loki-backend-api"
+optional = true
+
+# Apache-2.0 GPU backend; selected only by `loki-gpu-backend`.
+[dependencies.loki-gpu]
+path = "../loki-gpu/crates/loki-gpu"
 optional = true

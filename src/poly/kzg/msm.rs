@@ -170,11 +170,16 @@ pub fn msm_specific<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) ->
     if let Some(result) = cuda::try_msm::<C>(coeffs, bases) {
         return result;
     }
+    // P1 seam: typed request through the Loki dispatcher (stock CPU adapter
+    // unless an advertised accelerator completes it).
+    #[cfg(feature = "loki-backend-api")]
+    return crate::backend::dispatch::msm_specific::<C>(coeffs, bases);
+    #[cfg(not(feature = "loki-backend-api"))]
     msm_cpu::<C>(coeffs, bases)
 }
 
 #[allow(unsafe_code)]
-fn msm_cpu<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) -> C::Curve {
+pub(crate) fn msm_cpu<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) -> C::Curve {
     // We remove zeros (keep only non-zero coefficients)
     let (coeffs, bases): (Vec<C::Scalar>, Vec<C::Curve>) = coeffs
         .iter()

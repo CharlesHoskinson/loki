@@ -443,8 +443,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
 
 [[package]]
+name = "loki-backend-api"
+version = "0.1.0"
+dependencies = [
+ "ff",
+ "group",
+]
+
+[[package]]
 name = "loki-cuda-runtime"
 version = "0.1.0"
+
+[[package]]
+name = "loki-gpu"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "ff",
+ "group",
+ "loki-backend-api",
+]
 
 [[package]]
 name = "loki-harness"
@@ -509,7 +527,9 @@ dependencies = [
  "getrandom",
  "group",
  "itertools",
+ "loki-backend-api",
  "loki-cuda-runtime",
+ "loki-gpu",
  "midnight-curves",
  "num-bigint",
  "rand_chacha",

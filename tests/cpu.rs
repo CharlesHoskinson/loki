@@ -56,6 +56,12 @@ fn fixed_rng_lookup_proofs_are_reproducible() {
             .unwrap()
             .verify(&params.verifier_params())
             .unwrap();
+            // Stock places leftover lookup rows in `HashMap` order, so byte
+            // reproducibility is promised only with the opt-in deterministic
+            // order. Every proof above must verify in either build.
+            if !cfg!(feature = "loki-deterministic-lookup-order") {
+                continue;
+            }
             if let Some(reference) = &reference {
                 // Report hashes, rather than dumping a proof on failure.
                 assert!(
