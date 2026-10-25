@@ -1,0 +1,54 @@
+# Lean verification: LokiLean/BackendSrs.lean (P3 SRS registry)
+# Date: 2026-10-25T07:30Z
+# Lean project: ~/repos/loki-lean-wt/gpu-spec (leanprover/lean4:v4.34.1, Mathlib v4.34.1)
+# Model of: ~/repos/loki-gpu-wt/p3-srs/crates/loki-gpu/src/srs.rs (sha256 fa1f680543af24cb4866be3b2f713dc652b102e799e966d47d837ebf33732149)
+# Module sha256: 06433972e609d13f5d37fe451d043228281b2a8d19c9947646551e43f3aa6d7a
+# Lake in this toolchain has no -j flag; LEAN_NUM_THREADS=4 caps each Lean process at 4 threads.
+# Only LokiLean.BackendSrs and the LokiLean root were rebuilt; everything else was cached.
+
+## 1. LEAN_NUM_THREADS=4 lake build LokiLean.BackendSrs   (exit 0, tail)
+Note: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`
+⚠ [8932/8932] Built LokiLean.BackendSrs (5.5s)
+warning: LokiLean/BackendSrs.lean:1:1: * `-/`:
+Copyright too short!
+
+
+Note: This linter can be disabled with `set_option linter.style.header false`
+Build completed successfully (8932 jobs).
+
+Lines attributed to LokiLean/BackendSrs.lean:
+warning: LokiLean/BackendSrs.lean:1:1: * `-/`:
+(the only one is the project-wide Mathlib header/copyright linter warning at 1:1, which every
+ LokiLean module emits; sibling modules carry no copyright header, so neither does this one)
+
+## 2. LEAN_NUM_THREADS=4 lake build   (full, exit 0, tail)
+Copyright too short!
+
+
+Note: This linter can be disabled with `set_option linter.style.header false`
+✔ [8939/8940] Built LokiLean (3.9s)
+Build completed successfully (8940 jobs).
+(error lines: 0; BackendSrs lines: 1, the same header warning)
+
+## 3. lake env lean <scratch>/axioms.lean   (import LokiLean.BackendSrs; #print axioms ...)
+'Loki.BackendSrs.prefixHit_msm_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendSrs.prefix_msm_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendSrs.srsMsm_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendSrs.dispatchSeq_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendSrs.acquire_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendSrs.acquire_budget' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendSrs.prefixHit_iff' depends on axioms: [propext, Quot.sound]
+'Loki.BackendSrs.prefixHit_source_take' depends on axioms: [propext, Quot.sound]
+'Loki.BackendSrs.mutation_misses' depends on axioms: [propext, Quot.sound]
+'Loki.BackendSrs.prefixHit_generation' depends on axioms: [propext, Quot.sound]
+'Loki.BackendSrs.purge_generation' depends on axioms: [propext]
+'Loki.BackendSrs.acquire_generation' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendSrs.acquire_stale_key' depends on axioms: [propext]
+'Loki.BackendSrs.lagrange_exact_domain' depends on axioms: [propext, Quot.sound]
+'Loki.BackendSrs.coefficient_serves_prefix' depends on axioms: [propext, Quot.sound]
+'Loki.BackendSrs.evictLru_keeps_leased' depends on axioms: [propext, Quot.sound]
+'Loki.BackendSrs.evictLru_mem_of_leased' depends on axioms: [propext, Quot.sound]
+'Loki.BackendSrs.acquire_keeps_leased' depends on axioms: [propext, Classical.choice, Quot.sound]
+
+## 4. grep -c 'sorry\|axiom\|native_decide' LokiLean/BackendSrs.lean
+0

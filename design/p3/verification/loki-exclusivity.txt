@@ -1,0 +1,24 @@
+$ cargo check --offline --locked --features loki-gpu-srs-registry,cuda-srs-registry
+error: `loki-gpu-backend` is mutually exclusive with the legacy `cuda`/`cuda-ntt` features (including `loki-sppark`)
+  --> src/lib.rs:15:1
+   |
+15 | / compile_error!(
+exit=101
+$ cargo check --offline --locked --features loki-gpu-srs-registry,loki-sppark
+error: `loki-gpu-backend` is mutually exclusive with the legacy `cuda`/`cuda-ntt` features (including `loki-sppark`)
+  --> src/lib.rs:15:1
+   |
+15 | / compile_error!(
+exit=101
+$ cargo check --offline --locked --features loki-gpu-srs-registry,cuda-ntt
+error: `loki-gpu-backend` is mutually exclusive with the legacy `cuda`/`cuda-ntt` features (including `loki-sppark`)
+  --> src/lib.rs:15:1
+   |
+15 | / compile_error!(
+exit=101
+$ cargo check --offline --locked --features loki-gpu-srs-registry,cuda
+error: `loki-gpu-backend` is mutually exclusive with the legacy `cuda`/`cuda-ntt` features (including `loki-sppark`)
+  --> src/lib.rs:15:1
+   |
+15 | / compile_error!(
+exit=101
