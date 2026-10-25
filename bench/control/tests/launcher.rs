@@ -348,25 +348,40 @@ fn run_bounded(mut c: Command, limit: Duration) -> std::process::ExitStatus {
     }
 }
 
+/// Kills every PID recorded in the fixture file when dropped (including on
+/// panic or a bounded-run timeout). Never consulted for the verdict.
+struct KillRecorded(PathBuf);
+
+impl Drop for KillRecorded {
+    fn drop(&mut self) {
+        for p in fs::read_to_string(&self.0).unwrap_or_default().lines() {
+            if let Ok(p) = p.trim().parse::<i32>() {
+                unsafe { libc::kill(p, libc::SIGKILL) };
+            }
+        }
+    }
+}
+
 #[test]
 fn a_deep_escaped_process_tree_is_swept_within_a_bounded_time() {
     let e = Env::new("deep", "deep", "");
+    let _cleanup = KillRecorded(e.root.join("arm/deep"));
     let st = run_bounded(e.cmd(), Duration::from_secs(40));
+    // Verdict snapshot BEFORE any fixture cleanup.
     let pids: Vec<i32> = fs::read_to_string(e.root.join("arm/deep"))
         .unwrap_or_default()
         .lines()
         .filter_map(|l| l.trim().parse().ok())
         .collect();
-    // Clean up regardless of the verdict below.
-    for p in &pids {
-        unsafe { libc::kill(*p, libc::SIGKILL) };
-    }
+    let alive: Vec<i32> = pids
+        .iter()
+        .copied()
+        .filter(|p| fs::read_to_string(format!("/proc/{p}/stat")).map(|s| !s.contains(") Z")).unwrap_or(false))
+        .collect();
+    let b = e.block_json();
+    assert!(alive.is_empty(), "levels survived the launcher's sweep: {alive:?}");
+    assert!(b.contains("\"descendants_remaining_after_deadline\":[]"), "{b}");
     assert_eq!(st.code(), Some(1));
     assert!(pids.len() >= 6, "fixture made {} levels", pids.len());
-    let b = e.block_json();
     assert!(b.contains("\"status\":\"FAILED\""), "{b}");
-    let alive: Vec<&i32> = pids.iter().filter(|p| {
-        fs::read_to_string(format!("/proc/{p}/stat")).map(|s| !s.contains(") Z")).unwrap_or(false)
-    }).collect();
-    assert!(alive.is_empty(), "levels survived the sweep: {alive:?}");
 }
