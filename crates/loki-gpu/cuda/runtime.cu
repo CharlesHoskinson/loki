@@ -89,7 +89,10 @@ int32_t ensure_device(loki_gpu_status_v1 *status) {
     return report(status, LOKI_GPU_NO_DEVICE, cudaSuccess);
   int current = -1;
   cudaError_t e = cudaGetDevice(&current);
-  if (e == cudaSuccess && current == ordinal) return LOKI_GPU_OK;
+  // A failed query is reported as-is: a sticky error must not be masked by a
+  // later cudaSetDevice result.
+  if (e != cudaSuccess) return report_cuda(status, e);
+  if (current == ordinal) return LOKI_GPU_OK;
   e = cudaSetDevice(ordinal);
   if (e != cudaSuccess) return report_cuda(status, e);
   return LOKI_GPU_OK;
@@ -380,6 +383,20 @@ extern "C" int32_t loki_gpu_rt_memcpy_d2h_v1(const loki_gpu_handle_v1 *dst_host,
                                   static_cast<size_t>(len), cudaMemcpyDeviceToHost,
                                   as_ptr<cudaStream_t>(stream));
   return report_cuda(status, e);
+}
+
+extern "C" int32_t loki_gpu_rt_check_handle_v1(const loki_gpu_handle_v1 *h,
+                                               uint32_t kind) {
+  return check(h, kind);
+}
+
+extern "C" int32_t loki_gpu_rt_ensure_device_v1(loki_gpu_status_v1 *status) {
+  return ensure_device(status);
+}
+
+extern "C" int32_t loki_gpu_rt_report_cuda_v1(int32_t cuda_error,
+                                              loki_gpu_status_v1 *status) {
+  return report_cuda(status, static_cast<cudaError_t>(cuda_error));
 }
 
 extern "C" int32_t loki_gpu_rt_launch_copy_v1(const loki_gpu_handle_v1 *dst,

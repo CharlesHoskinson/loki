@@ -17,6 +17,19 @@ fn main() {
     for path in sources.iter().chain(std::iter::once(&header)) {
         println!("cargo:rerun-if-changed={}", path.display());
     }
+    // P4 transform headers: own Fr instantiation and vendored sppark 0.1.16
+    // Montgomery arithmetic (cuda/vendor/sppark-0.1.16/README.md).
+    for extra in [
+        "ntt_field.cuh",
+        "vendor/sppark-0.1.16/ff/mont_t.cuh",
+        "vendor/sppark-0.1.16/ff/pow.hpp",
+    ] {
+        let path = cuda_dir.join(extra);
+        if !path.is_file() {
+            panic!("CUDA feature enabled, but missing {}", path.display());
+        }
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
     for source in &sources {
         if !source.is_file() {
             panic!(

@@ -10,6 +10,9 @@ build = "build.rs"
 [features]
 default = []
 cuda = ["dep:cc"]
+# P4: resident NTT/coset transforms. The native kernels build with `cuda`;
+# this name is the feature Loki selects for the new resident backend.
+cuda-resident = ["cuda"]
 
 [dependencies]
 loki-backend-api = { path = "../loki-backend-api" }
@@ -25,6 +28,10 @@ cc = { version = "1", optional = true }
 # transitive dependencies of ff/group; no new crate enters the lockfile.
 rand_core = "0.6.4"
 subtle = "2.6.1"
+# P4 stock oracles: the unmodified crates.io EvaluationDomain and its field.
+# Test-only; never part of the library dependency graph.
+midnight-curves = "0.3.1"
+midnight-proofs = "=0.8.3"
 
 [[test]]
 name = "runtime_contract"
@@ -34,3 +41,12 @@ path = "tests/runtime_contract.rs"
 name = "ffi_abi"
 path = "tests/ffi_abi.rs"
 required-features = ["cuda"]
+
+[[test]]
+name = "ntt_differential"
+path = "tests/ntt_differential.rs"
+required-features = ["cuda"]
+
+[[test]]
+name = "resident_ntt"
+path = "tests/resident_ntt.rs"

@@ -135,6 +135,29 @@ pub struct AbiLayoutV1 {
     pub reserved: u32,
 }
 
+/// P4 NTT ABI constants (header `LOKI_GPU_NTT_*`).
+pub const NTT_ABI_VERSION: u32 = 1;
+pub const NTT_MAX_LOG: u32 = 27;
+pub const NTT_FLAG_INPUT_BITREV: u32 = 1;
+pub const NTT_FLAG_OUTPUT_BITREV: u32 = 2;
+pub const NTT_FLAG_PRE_COSET: u32 = 4;
+pub const NTT_FLAG_POST_COSET: u32 = 8;
+
+/// Mirror of `loki_gpu_ntt_params_v1` (P4).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NttParamsV1 {
+    pub abi_version: u32,
+    pub struct_size: u32,
+    pub ntt_log: u32,
+    pub flags: u32,
+    pub source_len: u64,
+    pub output_len: u64,
+    pub root_powers: [[u8; 32]; 32],
+    pub coset_powers: [[u8; 32]; 32],
+    pub scale: [u8; 32],
+}
+
 // Compile-time size/alignment assertions, matching the C++ static_asserts in
 // the header. Field offsets are compared with the native layout at test time
 // (offset_of! needs Rust 1.77; the workspace MSRV is 1.76).
@@ -144,6 +167,8 @@ const _: () = {
     assert!(core::mem::size_of::<StatusV1>() == 16);
     assert!(core::mem::size_of::<DeviceInfoV1>() == 120);
     assert!(core::mem::size_of::<AbiLayoutV1>() == 56);
+    assert!(core::mem::size_of::<NttParamsV1>() == 2112);
+    assert!(core::mem::align_of::<NttParamsV1>() == 8);
 };
 
 #[cfg(feature = "cuda")]
@@ -228,6 +253,44 @@ extern "C" {
         status: *mut StatusV1,
     ) -> i32;
     pub(crate) fn loki_gpu_rt_stream_synchronize_v1(stream: *const HandleV1, status: *mut StatusV1) -> i32;
+
+    pub(crate) fn loki_gpu_ntt_scratch_bytes_v1(params: *const NttParamsV1) -> u64;
+    pub(crate) fn loki_gpu_ntt_launch_v1(
+        dst: *const HandleV1,
+        src: *const HandleV1,
+        scratch: *const HandleV1,
+        params: *const NttParamsV1,
+        stream: *const HandleV1,
+        status: *mut StatusV1,
+    ) -> i32;
+}
+
+/// Encode a P4 launch descriptor for the native ABI.
+pub fn ntt_params(launch: &crate::runtime::TransformLaunch) -> NttParamsV1 {
+    let flags = (launch.input_bitrev as u32) * NTT_FLAG_INPUT_BITREV
+        | (launch.output_bitrev as u32) * NTT_FLAG_OUTPUT_BITREV
+        | (launch.pre_coset as u32) * NTT_FLAG_PRE_COSET
+        | (launch.post_coset as u32) * NTT_FLAG_POST_COSET;
+    NttParamsV1 {
+        abi_version: NTT_ABI_VERSION,
+        struct_size: core::mem::size_of::<NttParamsV1>() as u32,
+        ntt_log: launch.ntt_log,
+        flags,
+        source_len: launch.source_len,
+        output_len: launch.output_len,
+        root_powers: launch.root_powers,
+        coset_powers: launch.coset_powers,
+        scale: launch.scale,
+    }
+}
+
+/// Native scratch requirement for `launch` (0 when the native side rejects
+/// the parameters). Used to cross-check the Rust layout before enqueueing.
+#[cfg(feature = "cuda")]
+pub fn native_ntt_scratch_bytes(launch: &crate::runtime::TransformLaunch) -> u64 {
+    let params = ntt_params(launch);
+    // SAFETY: the function only reads the provided, fully initialized struct.
+    unsafe { loki_gpu_ntt_scratch_bytes_v1(&params) }
 }
 
 /// Native layout as reported by the linked CUDA translation unit.
@@ -251,7 +314,7 @@ mod native {
     use super::*;
     use crate::runtime::{
         DeviceDriver, DeviceInfo, DeviceMemory, DriverCall, DriverError, DriverErrorClass,
-        DriverHandle, EventId, HandleKind, HostBuffer, StreamId,
+        DriverHandle, EventId, HandleKind, HostBuffer, StreamId, TransformLaunch,
     };
 
     /// CUDA runtime driver over the `loki_gpu_rt_*` ABI. Crate-private: it is
@@ -539,6 +602,36 @@ mod native {
             self.known(DriverCall::Launch, &[&dst.0, &src.0, &stream.0])?;
             let (d, s, q) = (to_c(&dst.0), to_c(&src.0), to_c(&stream.0));
             ffi_call!(DriverCall::Launch, |st| loki_gpu_rt_launch_copy_v1(&d, &s, bytes, &q, &mut st))
+        }
+
+        fn supports_transform(&self) -> bool {
+            true
+        }
+
+        fn launch_transform(
+            &self,
+            dst: DeviceMemory,
+            src: DeviceMemory,
+            scratch: Option<DeviceMemory>,
+            launch: &TransformLaunch,
+            stream: StreamId,
+        ) -> Result<(), DriverError> {
+            let call = DriverCall::Launch;
+            let params = ntt_params(launch);
+            // Rust and native scratch layouts must agree exactly; refuse
+            // before enqueueing anything if they do not.
+            let native = native_ntt_scratch_bytes(launch);
+            let refuse = DriverError {
+                call,
+                class: DriverErrorClass::Transient,
+                code: INVALID_ARGUMENT,
+            };
+            let Some(scratch) = scratch else { return Err(refuse) };
+            if native == 0 || Some(native) != launch.scratch_bytes() {
+                return Err(refuse);
+            }
+            let (d, s, x, q) = (to_c(&dst.0), to_c(&src.0), to_c(&scratch.0), to_c(&stream.0));
+            ffi_call!(call, |st| loki_gpu_ntt_launch_v1(&d, &s, &x, &params, &q, &mut st))
         }
 
         fn record_event(&self, event: EventId, stream: StreamId) -> Result<(), DriverError> {
