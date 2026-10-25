@@ -49,6 +49,11 @@ if (( apply )); then
   [[ "${LOKI_TRAIN_APPLY:-}" == 1 ]] || { echo "--apply needs LOKI_TRAIN_APPLY=1 (coordinator decision); not applied" >&2; exit 6; }
   tgt="${TRAIN_TARGET:-main}"
   git -C "$repo" merge-base --is-ancestor "$tgt" "$tip" || { echo "$tgt is not an ancestor of tip; not applying" >&2; exit 7; }
-  git -C "$repo" update-ref "refs/heads/$tgt" "$tip" "$(git -C "$repo" rev-parse "$tgt")"
+  # A bare update-ref on the checked-out branch leaves its tree and index at the old commit.
+  if [[ "$(git -C "$repo" symbolic-ref -q --short HEAD)" == "$tgt" ]]; then
+    git -C "$repo" merge --ff-only -q "$tip"
+  else
+    git -C "$repo" update-ref "refs/heads/$tgt" "$tip" "$(git -C "$repo" rev-parse "$tgt")"
+  fi
   echo "applied: $tgt -> ${tip:0:8} (local only, no push)"
 fi
