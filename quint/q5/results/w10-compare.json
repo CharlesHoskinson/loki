@@ -1,0 +1,82 @@
+{
+ "summary": {
+  "w10-head vs w10-head+arg": {
+   "equal": 64,
+   "different": 0
+  },
+  "w10-head vs w10-head+arg [BadLagrange, invalid SRS]": {
+   "equal": 0,
+   "different": 16
+  },
+  "w10-head+arg vs main-det": {
+   "equal": 64,
+   "different": 0
+  },
+  "w10-merged+arg+det vs main-det": {
+   "equal": 64,
+   "different": 0
+  },
+  "w10-merged+arg vs main": {
+   "equal": 16,
+   "different": 0
+  },
+  "w10-merged vs main": {
+   "equal": 20,
+   "different": 0
+  },
+  "w10-head vs main [multi-leftover, expected to differ]": {
+   "equal": 0,
+   "different": 60
+  },
+  "stock_accepts[main]": {
+   "Exact": 16,
+   "Oversized": 0,
+   "Downsized": 16,
+   "Serialized": 16,
+   "BadLagrange": 0
+  },
+  "stock_accepts[main-det]": {
+   "Exact": 16,
+   "Oversized": 0,
+   "Downsized": 16,
+   "Serialized": 16,
+   "BadLagrange": 0
+  },
+  "stock_accepts[w10-head]": {
+   "Exact": 16,
+   "Oversized": 0,
+   "Downsized": 16,
+   "Serialized": 16,
+   "BadLagrange": 0
+  },
+  "stock_accepts[w10-head+arg]": {
+   "Exact": 16,
+   "Oversized": 0,
+   "Downsized": 16,
+   "Serialized": 16,
+   "BadLagrange": 0
+  },
+  "stock_accepts[w10-merged]": {
+   "Exact": 16,
+   "Oversized": 0,
+   "Downsized": 16,
+   "Serialized": 16,
+   "BadLagrange": 0
+  },
+  "stock_accepts[w10-merged+arg]": {
+   "Exact": 16,
+   "Oversized": 0,
+   "Downsized": 16,
+   "Serialized": 16,
+   "BadLagrange": 0
+  },
+  "stock_accepts[w10-merged+arg+det]": {
+   "Exact": 16,
+   "Oversized": 0,
+   "Downsized": 16,
+   "Serialized": 16,
+   "BadLagrange": 0
+  }
+ },
+ "failures": []
+}

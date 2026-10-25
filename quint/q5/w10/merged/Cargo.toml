@@ -1,0 +1,29 @@
+[package]
+name = "loki-q5-w10-merged"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "emit-w10-merged"
+path = "../src/main.rs"
+
+[features]
+arg = ["loki/cuda-argument-commit"]
+det = ["loki/loki-deterministic-lookup-order"]
+
+[dependencies]
+loki = { package = "midnight-proofs", path = "../copies/merged" }
+stock = { package = "midnight-proofs", version = "=0.8.3" }
+midnight-curves = "0.3.1"
+ff = "0.13"
+rand_chacha = "0.3"
+rand_core = "0.6"
+blake2b_simd = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+debug-assertions = false
