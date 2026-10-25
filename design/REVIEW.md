@@ -1,6 +1,23 @@
 # Design review and verification record
 
-CODE: this records the design-team review of the API, Unsupported Rust/CUDA skeleton, Lean specification, and implementation packages. It does not claim implemented GPU arithmetic, integration into Loki, stock acceptance of new-backend proofs, or new performance measurements. Unless explicitly labeled otherwise, review findings below are CODE observations or proposed contracts.
+CODE: the initial sections record the design-team review of the API, Unsupported skeleton and Lean specification. Later dated sections review implementation branches and their scoped evidence. They do not establish stock acceptance or end-to-end speedups for the new backend. Unless explicitly labeled otherwise, findings are CODE observations or proposed contracts.
+
+## Current implementation review status — 2026-10-25 08:54 UTC
+
+SOURCE: revisions below are branch-specific; source review is not a claim that
+all branches are merged or that the combined prover is qualified.
+
+| Area | Latest reviewed evidence and remaining gate |
+|---|---|
+| P2/P4 runtime | CODE: P4 `4b2977a` corrects the additional L1/L2/N1/N2 paths, probe classification and native handle guard. MEASURED: the earlier main `eb27233` rerun passed 53 tests. SOURCE: P4 final corrected-source native qualification remains pending. |
+| P3 checked MSM dispatch | CODE: Loki `9fe5da0`/`85586f3` returns cancellation without CPU retry; stock-signature shim is explicitly non-cancellable. MEASURED (P3): CPU-only suite 15 passed, cancellation mutant failed. |
+| P4 transform dispatch | CODE: Loki `7804fa6` propagates cancellation, admits the exact ABI, rejects results after sticky-disable and settles a failed coset offer once on CPU. MEASURED (P4): CPU-only suite 18 passed and stock-default suite 9 passed. OPEN QUESTION: combined P3/P4 merge gate and feature-on stock differential. |
+| P5 quotient | CODE: draft `9d7efb4` corrects Q1/Q3 and the subsequent local-query lock/poison and snapshot-charge findings. MEASURED (P5): fake suite 19 passed; native summary receipt reports the full CUDA suite and three explicit quotient cases passing. OPEN QUESTION: final sanitizer/integration gates and measured qualification of the local-memory estimate. |
+| Lean | SOURCE: components `2a9e9f6` reports both original backend obligations proved, full build and zero `sorry`; this is a separate branch. OPEN QUESTION: reconcile with current gpu-spec modules and run the combined build/axiom audit. |
+
+CODE: R9/R10 repeated-recovery leaks, reservation redemption, actual SRS
+submission pinning and native/Lean refinement limits remain under their
+assigned package gates. No row above closes them.
 
 ## Review disposition
 
@@ -275,3 +292,66 @@ allocation-budget guarantee. [CUDA function attributes](https://docs.nvidia.com/
 CODE: the by-value column pointer table avoids retaining the host handle
 array; its large kernel-parameter requirement must remain tied to the supported
 CUDA/toolchain target. Header shape alone does not approve the launch lifetime.
+
+
+## P5 correction review — 9d7efb4
+
+CODE: astra-gpu reviewed `daec08e`, `b655e34` and `9d7efb4`. Q1 is corrected
+by staging bytecode/constants through runtime-owned slots; the native launch
+reads caller arrays synchronously for validation only. Slot reuse waits for
+retirement, recoverable pre-wait errors drain the copy stream, and uncertain
+errors retain staging and quarantine private device outputs. Q3 native caps
+now precede validator allocation.
+
+CODE: follow-up review found that the new local-memory query ran outside the
+device lock and could return `SessionPoisoned` without changing runtime health.
+It also found that snapshots omitted the retained local-memory charge.
+`9d7efb4` moves the query under the device lock/outside the registry lock,
+poisons on uncertainty and includes the charge in both snapshots' reserved
+bytes. Regression cases cover refusal until reset, repeated-launch accounting
+and rebuilding the context. MEASURED (P5): removing the poison transition or
+snapshot charge makes regression cases fail.
+
+ESTIMATE: native admission now charges a context-wide high-water estimate,
+`round_up(localSizeBytes + 1 KiB, 1 KiB) * SMs * maxThreadsPerSM`, in addition
+to configured device headroom. This is implementation guidance with margin,
+not a CUDA API upper-bound guarantee. [Context-wide local memory](https://forums.developer.nvidia.com/t/local-memory-management/289339),
+[stack allowance and allocation granularity](https://forums.developer.nvidia.com/t/memory-required-for-kernel-launch/39558).
+OPEN QUESTION: qualify that estimate on CUDA 13.4/sm_120 with measured memory
+changes, and align trait/native wording so it does not claim an already-proved
+upper bound or completed qualification.
+
+MEASURED (P5; summary receipt inspected by lead, not a lead execution):
+[`native-9d7efb4`](verification/p5-native-9d7efb4.txt) records `HEAD 9d7efb4
+dirty=0`, passing CUDA suites and quotient oracle cases. Synthetic shape replay
+at 2^19 rows is pointwise-equal to the CPU interpreter; the 2^22-row replay is
+**timing-only**. Neither is a real A3 witness/stock-numerator qualification or
+an end-to-end recursion result. The reported local-memory estimate is 510 MiB
+for R=8. Final receipts should include commands, toolchains and clean build
+input binding before/after build and run.
+
+SOURCE: P5 disclosed that its native runs occurred during the coordinator's
+W12 hold and then acknowledged no further native jobs until RELEASE. W12
+confirmed at 08:51 that its final fixed-seed CPU/GPU pair was starting, with
+no release yet; the earlier P5 completion was relayed for provenance. This
+review does not treat an available lock as permission to bypass that window.
+
+## Runtime formal counterexample mapping
+
+SOURCE/CODE: quint-q3 supplied `quint-runtime` commits
+`eaf8f0a`/`53385e0`/`172b348`, based on `eb27233`, with
+`crates/loki-gpu/tests/quint_findings.rs`, `quint_replay.rs`,
+`quint/runtime.qnt` and `quint/logs/`. Lead read the reproductions and relevant
+logs. The two sticky-setup sequences and shared-driver reset sequence match
+L1/L2. Native-claim release after failed setup is source inspection, not a
+real sticky fault injected on the shared device.
+
+MEASURED (q3 logs): the old model has counterexamples for recoverability and
+stale shared-driver use. Its candidate shell-context fix reports no violation
+in 10,000 sampled traces and recovery in 994; absence of a sampled violation
+is not a proof of the current Rust code. CODE: P4 uses a separate
+`setup_failed` state, so formal closure requires an explicit mapping. The old
+safe shared-driver sequence is excluded by P4's unsafe injection precondition;
+do not wrap that old test in unsafe and call the resulting violation a current
+safe-API bug. Preserve old-revision evidence and use compile-fail/current safe
+construction coverage when integrating it.

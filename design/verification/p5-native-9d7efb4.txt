@@ -1,0 +1,33 @@
+HEAD 9d7efb4 dirty=0
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 13 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.76s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 65.19s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 19 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 22 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.96s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+=== native quotient ignored
+test native::native_large_domain_matches_cpu_oracle ... large: rows 2^18 instr 300 regs 24 cols 12 wall 11.986977ms
+test native::native_random_programs_match_cpu_oracle_on_every_row ... random 0: rows 2^4 instr 8 regs 1 cols 1 wall 376.775µs
+random 1: rows 2^6 instr 40 regs 6 cols 3 wall 96.957µs
+random 2: rows 2^8 instr 200 regs 16 cols 4 wall 378.445µs
+random 3: rows 2^10 instr 400 regs 32 cols 6 wall 396.824µs
+random 4: rows 2^12 instr 600 regs 64 cols 8 wall 9.937535ms
+random 5: rows 2^12 instr 900 regs 128 cols 8 wall 17.09051ms
+random 6: rows 2^11 instr 1200 regs 256 cols 5 wall 29.820779ms
+constants only: rows 2^8 instr 60 regs 8 cols 0 wall 626.125µs
+columns only: rows 2^8 instr 60 regs 8 cols 4 wall 199.83µs
+test native::native_replay_dumped_shape ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 1.45s
+replay rows 2^19 instr 79 regs 5 cols 17: upload 106.669004ms (2.67 GB/s), launch 3.496047ms (kernel event 1.125 ms), download 25.963485ms, local-memory bound 510 MiB
+test native::native_replay_dumped_shape ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 1.55s
+replay rows 2^22 instr 79 regs 5 cols 17: upload 752.613616ms (3.03 GB/s), launch 8.286595ms (kernel event 4.168 ms), download 210.301993ms, local-memory bound 510 MiB
+test native::native_replay_dumped_shape ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 5.48s
+EXIT 0
