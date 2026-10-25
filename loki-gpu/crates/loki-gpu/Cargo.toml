@@ -55,6 +55,10 @@ path = "tests/ffi_abi.rs"
 required-features = ["cuda"]
 
 [[test]]
+name = "scheduler_contract"
+path = "tests/scheduler_contract.rs"
+
+[[test]]
 name = "ntt_differential"
 path = "tests/ntt_differential.rs"
 required-features = ["cuda"]

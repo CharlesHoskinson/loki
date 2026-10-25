@@ -12,6 +12,7 @@ pub mod msm;
 pub mod ntt;
 pub mod quotient;
 pub mod runtime;
+pub mod schedule;
 pub mod srs;
 
 /// Versioned C ABI mirrors and (with `cuda`) the native runtime driver.
