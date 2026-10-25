@@ -392,3 +392,140 @@ roots) arithmetic and use a working remainder buffer; sparse-product gains do no
 apply to every circuit. No k20, real recursive-parent, GPU or cross-thread byte
 identity result was run for this extension. End-to-end performance remains an
 open measurement limitation on this shared host.
+
+## Run 3: preserve the stock verifier source
+
+The verifier source is restored exactly to `8eb0cee`, including whitespace.
+The affected verifier functions are `KZGCommitmentScheme::multi_prepare` and
+`utils::construct_intermediate_sets`. The latter now contains its original
+implementation, with real `Query::get_eval` calls. The separate
+`construct_intermediate_sets_with_evals` copy and its `construct_prover_sets`
+entry point are both behind `loki-multiopen`; only the feature prover calls them.
+The copy differs from the original grouping body only in its evaluation callback.
+This duplication keeps the stock verifier source intact and preserves an
+independent grouping oracle for the differential tests.
+
+`get_verifier_params` is also unchanged. The complete `params.rs` and `msm.rs`
+files are byte-identical to `8eb0cee`, covering verifier parameter access and
+serialization, `DualMSM::check`, `SplitDualMSM::verify` and all MSM operations.
+No verifier function changes appear in
+`git diff 8eb0cee -- src/poly/kzg/`: the only modified existing function is the
+prover's `multi_open`; all other additions are feature prover helpers and tests.
+No changes were made to `evaluation.rs`, `domain.rs` or any `msm*` file.
+
+The source regression check in `target/w11-run3/check_stock_verifier.py` failed
+on both affected functions before restoration, then passed afterward. It compares
+the entire `multi_prepare` implementation, the entire original `utils.rs` prefix
+(including grouping and shared types), and the full parameter/MSM files as bytes
+against `git show 8eb0cee:<path>`. An independent read-only review confirmed the
+source equality, callback-only difference and unchanged duplicate-query rejection.
+`target/w11-run3/kzg-vs-stock.diff` saves the complete KZG diff for inspection.
+Lean coordination was notified that division/reordering semantics are unchanged
+and the verifier no longer shares the prover's callback helper. This run adds no
+Lean or Rust-to-Lean extraction claim.
+
+Run-3 validation uses `CARGO_BUILD_JOBS=4` throughout. Commands completed for the
+restored source (logs are in `target/w11-run3/`):
+
+```sh
+RAYON_NUM_THREADS=4 cargo test --offline --locked --release --lib \
+  poly::kzg -- --test-threads=1
+RAYON_NUM_THREADS=4 cargo test --offline --locked --release --lib \
+  --features loki-multiopen poly::kzg -- --test-threads=1
+RAYON_NUM_THREADS=4 cargo test --offline --locked --release --lib \
+  --features loki-multiopen,truncated-challenges poly::kzg -- --test-threads=1
+cargo build --offline --locked --release --features loki-profile --example loki-profile
+cp target/release/examples/loki-profile target/w11-run3/profile-serial
+cargo build --offline --locked --release --features loki-profile,loki-multiopen \
+  --example loki-profile
+cp target/release/examples/loki-profile target/w11-run3/profile-run3
+cargo build --offline --locked --release --manifest-path loki-harness/Cargo.toml \
+  --features loki-multiopen --bin gate
+python3 target/w11-run3/check_stock_verifier.py
+git diff --check
+```
+
+The KZG suites passed **8/8 default**, **14/14 feature**, and **14/14 feature
+with truncated challenges**, with no failures. Source byte comparisons also
+passed. The profile executables and W2 gate were rebuilt from this restored
+source; the Run-2 feature control is the saved `61bc758` executable whose hash
+is recorded above.
+
+The Lean owner subsequently reported that the Run-2 composition builds with zero
+`sorry` and auditor acceptance. The source contains `lokiOps_meets`,
+`loki_multiOpen_eq_stock`, `loki_multiOpen_zero_evals` and
+`divideByRoots_eq_kateFold` in `LokiLean/Multiopen.lean`. This lane checked those
+names in the source and notified the owner of the restored verifier/prover
+separation; it did not run the Lean build itself.
+
+Restoration implementation commit: **`8711224`** (`Restore stock KZG verifier
+source`), committed through the host runner after the targeted suites and source
+review passed. `target/w11-run3/metadata.json` records this commit, matching
+committed source blobs and all three profile executable hashes. Its saved Run-2
+control hash matches the recorded Run-2 hash exactly.
+
+### Run-3 k17 trio
+
+A fresh k17 trio passed local verification, exact phase-sum checks and strict
+whole-proof byte equality at **four Rayon threads**. The paths are rebuilt
+feature-off serial, saved Run-2 feature (`61bc758`), and restored Run-3 feature
+(`8711224`). All three proofs are 1,280 bytes with SHA-256
+`1f708ba944b3f9d57b5b7e561504b0ba6ea3acd2401fbdde31cdf998390e107f`, also matching
+the previous Run-2 serial proof at this thread count.
+
+The circuit remains `examples/loki-profile/circuit.rs::ProfileCircuit`, on
+`homeoffice`, Intel Core Ultra 9 285K, 20 logical CPUs, WSL2 Linux 6.18.33.1,
+rustc 1.99.1. These fresh-process CPU measurements were taken on 2026-10-25 UTC,
+with release builds, default features plus `loki-profile`, and additionally
+`loki-multiopen` for Run 2/3. No CPU affinity was pinned. One sample per path:
+
+| k | Rayon threads | Path | KZG multiopen ms | End-to-end ms | Phase share |
+|---|---:|---|---:|---:|---:|
+| 17 | 4 | Serial | 585.996 | 2862.069 | 20.47% |
+| 17 | 4 | Run 2 | 484.178 | 2598.031 | 18.64% |
+| 17 | 4 | Run 3 | 480.620 | 2715.963 | 17.70% |
+
+End-to-end is `create_proof` only, excluding setup, keygen and verification.
+The shared heavy lock was held across the entire trio. This is a compatibility
+rerun with one sample, not evidence of a performance change from restoring the
+verifier source. No fresh twenty-thread measurement was requested or run in
+Run 3; the Run-2 measurements above remain the repeated-sample record.
+
+`python3 target/w11-run3/validate.py > target/w11-run3/validation.log 2>&1` runs
+the trio and then the W2 gate, acquiring the shared DoctorWatson `heavy.lock`
+for each job. Each profile invocation is equivalent to:
+
+```sh
+RAYON_NUM_THREADS=4 target/w11-run3/profile-serial 17 target/w11-run3/serial-k17-t4.proof
+RAYON_NUM_THREADS=4 target/w11-run2/profile-run2 17 target/w11-run3/run2-k17-t4.proof
+RAYON_NUM_THREADS=4 target/w11-run3/profile-run3 17 target/w11-run3/run3-k17-t4.proof
+cmp target/w11-run3/serial-k17-t4.proof target/w11-run3/run2-k17-t4.proof
+cmp target/w11-run3/serial-k17-t4.proof target/w11-run3/run3-k17-t4.proof
+```
+
+Raw reports and synthetic proof artifacts are
+`target/w11-run3/{serial,run2,run3}-k17-t4.{json,proof}`; the driver saves stderr
+separately. `metadata.json` records the executable hashes and source identities.
+
+### Run-3 W2 gate result
+
+The rebuilt feature gate completed with **exit 0**:
+
+```sh
+RAYON_NUM_THREADS=1 loki-harness/target/release/gate 10 14 17
+```
+
+All three records report `cross_verified: true` and `vk_equal: true`. The full
+SRS roundtrips, broken-constraint controls, wrong-input/empty/appended-proof
+rejections and three byte-identical 1,136-byte no-lookup controls passed. Registry
+stock lookup proofs first differ at byte 192, consistent with its randomized
+HashMap ordering; both cross-verification directions passed. The strict
+Loki-serial/Run-2/Run-3 byte check above passed independently.
+
+Raw gate output is `target/w11-run3/w2-gate.{jsonl,stderr}`. Final readback checked
+all KZG suite summaries, the three profile reports, source and executable hashes,
+proof equality and all W2 records. `git diff --check` passed. Only the report
+changed after implementation commit `8711224`. No push, GPU or k20 run occurred.
+The deliberate prover grouping copy can drift in future edits; its differential
+test remains the guard. Shared-host timings are single samples in this rerun,
+and Rust-to-Lean extraction is still outside this lane's verification.
