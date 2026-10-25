@@ -416,8 +416,13 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         if Self::gpu_fft(a, omega, false) {
             return;
         }
-        #[cfg(all(feature = "loki-profile", not(feature = "cuda-ntt")))]
+        // Without the legacy adapter the work is CPU unless the P1 seam
+        // (`loki-gpu-backend`) routes it; then the backend dispatch
+        // counters, not this profile label, are authoritative.
+        #[cfg(all(feature = "loki-profile", not(feature = "cuda-ntt"), not(feature = "loki-gpu-backend")))]
         crate::profile::record_backend("ntt.cpu_no_feature", a.len());
+        #[cfg(all(feature = "loki-profile", not(feature = "cuda-ntt"), feature = "loki-gpu-backend"))]
+        crate::profile::record_backend("ntt.p1_dispatch", a.len());
         #[cfg(feature = "loki-backend-api")]
         crate::backend::dispatch::fft(a, omega, log_n);
         #[cfg(not(feature = "loki-backend-api"))]
@@ -438,14 +443,15 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             crate::profile::record_backend("ntt.cpu_forced", a.len());
             return false;
         }
-        if let Some(values) =
-            (a as &mut dyn std::any::Any).downcast_mut::<Vec<midnight_curves::Fq>>()
+        if let Some(values) = (a as &mut dyn std::any::Any)
+            .downcast_mut::<Vec<midnight_curves::Fq>>()
         {
             let root = (&omega as &dyn std::any::Any)
                 .downcast_ref::<midnight_curves::Fq>()
                 .expect("field/root type mismatch");
-            // The adapter preserves input on error. Returning false selects
-            // the CPU FFT and its single inverse normalization.
+            // LokiLean/Ntt.lean: idft includes exactly one 1/n. The adapter
+            // preserves values on error; returning false selects best_fft and
+            // its CPU divisor, whereas a successful sppark inverse is scaled.
             let result = loki_cuda_ntt::fft(values, *root, inverse);
             #[cfg(feature = "loki-profile")]
             crate::profile::record_backend(
@@ -478,8 +484,13 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         if Self::gpu_fft(a, omega_inv, true) {
             return;
         }
-        #[cfg(all(feature = "loki-profile", not(feature = "cuda-ntt")))]
+        // Without the legacy adapter the work is CPU unless the P1 seam
+        // (`loki-gpu-backend`) routes it; then the backend dispatch
+        // counters, not this profile label, are authoritative.
+        #[cfg(all(feature = "loki-profile", not(feature = "cuda-ntt"), not(feature = "loki-gpu-backend")))]
         crate::profile::record_backend("ntt.cpu_no_feature", a.len());
+        #[cfg(all(feature = "loki-profile", not(feature = "cuda-ntt"), feature = "loki-gpu-backend"))]
+        crate::profile::record_backend("ntt.p1_dispatch", a.len());
         #[cfg(feature = "loki-backend-api")]
         crate::backend::dispatch::ifft(a, omega_inv, log_n, divisor);
         #[cfg(not(feature = "loki-backend-api"))]
@@ -567,9 +578,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         if rotation.0 >= 0 {
             point *= &self.get_omega().pow_vartime([rotation.0 as u64]);
         } else {
-            point *= &self
-                .get_omega_inv()
-                .pow_vartime([(rotation.0 as i64).unsigned_abs()]);
+            point *= &self.get_omega_inv().pow_vartime([(rotation.0 as i64).unsigned_abs()]);
         }
         point
     }

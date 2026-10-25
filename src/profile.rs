@@ -444,7 +444,9 @@ mod tests {
             );
             let outer = &proof.phases["compute_nu_poly"].backends;
             assert_eq!(outer["msm.cpu_fallback"].sizes[&16], 1);
-            assert_eq!(outer.len(), 1);
+            // The dispatch outcome and the timed `msm.prepare` counter
+            // share the phase.
+            assert_eq!(outer.len(), 2);
             let inner = &proof.phases["quotient_evaluation"].backends;
             assert_eq!(inner["ntt.gpu"].sizes[&32], 1);
             assert_eq!(inner["ntt.gpu_error"].sizes[&64], 1);
