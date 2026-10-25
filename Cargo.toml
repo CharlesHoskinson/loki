@@ -14,7 +14,7 @@ edition = "2021"
 rust-version = "1.76.0"
 name = "midnight-proofs"
 version = "0.8.3"
-build = false
+build = "build.rs"
 autolib = false
 autobins = false
 autoexamples = false
@@ -46,6 +46,7 @@ rustdoc-args = [
 bench-internal = ["criterion"]
 circuit-params = []
 cuda-ntt = ["dep:loki-cuda-ntt"]
+cuda = ["dep:sppark", "dep:cc"]
 committed-instances = []
 default = ["committed-instances"]
 derive_serde = ["midnight-curves/serde"]
@@ -123,7 +124,7 @@ version = "1"
 
 # All MSM parallelism uses the active Rayon pool, including nested callers.
 [dependencies.blst]
-version = "0.3"
+version = "0.3.16"
 features = ["no-threads"]
 
 [dependencies.criterion]
@@ -171,6 +172,9 @@ optional = true
 [dependencies.tracing]
 version = "0.1"
 
+[dev-dependencies.blst]
+version = "0.3.16"
+
 [dev-dependencies.assert_matches]
 version = "1.5"
 
@@ -199,4 +203,13 @@ features = ["portable"]
 
 [dependencies.loki-cuda-ntt]
 path = "cuda-ntt"
+optional = true
+
+[dependencies.sppark]
+version = "=0.1.16"
+features = ["cuda"]
+optional = true
+
+[build-dependencies.cc]
+version = "1"
 optional = true

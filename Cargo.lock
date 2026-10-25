@@ -783,6 +783,7 @@ dependencies = [
  "assert_matches",
  "blake2b_simd",
  "blst",
+ "cc",
  "criterion",
  "ff",
  "getrandom 0.2.17",
@@ -800,6 +801,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "sha2",
+ "sppark",
  "tabbycat",
  "tracing",
 ]
