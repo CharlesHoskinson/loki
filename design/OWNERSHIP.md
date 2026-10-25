@@ -1,0 +1,29 @@
+# Design ownership
+
+CODE (coordination): one writer per file; read-only cross-review is allowed. Every owner also owns `design/gluna-N/**`; each scout owns only `design/research/ghaiku-N/**`. All work is Apache-2.0 and the owner brief's clean-room exclusions apply. Agents must not edit `.git`, other worktrees, or Loki production sources. Commits go through gpu-runner-2 after lead review.
+
+| Owner | Exclusive files |
+|---|---|
+| astra-gpu | design/ARCHITECTURE.md, PLAN.md, OWNERSHIP.md, REVIEW.md, QUOTIENT.md, NTT.md, design/verification/** |
+| gluna-1 | crates/loki-backend-api/Cargo.toml, crates/loki-backend-api/src/**, design/LOKI-PATCH-PLAN.md |
+| gluna-2 | gpu-spec/LokiLean/Backend.lean, gpu-spec/LokiLean/BackendQuotient.lean, gpu-spec/LokiLean.lean |
+| gluna-3 | gpu-spec/LokiLean/BackendMsm.lean, gpu-spec/LokiLean/BackendNtt.lean |
+| gluna-4 | design/MSM.md, crates/loki-gpu/src/msm.rs, crates/loki-gpu/cuda/msm.cu |
+| gluna-5 | crates/loki-gpu/src/ntt.rs, crates/loki-gpu/cuda/ntt.cu; initial NTT design/Lean credited before transfer |
+| gluna-6 | None after 2026-10-25 05:15 UTC transfer; STOP sent |
+| gluna-7 | design/RUNTIME.md, crates/loki-gpu/src/runtime.rs, crates/loki-gpu/src/srs.rs |
+| gluna-8 | Cargo.toml, Cargo.lock, .gitignore, crates/loki-gpu/Cargo.toml, build.rs, src/lib.rs, src/ffi.rs, src/quotient.rs, cuda/quotient.cu, cuda/include/**, design/BUILD.md, .github/workflows/** |
+| gluna-9 | design/TEST-PLAN.md |
+| gluna-10 | design/RECURSION.md, design/PROVENANCE.md |
+
+CODE (paths): `gpu-spec/` above means `/home/charles/repos/loki-lean-wt/gpu-spec/`, not a directory in this repository. Source pins are recorded in the design, patch plan, and provenance documents.
+
+CODE (review ring): gluna-1 reviews runtime/SRS; gluna-2 reviews BackendMsm; gluna-3 reviews BackendNtt; gluna-4 reviews build/FFI; gluna-5 reviews MSM; gluna-6 reviews generic Backend; gluna-7 reviews recursion/scheduler; gluna-8 reviews API/patch plan; gluna-9 reviews quotient; gluna-10 reviews tests. Each reviewer writes `design/gluna-N/PEER-REVIEW.md`, sends findings to the owner and lead, and reviews corrections. The lead reviews every draft and reconciles interfaces.
+
+CODE (lead claim receipts): ARCHITECTURE hold 01M5RPN29ZYHP0KZBW1BFY90X6; PLAN hold 01M5RPN2HVFW900M9N9EXCRT7X; OWNERSHIP hold 01M5RPN2QJJ558GE5NK3XDQKCD; REVIEW hold 01M5RPN309EEJ0TSYWBKF2MK8T. All granted through 2026-10-25 08:56 UTC. These are coordination tokens, not credentials.
+
+CODE (recovery): gluna-6 never acknowledged the assignment or produced files before the announced 05:15 UTC deadline. Lead explicitly revoked ownership and sent STOP before transferring files to the owners above. gluna-1 covers the generic Backend review in addition to runtime; gluna-9 still reviews quotient. No claim is made that the unavailable engineer completed a review.
+
+CODE (NTT review recovery): after gluna-5 delivered the initial NTT draft and MSM review, blocking finite-state/algorithm-composition revisions remained unacknowledged through the announced 05:20 UTC deadline. Lead revoked those two paths before transfer: BackendNtt to gluna-3, NTT.md to lead. Lead independently reviews the correction; the original peer findings remain recorded.
+
+CODE (final verification handoff): after accepting gluna-8’s frozen build/FFI work, lead sent STOP and took temporary `.cargo/config.toml`, final runner submissions and BUILD.md receipt edits. The temporary file supplies only toolkit environment variables, is excluded from commits, and is removed after the checks. All other engineer files are frozen; initial ownership/credits above remain historical.

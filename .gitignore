@@ -1,0 +1,6 @@
+/target/
+**/*.ptx
+**/*.cubin
+**/*.fatbin
+*.swp
+

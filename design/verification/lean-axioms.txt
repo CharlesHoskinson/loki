@@ -1,0 +1,23 @@
+'Loki.Backend.dispatch_public_eq_reference' does not depend on any axioms
+'Loki.Backend.proof_events_eq_stock' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.Backend.proof_bytes_eq_stock' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.Backend.byte_verifier_decision_eq_stock' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendMsm.stockBackendWithBatchDispatch_proofBytes_eq_stock' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'Loki.BackendMsm.segmentedValue_eq_pippengerList' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'Loki.BackendMsm.segmentedKernelDispatch_meetsMsmSpecific' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'Loki.BackendNtt.kernelList_eq_stock' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendNtt.kernelCall_contract' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendNtt.backendWithKernels_proof_bytes_eq_stock' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendQuotient.valid_program_eval_some' depends on axioms: [propext, sorryAx, Quot.sound]
+'Loki.BackendQuotient.runProgram_valid_eq_bytecodeVector' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'Loki.BackendQuotient.bytecodeVector_eq_stock_numerator' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendQuotient.compiledBytecodeCall_meetsContract' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Loki.BackendQuotient.compiledBytecodeProofBytes_eq_stock' depends on axioms: [propext, Classical.choice, Quot.sound]
