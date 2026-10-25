@@ -18,6 +18,10 @@ cuda-resident = ["cuda"]
 loki-backend-api = { path = "../loki-backend-api" }
 ff = "0.13.1"
 group = "0.13.0"
+# P4 wire boundary: the only scalar type whose `to_repr` the NTT kernels accept
+# (canonical little-endian BLS12-381 Fr). The same crates.io release Loki
+# uses, so the `TypeId` allowlist in `ntt::wire_field_supported` unifies.
+midnight-curves = { version = "0.3.1", default-features = false }
 
 [build-dependencies]
 cc = { version = "1", optional = true }
@@ -36,6 +40,10 @@ midnight-proofs = "=0.8.3"
 [[test]]
 name = "runtime_contract"
 path = "tests/runtime_contract.rs"
+
+[[test]]
+name = "lifecycle_regressions"
+path = "tests/lifecycle_regressions.rs"
 
 [[test]]
 name = "ffi_abi"

@@ -230,6 +230,31 @@ fn wire_field_check_identifies_bls12_381_only() {
     assert!(wire_field_supported::<Fr>());
     assert!(!wire_field_supported::<support::Toy>());
     assert!(!wire_field_supported::<midnight_curves::Fp>());
+    // N2: same modulus, width and sample encodings, different bijective
+    // representation elsewhere: refused by type before any device work.
+    use ntt_support::impostor::Impostor;
+    for x in [Fr::ZERO, Fr::ONE, Fr::from(u64::MAX) + Fr::ONE, -Fr::ONE] {
+        assert_eq!(Impostor(x).to_repr().0.as_slice(), x.to_repr().as_ref(), "samples agree");
+    }
+    let v = Fr::from(256);
+    assert_ne!(Impostor(v).to_repr().0.as_slice(), v.to_repr().as_ref(), "differs elsewhere");
+    assert_eq!(Impostor::from_repr(Impostor(v).to_repr()).unwrap(), Impostor(v));
+    assert!(!wire_field_supported::<Impostor>());
+    let s = Stock::new(1, 3);
+    let spec = s.spec_coeff_to_lagrange();
+    let spec = TransformSpec {
+        root: Impostor(spec.root),
+        source_log_size: spec.source_log_size,
+        output_log_size: spec.output_log_size,
+        direction: spec.direction,
+        input_order: spec.input_order,
+        output_order: spec.output_order,
+        inverse_normalization: spec.inverse_normalization,
+        coset: None,
+    };
+    let rt = GpuRuntime::unavailable();
+    let e = transform_host(&rt, &vec![Impostor::ONE; 8], spec).expect_err("refused");
+    assert_eq!(e.kind, ErrorKind::Unsupported, "{e:?}");
 }
 
 // ---------------------------------------------------------------------------

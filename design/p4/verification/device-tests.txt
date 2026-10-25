@@ -1,6 +1,6 @@
 source commit: f716257b989d5e2c6ce1a655a25c4d2e0fdf6c22 (clean crates/ and Cargo.lock)
 $ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test ntt_differential -- --test-threads=1
-warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
      Running tests/ntt_differential.rs (target/debug/deps/ntt_differential-86fe44898b882254)
 
@@ -31,7 +31,7 @@ $ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.36s
      Running tests/ntt_process_entry.rs (target/debug/deps/ntt_process_entry-a01fd26ccc1c1af8)
 
@@ -42,7 +42,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 exit=0
 $ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test resident_ntt -- --test-threads=1
-warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
      Running tests/resident_ntt.rs (target/debug/deps/resident_ntt-577daf231d4232e9)
 
@@ -70,7 +70,7 @@ test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; fin
 
 exit=0
 $ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test ffi_abi -- --test-threads=1
-warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
      Running tests/ffi_abi.rs (target/debug/deps/ffi_abi-a07d0359ef377a29)
 
@@ -94,7 +94,7 @@ test result: ok. 13 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; fin
 
 exit=0
 $ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test runtime_contract -- --test-threads=1
-warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
      Running tests/runtime_contract.rs (target/debug/deps/runtime_contract-78fda065237f07ac)
 
@@ -143,7 +143,7 @@ test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 exit=0
 $ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test p2_fix_regressions -- --test-threads=1
-warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
      Running tests/p2_fix_regressions.rs (target/debug/deps/p2_fix_regressions-c716a57ea6057b0e)
 
@@ -163,7 +163,7 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 exit=0
 $ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test review_regressions -- --test-threads=1
-warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
      Running tests/review_regressions.rs (target/debug/deps/review_regressions-8472b58b0e36b136)
 
@@ -177,7 +177,7 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 exit=0
 $ cargo test -p loki-gpu (default features, no device)
-   Compiling loki-gpu v0.1.0 (/home/charles/repos/loki-gpu-wt/p4-ntt/crates/loki-gpu)
+   Compiling loki-gpu v0.1.0 (./crates/loki-gpu)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
      Running unittests src/lib.rs (target/debug/deps/loki_gpu-29a290513ee0436a)
 

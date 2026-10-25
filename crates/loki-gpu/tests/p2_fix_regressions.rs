@@ -4,10 +4,9 @@
 //! transfer/launch path.
 mod support;
 
-use std::sync::Arc;
 
 use loki_backend_api::{ErrorKind, FailureEffect, ReservationResult, ResidentBackend};
-use loki_gpu::runtime::fake::{DriverCall, FakeConfig, FakeDriver, Fault};
+use loki_gpu::runtime::fake::{DriverCall, FakeConfig, FakeControl, Fault};
 use loki_gpu::runtime::{DriverErrorClass, GpuRuntime, RuntimeConfig};
 use support::{scalars, Toy, ToyPoint};
 
@@ -22,9 +21,8 @@ fn config() -> RuntimeConfig {
     }
 }
 
-fn runtime() -> (Arc<FakeDriver>, GpuRuntime) {
-    let fake = Arc::new(FakeDriver::new(FakeConfig::default()));
-    let rt = GpuRuntime::with_driver(fake.clone(), config());
+fn runtime() -> (FakeControl, GpuRuntime) {
+    let (fake, rt) = GpuRuntime::with_fake(FakeConfig::default(), config());
     (fake, rt)
 }
 
@@ -189,7 +187,7 @@ fn setup_cleanup_stops_at_every_failure_boundary() {
 // D3: sticky optional-telemetry failures poison and never publish
 // --------------------------------------------------------------------------
 
-fn assert_poisoned<T: std::fmt::Debug>(rt: &GpuRuntime, fake: &FakeDriver, r: Result<T, loki_backend_api::BackendError>) {
+fn assert_poisoned<T: std::fmt::Debug>(rt: &GpuRuntime, fake: &FakeControl, r: Result<T, loki_backend_api::BackendError>) {
     let e = r.expect_err("sticky telemetry failure must not publish");
     assert_eq!(e.effect, FailureEffect::SessionPoisoned, "{e:?}");
     assert!(!rt.snapshot().healthy);

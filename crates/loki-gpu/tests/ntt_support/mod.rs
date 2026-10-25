@@ -15,6 +15,9 @@
 
 #![allow(dead_code)]
 
+#[allow(dead_code)]
+pub mod impostor;
+
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
 use loki_backend_api::{
     CosetSpec, ElementOrder, InverseNormalization, TransformDirection, TransformSpec,

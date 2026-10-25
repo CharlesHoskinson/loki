@@ -1,8 +1,8 @@
 source commit: f716257b989d5e2c6ce1a655a25c4d2e0fdf6c22 (clean crates/ and Cargo.lock)
 $ flock heavy.lock flock gpu.lock cargo test --release -p loki-gpu --features cuda --test resident_ntt -- --ignored --nocapture measure_
-warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
-warning: loki-gpu@0.1.0: /home/charles/repos/loki-gpu-wt/p4-ntt/crates/loki-gpu/cuda/runtime.cu: In function 'int32_t _GLOBAL__N__8ef1199c_10_runtime_cu_24ab6359::fill_info(int32_t, loki_gpu_device_info_v1*, loki_gpu_status_v1*)':
-warning: loki-gpu@0.1.0: /home/charles/repos/loki-gpu-wt/p4-ntt/crates/loki-gpu/cuda/runtime.cu:161:13: warning: 'char* __builtin_strncpy(char*, const char*, long unsigned int)' output may be truncated copying 63 bytes from a string of length 255 [-Wstringop-truncation]
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+warning: loki-gpu@0.1.0: ./crates/loki-gpu/cuda/runtime.cu: In function 'int32_t _GLOBAL__N__8ef1199c_10_runtime_cu_24ab6359::fill_info(int32_t, loki_gpu_device_info_v1*, loki_gpu_status_v1*)':
+warning: loki-gpu@0.1.0: ./crates/loki-gpu/cuda/runtime.cu:161:13: warning: 'char* __builtin_strncpy(char*, const char*, long unsigned int)' output may be truncated copying 63 bytes from a string of length 255 [-Wstringop-truncation]
 warning: loki-gpu@0.1.0:   161 |   std::strncpy(out->name, prop.name, sizeof(out->name) - 1);
 warning: loki-gpu@0.1.0:       |             ^
     Finished `release` profile [optimized] target(s) in 0.18s

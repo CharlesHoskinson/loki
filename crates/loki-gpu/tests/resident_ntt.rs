@@ -13,13 +13,12 @@
 
 mod ntt_support;
 
-use std::sync::Arc;
 
 use loki_backend_api::{
     BackendError, ErrorKind, FailureEffect, ResidentBackend, ResidentBuffer,
 };
-use loki_gpu::ntt::{transform_chain, transform_resident};
-use loki_gpu::runtime::fake::{DriverCall, FakeConfig, FakeDriver, Fault};
+use loki_gpu::ntt::{transform_chain, transform_host, transform_resident};
+use loki_gpu::runtime::fake::{DriverCall, FakeConfig, FakeControl, Fault};
 use loki_gpu::runtime::{DriverErrorClass, GpuRuntime, LossClass, RuntimeConfig};
 use ntt_support::*;
 
@@ -41,10 +40,9 @@ fn config(budget: u64) -> RuntimeConfig {
     }
 }
 
-fn fake_rt(budget: u64) -> (Arc<FakeDriver>, GpuRuntime) {
-    let fake = Arc::new(FakeDriver::new(FakeConfig::default()));
+fn fake_rt(budget: u64) -> (FakeControl, GpuRuntime) {
+    let (fake, rt) = GpuRuntime::with_fake(FakeConfig::default(), config(budget));
     fake.enable_transform();
-    let rt = GpuRuntime::with_driver(fake.clone(), config(budget));
     rt.initialize().expect("fake initializes");
     (fake, rt)
 }
@@ -55,7 +53,7 @@ fn assert_err<T: std::fmt::Debug>(r: Result<T, BackendError>, kind: ErrorKind, e
     assert!(e.preserves_observable_state());
 }
 
-fn assert_clean(fake: &FakeDriver) {
+fn assert_clean(fake: &FakeControl) {
     let v = fake.violations();
     assert!(v.is_empty(), "lifetime violations: {v:?}");
 }
@@ -155,6 +153,83 @@ fn output_or_scratch_allocation_failure_is_not_started() {
         rb(&rt).release_scalars(out).unwrap();
         assert_clean(&fake);
     }
+}
+
+#[test]
+fn allocation_cleanup_failure_reports_the_cleanup_error() {
+    // Scratch allocation fails (DeviceAlloc #2), then freeing the already
+    // allocated output (DeviceFree #1) fails: the context is untrusted and
+    // the reported kind is the cleanup failure's, not Allocation.
+    let (fake, rt) = fake_rt(1 << 20);
+    let s = small();
+    let src = rb(&rt).upload_scalars(&input(Pattern::Random, s.n(), 21)).unwrap();
+    fake.inject(DriverCall::DeviceAlloc, 2, Fault::Fail(DriverErrorClass::Transient));
+    fake.inject(DriverCall::DeviceFree, 1, Fault::Fail(DriverErrorClass::Transient));
+    assert_err(
+        transform_resident(&rt, &src, s.spec_coeff_to_extended()),
+        ErrorKind::Internal,
+        FailureEffect::SessionPoisoned,
+    );
+    assert!(!rt.snapshot().healthy);
+    assert_eq!(fake.calls(DriverCall::Launch), 0);
+    assert_eq!(live_reserved(&rt).1, 0);
+}
+
+#[test]
+fn chain_final_intermediate_release_failure_publishes_nothing() {
+    // Two steps: scratch frees are DeviceFree #1 and #2, the release of the
+    // first step's output (the final intermediate) is #3.
+    let (fake, rt) = fake_rt(1 << 20);
+    let s = small();
+    let src = rb(&rt).upload_scalars(&input(Pattern::Random, s.n(), 22)).unwrap();
+    fake.inject(DriverCall::DeviceFree, 3, Fault::Fail(DriverErrorClass::Transient));
+    let r = transform_chain(&rt, &src, &[s.spec_lagrange_to_coeff(), s.spec_coeff_to_lagrange()]);
+    assert_err(r, ErrorKind::Internal, FailureEffect::SessionPoisoned);
+    assert!(!rt.snapshot().healthy);
+    assert_eq!(fake.calls(DriverCall::Launch), 2);
+}
+
+#[test]
+fn host_release_failures_fail_the_call() {
+    // transform_host frees: scratch (#1), source (#2), output (#3).
+    for nth in [2usize, 3] {
+        let (fake, rt) = fake_rt(1 << 20);
+        let s = small();
+        let a = input(Pattern::Random, s.n(), 23);
+        fake.inject(DriverCall::DeviceFree, nth, Fault::Fail(DriverErrorClass::Transient));
+        assert_err(
+            transform_host(&rt, &a, s.spec_coeff_to_lagrange()),
+            ErrorKind::Internal,
+            FailureEffect::SessionPoisoned,
+        );
+        assert!(!rt.snapshot().healthy, "nth={nth}");
+    }
+}
+
+#[test]
+fn host_cleanup_poison_outranks_a_preserved_launch_error() {
+    // The launch fails and drains (dst #1 and scratch #2 freed, effect
+    // InputsPreserved); the source release (#3) then fails and poisons. The
+    // stronger effect is reported.
+    let (fake, rt) = fake_rt(1 << 20);
+    let s = small();
+    let a = input(Pattern::Random, s.n(), 24);
+    fake.inject(DriverCall::Launch, 1, Fault::Fail(DriverErrorClass::Transient));
+    fake.inject(DriverCall::DeviceFree, 3, Fault::Fail(DriverErrorClass::Transient));
+    assert_err(
+        transform_host(&rt, &a, s.spec_coeff_to_lagrange()),
+        ErrorKind::Internal,
+        FailureEffect::SessionPoisoned,
+    );
+    // An operation that already poisoned keeps its own error.
+    let (fake, rt) = fake_rt(1 << 20);
+    fake.inject(DriverCall::Launch, 1, Fault::FailAtSync(DriverErrorClass::Poisoned));
+    assert_err(
+        transform_host(&rt, &a, s.spec_coeff_to_lagrange()),
+        ErrorKind::Synchronization,
+        FailureEffect::SessionPoisoned,
+    );
+    assert_eq!(fake.calls(DriverCall::Launch), 1);
 }
 
 #[test]
@@ -333,8 +408,7 @@ fn record_failure_before_launch_drains_cleanly() {
 
 #[test]
 fn driver_without_transform_is_unsupported_without_driver_calls() {
-    let fake = Arc::new(FakeDriver::new(FakeConfig::default()));
-    let rt = GpuRuntime::with_driver(fake.clone(), config(1 << 20));
+    let (fake, rt) = GpuRuntime::with_fake(FakeConfig::default(), config(1 << 20));
     rt.initialize().unwrap();
     let s = small();
     let src = rb(&rt).upload_scalars(&input(Pattern::Random, s.n(), 7)).unwrap();

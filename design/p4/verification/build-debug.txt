@@ -1,4 +1,4 @@
-warning: loki-gpu@0.1.0: CUDA compiler selected: /home/charles/.local/opt/cuda-13.4.3/bin/nvcc
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
   Executable unittests src/lib.rs (target/debug/deps/loki_gpu-f551ea5a6a291667)
   Executable tests/ffi_abi.rs (target/debug/deps/ffi_abi-a07d0359ef377a29)

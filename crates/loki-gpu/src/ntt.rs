@@ -30,6 +30,8 @@
 //! coefficient `i` by `generator_inverse^i` after the normalized inverse. For
 //! Loki's ζ with ζ³ = 1 this is exactly `ζ^(i mod 3)` / `ζ^(-i mod 3)`.
 
+use std::any::TypeId;
+
 use ff::PrimeField;
 use loki_backend_api::{
     ArithmeticAbi, BackendError, CurveAbi, ElementOrder, ErrorKind, FailureEffect, FieldAbi,
@@ -68,9 +70,22 @@ const R_MINUS_ONE_LE: [u8; 32] = [
     0x05, 0xd8, 0xa1, 0x09, 0x08, 0xd8, 0x39, 0x33, 0x48, 0x7d, 0x9d, 0x29, 0x53, 0xa7, 0xed, 0x73,
 ];
 
-/// Whether `F` is BLS12-381 Fr with canonical little-endian `to_repr`
-/// encoding, i.e. whether its resident bytes are what the kernel expects.
+/// Whether `F` may be submitted to the NTT kernels.
+///
+/// The wire contract is established by type, not inferred from samples: the
+/// only accepted type is `midnight_curves::Fq` (crates.io 0.3.1, the
+/// BLS12-381 scalar field Loki uses), whose `to_repr` is the canonical
+/// little-endian 32-byte encoding of the residue in `[0, r)`. Any other
+/// `PrimeField`, even one with the same modulus, width and sample encodings,
+/// is refused before device work. The sample checks below are kept only as a
+/// regression guard on that one type (they would catch a changed encoding in
+/// a future release of the crate); they are not a representation proof.
 pub fn wire_field_supported<F: PrimeField>() -> bool {
+    TypeId::of::<F>() == TypeId::of::<midnight_curves::Fq>() && wire_samples_match::<F>()
+}
+
+/// Modulus, width and four sample encodings (0, 1, 2^64, -1).
+fn wire_samples_match<F: PrimeField>() -> bool {
     if F::NUM_BITS != 255 || F::Repr::default().as_ref().len() != TRANSFORM_ELEM_BYTES {
         return false;
     }
@@ -284,11 +299,40 @@ pub fn transform_host<F: PrimeField>(
     let cancel = CancelToken::new();
     let source = runtime.upload_scalars_cancellable(values, &cancel)?;
     let result = runtime.launch_transform_fresh(&source, &launch);
-    let _ = runtime.release_handle(source);
-    let output = result?;
+    let released = runtime.release_handle(source);
+    let output = match (result, released) {
+        (Ok(output), Ok(())) => output,
+        (Ok(output), Err(cleanup)) => {
+            // Cleanup failed after a successful launch: publish nothing.
+            let _ = runtime.release_handle(output);
+            return Err(cleanup);
+        }
+        (Err(primary), released) => return Err(with_cleanup(primary, released)),
+    };
     let host = runtime.download_scalars_cancellable(&output, &cancel);
-    let _ = runtime.release_handle(output);
-    host
+    let released = runtime.release_handle(output);
+    match (host, released) {
+        (Ok(host), Ok(())) => Ok(host),
+        // A failed final release fails the call even though the bytes were
+        // read back: the session may now be poisoned.
+        (Ok(_), Err(cleanup)) => Err(cleanup),
+        (Err(primary), released) => Err(with_cleanup(primary, released)),
+    }
+}
+
+/// Failure precedence when an operation failed and its cleanup ran: the
+/// operation's error stands, unless cleanup poisoned the session and the
+/// operation's error did not already say so (the stronger effect wins).
+fn with_cleanup(primary: BackendError, cleanup: Result<(), BackendError>) -> BackendError {
+    match cleanup {
+        Err(c)
+            if c.effect == FailureEffect::SessionPoisoned
+                && primary.effect != FailureEffect::SessionPoisoned =>
+        {
+            c
+        }
+        _ => primary,
+    }
 }
 
 /// Apply `specs` in order, entirely on the device. Each step reads the
@@ -315,10 +359,19 @@ pub fn transform_chain<F: PrimeField>(
     let mut current: Option<ResidentBuffer<F>> = None;
     for launch in &launches {
         let next = runtime.launch_transform_fresh(current.as_ref().unwrap_or(source), launch);
-        if let Some(prev) = current.take() {
-            let _ = runtime.release_handle(prev);
+        let released = match current.take() {
+            Some(prev) => runtime.release_handle(prev),
+            None => Ok(()),
+        };
+        match (next, released) {
+            (Ok(next), Ok(())) => current = Some(next),
+            (Ok(next), Err(cleanup)) => {
+                // The intermediate's release failed: no result is published.
+                let _ = runtime.release_handle(next);
+                return Err(cleanup);
+            }
+            (Err(primary), released) => return Err(with_cleanup(primary, released)),
         }
-        current = Some(next?);
     }
     Ok(current.expect("non-empty chain"))
 }

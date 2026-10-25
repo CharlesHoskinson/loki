@@ -679,6 +679,12 @@ struct DeviceState {
     /// Poisoned contexts superseded by a reset. Their resources were destroyed
     /// by the reset (or are deliberately leaked); they are never freed here.
     retired: Vec<Context>,
+    /// A setup attempt that ended with the context's health uncertain (a
+    /// sticky driver error, or a failed destroy while cleaning up). There is
+    /// no `Context`, but the driver context must not be trusted: `initialize`
+    /// refuses, `reinitialize` must reset first, and `Drop` keeps the native
+    /// claim. Holds the error the failed attempt reported.
+    setup_failed: Option<BackendError>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -838,8 +844,22 @@ impl GpuRuntime {
     }
 
     /// A runtime over an explicit driver. Nothing is probed or allocated until
-    /// [`initialize`](Self::initialize).
-    pub fn with_driver(driver: Arc<dyn DeviceDriver>, config: RuntimeConfig) -> Self {
+    /// [`initialize`](Self::initialize). For tests, use the safe
+    /// [`with_fake`](Self::with_fake); native code uses
+    /// [`native`](Self::native) or [`process`](Self::process).
+    ///
+    /// # Safety
+    ///
+    /// The runtime must be the driver's only coordinator for the driver's
+    /// whole lifetime: no other `GpuRuntime` may be built over the same
+    /// driver (or over one sharing its device context), and no retained
+    /// alias may call any `DeviceDriver` method (in particular `reset`,
+    /// `device_free`, `host_free`, `destroy_*` or a launch) while this
+    /// runtime or any handle it minted is alive. The runtime's quarantine,
+    /// generation and publication guarantees, and the memory safety of
+    /// native drivers, depend on this exclusivity; violating it can free or
+    /// reset memory that queued device work still references.
+    pub unsafe fn with_driver(driver: Arc<dyn DeviceDriver>, config: RuntimeConfig) -> Self {
         let mut rt = Self::unavailable();
         rt.driver = Some(driver);
         rt.config = config;
@@ -865,7 +885,9 @@ impl GpuRuntime {
                 FailureEffect::NotStarted,
             ));
         }
-        let mut rt = Self::with_driver(crate::ffi::native_driver(), config);
+        // SAFETY: the native driver is not reachable from safe code and the
+        // `NATIVE_CLAIMED` claim above makes this the only live coordinator.
+        let mut rt = unsafe { Self::with_driver(crate::ffi::native_driver(), config) };
         rt.owns_native = true;
         Ok(rt)
     }
@@ -937,14 +959,32 @@ impl GpuRuntime {
                 Ok(ctx.generation)
             };
         }
+        if device.setup_failed.is_some() {
+            // An earlier setup left the context uncertain: retrying without a
+            // reset could build on it. Only `reinitialize` may recover.
+            return Err(err(op, ErrorKind::Poisoned, FailureEffect::SessionPoisoned));
+        }
         let started = Instant::now();
         let info = driver
             .probe(self.config.device_ordinal)
             .map_err(|_| BackendError::unsupported(op))?;
-        let ctx = self.build_context(driver.as_ref(), info, started)?;
+        let ctx = Self::record_setup(&mut device, self.build_context(driver.as_ref(), info, started))?;
         let generation = ctx.generation;
         device.current = Some(ctx);
         Ok(generation)
+    }
+
+    /// Persist an uncertain setup failure (effect `SessionPoisoned`) so that
+    /// it survives the call; a clean `NotStarted` failure leaves no state.
+    fn record_setup(
+        device: &mut DeviceState,
+        built: Result<Context, BackendError>,
+    ) -> Result<Context, BackendError> {
+        built.inspect_err(|e| {
+            if e.effect == FailureEffect::SessionPoisoned {
+                device.setup_failed = Some(*e);
+            }
+        })
     }
 
     /// Replace a poisoned generation: reset the driver context, then build a
@@ -956,10 +996,12 @@ impl GpuRuntime {
         self.config.validate()?;
         let mut device = self.lock_device(op)?;
         match &device.current {
-            None => {
+            None if device.setup_failed.is_none() => {
                 drop(device);
                 return self.initialize();
             }
+            // Failed, uncertain setup: no context to retire, but reset first.
+            None => {}
             Some(ctx) if !ctx.poisoned => {
                 return Err(err(op, ErrorKind::InvalidInput, FailureEffect::NotStarted));
             }
@@ -969,12 +1011,14 @@ impl GpuRuntime {
         let info = driver
             .reset(self.config.device_ordinal)
             .map_err(|_| err(op, ErrorKind::ContextLost, FailureEffect::SessionPoisoned))?;
-        // The reset destroyed every resource of the old context; never free
-        // them again. Keep the record only for diagnostics.
+        // The reset destroyed every resource of the old context (and of any
+        // failed setup); never free them again. Keep the record only for
+        // diagnostics.
         if let Some(old) = device.current.take() {
             device.retired.push(old);
         }
-        let ctx = self.build_context(driver.as_ref(), info, started)?;
+        device.setup_failed = None;
+        let ctx = Self::record_setup(&mut device, self.build_context(driver.as_ref(), info, started))?;
         let generation = ctx.generation;
         device.current = Some(ctx);
         Ok(generation)
@@ -998,6 +1042,19 @@ impl GpuRuntime {
         let mut streams: Vec<StreamId> = Vec::new();
         let mut events: Vec<EventId> = Vec::new();
         let mut buffers: Vec<HostBuffer> = Vec::new();
+        let kind_of = |e: &DriverError| match e.class {
+            DriverErrorClass::ContextLost => ErrorKind::ContextLost,
+            DriverErrorClass::Unsupported => ErrorKind::Unsupported,
+            _ => match e.call {
+                DriverCall::HostAlloc | DriverCall::DeviceAlloc => ErrorKind::Allocation,
+                _ => ErrorKind::Internal,
+            },
+        };
+        // Clean failure: every partial resource destroyed, effect NotStarted.
+        // Uncertain failure (sticky cause, or a destroy failing during
+        // cleanup): effect SessionPoisoned, which the caller persists as
+        // `setup_failed` so that recovery must reset. A failed destroy
+        // reports its own kind.
         let cleanup = |streams: Vec<StreamId>,
                        events: Vec<EventId>,
                        buffers: Vec<HostBuffer>,
@@ -1006,38 +1063,35 @@ impl GpuRuntime {
             {
                 // Stop at the first failed destroy: the context may have just
                 // become sticky, and nothing more may be destructed through it.
-                'cleanup: {
+                let failed: Option<DriverError> = 'cleanup: {
                     for b in buffers {
-                        if driver.host_free(b).is_err() {
-                            break 'cleanup;
+                        if let Err(d) = driver.host_free(b) {
+                            break 'cleanup Some(d);
                         }
                     }
                     for ev in events {
-                        if driver.destroy_event(ev).is_err() {
-                            break 'cleanup;
+                        if let Err(d) = driver.destroy_event(ev) {
+                            break 'cleanup Some(d);
                         }
                     }
                     for s in streams {
-                        if driver.destroy_stream(s).is_err() {
-                            break 'cleanup;
+                        if let Err(d) = driver.destroy_stream(s) {
+                            break 'cleanup Some(d);
                         }
                     }
+                    None
+                };
+                match failed {
+                    None => err(op, kind_of(&e), FailureEffect::NotStarted),
+                    Some(d) => err(op, kind_of(&d), FailureEffect::SessionPoisoned),
                 }
             } else {
                 // Sticky failure during setup: leak rather than destruct
                 // through an untrusted context. HostBuffer has no Drop, so
                 // dropping the Rust handles does not free the allocations.
                 drop(buffers);
+                err(op, kind_of(&e), FailureEffect::SessionPoisoned)
             }
-            let kind = match e.class {
-                DriverErrorClass::ContextLost => ErrorKind::ContextLost,
-                DriverErrorClass::Unsupported => ErrorKind::Unsupported,
-                _ => match e.call {
-                    DriverCall::HostAlloc | DriverCall::DeviceAlloc => ErrorKind::Allocation,
-                    _ => ErrorKind::Internal,
-                },
-            };
-            err(op, kind, FailureEffect::NotStarted)
         };
 
         macro_rules! attempt {
@@ -2017,9 +2071,11 @@ impl GpuRuntime {
                 return err(op, Self::kind_for(&e), FailureEffect::SessionPoisoned);
             }
             if let Some((m, b)) = held {
-                if driver.device_free(m).is_err() {
+                // The cleanup failure, not the allocation failure, decides the
+                // reported kind once the context is untrusted.
+                if let Err(fe) = driver.device_free(m) {
                     this.poison(ctx, Some((m, b)));
-                    return err(op, Self::kind_for(&e), FailureEffect::SessionPoisoned);
+                    return err(op, Self::kind_for(&fe), FailureEffect::SessionPoisoned);
                 }
             }
             err(op, Self::kind_for(&e), FailureEffect::NotStarted)
@@ -2310,6 +2366,11 @@ impl Drop for GpuRuntime {
         // retired (reset) context frees nothing through the driver.
         state.retired.clear();
         let Some(ctx) = state.current.take() else {
+            if state.setup_failed.is_some() {
+                // A failed setup left the process context uncertain: keep the
+                // native claim, exactly as for a poisoned context.
+                return;
+            }
             // Never initialized (or nothing live): nothing native to protect.
             #[cfg(feature = "cuda")]
             if owns_native {
@@ -2976,6 +3037,64 @@ pub mod fake {
                 raw: Self::fresh(st),
                 bytes,
             }
+        }
+    }
+
+    /// Safe control surface for a fake driver owned by exactly one runtime:
+    /// fault injection and inspection only. It cannot call any
+    /// `DeviceDriver` method, so it cannot reset, free or launch behind the
+    /// runtime's back.
+    #[derive(Clone)]
+    pub struct FakeControl(Arc<FakeDriver>);
+
+    impl FakeControl {
+        pub fn inject(&self, call: DriverCall, nth: usize, fault: Fault) {
+            self.0.inject(call, nth, fault)
+        }
+        pub fn calls(&self, call: DriverCall) -> usize {
+            self.0.calls(call)
+        }
+        pub fn violations(&self) -> Vec<Violation> {
+            self.0.violations()
+        }
+        pub fn double_frees(&self) -> usize {
+            self.0.double_frees()
+        }
+        pub fn live_device_allocations(&self) -> usize {
+            self.0.live_device_allocations()
+        }
+        pub fn live_host_buffers(&self) -> usize {
+            self.0.live_host_buffers()
+        }
+        pub fn live_streams(&self) -> usize {
+            self.0.live_streams()
+        }
+        pub fn live_events(&self) -> usize {
+            self.0.live_events()
+        }
+        pub fn streams_created_non_blocking(&self) -> bool {
+            self.0.streams_created_non_blocking()
+        }
+        pub fn enable_transform(&self) {
+            self.0.enable_transform()
+        }
+        pub fn transform_launches(&self) -> usize {
+            self.0.transform_launches()
+        }
+        pub fn corrupt_device_memory(&self, byte: u8) {
+            self.0.corrupt_device_memory(byte)
+        }
+    }
+
+    impl GpuRuntime {
+        /// A runtime over a fresh fake driver that it exclusively owns, plus
+        /// the restricted control handle for that driver.
+        pub fn with_fake(fake: FakeConfig, config: RuntimeConfig) -> (FakeControl, GpuRuntime) {
+            let driver = Arc::new(FakeDriver::new(fake));
+            // SAFETY: the driver is new; the only other reference is the
+            // `FakeControl`, which exposes no `DeviceDriver` method.
+            let rt = unsafe { GpuRuntime::with_driver(driver.clone(), config) };
+            (FakeControl(driver), rt)
         }
     }
 
