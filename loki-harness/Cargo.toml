@@ -18,8 +18,6 @@ cuda-argument-commit = ["cuda", "loki/cuda-argument-commit"]
 loki-sppark = ["loki/loki-sppark"]
 loki-profile = ["loki/loki-profile"]
 loki-multiopen = ["loki/loki-multiopen"]
-# Deliberately NOT forwarded: loki-cpu-budget. This crate links Loki and the
-# stock oracle in one build, so blst/no-threads would unify into stock.
 # P1 seam: new Apache-2.0 backend (forwards loki-gpu/cuda). Compiling this
 # feature is not a GPU pass; GPU gates must assert backend dispatch counters.
 loki-gpu-backend = ["loki/loki-gpu-backend"]
