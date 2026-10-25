@@ -1,0 +1,375 @@
+{
+  "quint": "0.32.0",
+  "seed": "20261024",
+  "results": [
+    {
+      "model": "transcript",
+      "phase": "typecheck",
+      "command": [
+        "quint",
+        "typecheck",
+        "quint/transcript.qnt"
+      ],
+      "exit": 0,
+      "seconds": 2.087,
+      "witnesses": {},
+      "log": ".artifacts/w8/transcript-typecheck.log"
+    },
+    {
+      "model": "transcript",
+      "phase": "test",
+      "command": [
+        "quint",
+        "test",
+        "quint/transcript_test.qnt",
+        "--match",
+        ".*Test$",
+        "--max-samples",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 2.055,
+      "witnesses": {},
+      "log": ".artifacts/w8/transcript-test.log"
+    },
+    {
+      "model": "transcript",
+      "phase": "simulation",
+      "command": [
+        "quint",
+        "run",
+        "quint/transcript.qnt",
+        "--backend",
+        "rust",
+        "--n-threads",
+        "4",
+        "--seed",
+        "20261024",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "180",
+        "--invariant",
+        "safety",
+        "--witnesses",
+        "complete",
+        "batched",
+        "thetaReached",
+        "multiopenReached",
+        "phased",
+        "--verbosity",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 198.101,
+      "witnesses": {
+        "complete": 10000,
+        "batched": 9674,
+        "thetaReached": 10000,
+        "multiopenReached": 10000,
+        "phased": 4991
+      },
+      "log": ".artifacts/w8/transcript-simulation.log"
+    },
+    {
+      "model": "gpu_dispatch",
+      "phase": "typecheck",
+      "command": [
+        "quint",
+        "typecheck",
+        "quint/gpu_dispatch.qnt"
+      ],
+      "exit": 0,
+      "seconds": 0.492,
+      "witnesses": {},
+      "log": ".artifacts/w8/gpu_dispatch-typecheck.log"
+    },
+    {
+      "model": "gpu_dispatch",
+      "phase": "test",
+      "command": [
+        "quint",
+        "test",
+        "quint/gpu_dispatch_test.qnt",
+        "--match",
+        ".*Test$",
+        "--max-samples",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 0.664,
+      "witnesses": {},
+      "log": ".artifacts/w8/gpu_dispatch-test.log"
+    },
+    {
+      "model": "gpu_dispatch",
+      "phase": "simulation",
+      "command": [
+        "quint",
+        "run",
+        "quint/gpu_dispatch.qnt",
+        "--backend",
+        "rust",
+        "--n-threads",
+        "4",
+        "--seed",
+        "20261024",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "120",
+        "--invariant",
+        "safety",
+        "--witnesses",
+        "completed",
+        "fellBack",
+        "cacheHit",
+        "concurrent",
+        "staleRejected",
+        "--verbosity",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 8.556,
+      "witnesses": {
+        "completed": 10000,
+        "fellBack": 9999,
+        "cacheHit": 3526,
+        "concurrent": 2367,
+        "staleRejected": 4400
+      },
+      "log": ".artifacts/w8/gpu_dispatch-simulation.log"
+    },
+    {
+      "model": "pk_cache",
+      "phase": "typecheck",
+      "command": [
+        "quint",
+        "typecheck",
+        "quint/pk_cache.qnt"
+      ],
+      "exit": 0,
+      "seconds": 0.428,
+      "witnesses": {},
+      "log": ".artifacts/w8/pk_cache-typecheck.log"
+    },
+    {
+      "model": "pk_cache",
+      "phase": "test",
+      "command": [
+        "quint",
+        "test",
+        "quint/pk_cache_test.qnt",
+        "--match",
+        ".*Test$",
+        "--max-samples",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 0.57,
+      "witnesses": {},
+      "log": ".artifacts/w8/pk_cache-test.log"
+    },
+    {
+      "model": "scheduler",
+      "phase": "typecheck",
+      "command": [
+        "quint",
+        "typecheck",
+        "quint/scheduler.qnt"
+      ],
+      "exit": 0,
+      "seconds": 0.493,
+      "witnesses": {},
+      "log": ".artifacts/w8/scheduler-typecheck.log"
+    },
+    {
+      "model": "scheduler",
+      "phase": "test",
+      "command": [
+        "quint",
+        "test",
+        "quint/scheduler_test.qnt",
+        "--match",
+        ".*Test$",
+        "--max-samples",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 0.599,
+      "witnesses": {},
+      "log": ".artifacts/w8/scheduler-test.log"
+    },
+    {
+      "model": "scheduler",
+      "phase": "simulation",
+      "command": [
+        "quint",
+        "run",
+        "quint/scheduler.qnt",
+        "--backend",
+        "rust",
+        "--n-threads",
+        "4",
+        "--seed",
+        "20261024",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "200",
+        "--invariant",
+        "safety",
+        "--witnesses",
+        "allDone",
+        "overlap",
+        "checkpointed",
+        "resumed",
+        "completed",
+        "--verbosity",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 21.563,
+      "witnesses": {
+        "allDone": 10000,
+        "overlap": 9998,
+        "checkpointed": 10000,
+        "resumed": 10000,
+        "completed": 10000
+      },
+      "log": ".artifacts/w8/scheduler-simulation.log"
+    }
+  ],
+  "mutations": [
+    {
+      "name": "transcript",
+      "detected": true,
+      "exit": 1,
+      "command": [
+        "quint",
+        "run",
+        "quint/mutations.qnt",
+        "--main",
+        "mutation_transcript",
+        "--step",
+        "mutantStep",
+        "--invariant",
+        "safety",
+        "--max-samples",
+        "1000",
+        "--max-steps",
+        "120",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1"
+      ]
+    },
+    {
+      "name": "gpu",
+      "detected": true,
+      "exit": 1,
+      "command": [
+        "quint",
+        "run",
+        "quint/mutations.qnt",
+        "--main",
+        "mutation_gpu",
+        "--step",
+        "mutantStep",
+        "--invariant",
+        "safety",
+        "--max-samples",
+        "1000",
+        "--max-steps",
+        "120",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1"
+      ]
+    },
+    {
+      "name": "pk_build",
+      "detected": true,
+      "exit": 1,
+      "command": [
+        "quint",
+        "run",
+        "quint/mutations.qnt",
+        "--main",
+        "mutation_pk_build",
+        "--step",
+        "mutantStep",
+        "--invariant",
+        "safety",
+        "--max-samples",
+        "1000",
+        "--max-steps",
+        "120",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1"
+      ]
+    },
+    {
+      "name": "pk_partial",
+      "detected": true,
+      "exit": 1,
+      "command": [
+        "quint",
+        "run",
+        "quint/mutations.qnt",
+        "--main",
+        "mutation_pk_partial",
+        "--step",
+        "mutantStep",
+        "--invariant",
+        "safety",
+        "--max-samples",
+        "1000",
+        "--max-steps",
+        "120",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1"
+      ]
+    },
+    {
+      "name": "scheduler",
+      "detected": true,
+      "exit": 1,
+      "command": [
+        "quint",
+        "run",
+        "quint/mutations.qnt",
+        "--main",
+        "mutation_scheduler",
+        "--step",
+        "mutantStep",
+        "--invariant",
+        "safety",
+        "--max-samples",
+        "1000",
+        "--max-steps",
+        "120",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1"
+      ]
+    }
+  ]
+}
