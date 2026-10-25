@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 
 use ff::WithSmallOrderMulGroup;
 use group::ff::{BatchInvert, Field};
+#[cfg(not(feature = "loki-backend-api"))]
 use midnight_curves::fft::best_fft;
 
 use super::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation};
@@ -279,6 +280,17 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     ) -> Polynomial<F, ExtendedLagrangeCoeff> {
         assert_eq!(a.values.len(), 1 << self.k);
 
+        #[cfg(feature = "loki-backend-api")]
+        if let Some(values) = self.accelerated_coset(
+            &a.values,
+            crate::backend::api::TransformDirection::Forward,
+        ) {
+            return Polynomial {
+                values,
+                _marker: PhantomData,
+            };
+        }
+
         self.distribute_powers_zeta(&mut a.values, true);
         a.values.resize(self.extended_len(), F::ZERO);
         Self::fft(&mut a.values, self.extended_omega, self.extended_k);
@@ -296,6 +308,14 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     /// correct length.
     pub fn extended_to_coeff(&self, mut a: Polynomial<F, ExtendedLagrangeCoeff>) -> Vec<F> {
         assert_eq!(a.values.len(), self.extended_len());
+
+        #[cfg(feature = "loki-backend-api")]
+        if let Some(values) = self.accelerated_coset(
+            &a.values,
+            crate::backend::api::TransformDirection::Inverse,
+        ) {
+            return values;
+        }
 
         // Inverse FFT
         Self::ifft(
@@ -396,6 +416,9 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         if Self::gpu_fft(a, omega, false) {
             return;
         }
+        #[cfg(feature = "loki-backend-api")]
+        crate::backend::dispatch::fft(a, omega, log_n);
+        #[cfg(not(feature = "loki-backend-api"))]
         best_fft(a, omega, log_n);
     }
 
@@ -437,13 +460,53 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         if Self::gpu_fft(a, omega_inv, true) {
             return;
         }
-        best_fft(a, omega_inv, log_n);
-        parallelize(a, |a, _| {
-            for a in a {
-                // Finish iFFT
-                *a *= &divisor;
-            }
-        });
+        #[cfg(feature = "loki-backend-api")]
+        crate::backend::dispatch::ifft(a, omega_inv, log_n, divisor);
+        #[cfg(not(feature = "loki-backend-api"))]
+        {
+            best_fft(a, omega_inv, log_n);
+            parallelize(a, |a, _| {
+                for a in a {
+                    // Finish iFFT
+                    *a *= &divisor;
+                }
+            });
+        }
+    }
+
+    /// P1 seam: offer a whole coset conversion to an advertised accelerator.
+    /// `None` (always, without `loki-gpu-backend`) runs the stock body.
+    #[cfg(feature = "loki-backend-api")]
+    fn accelerated_coset(
+        &self,
+        values: &[F],
+        direction: crate::backend::api::TransformDirection,
+    ) -> Option<Vec<F>> {
+        use crate::backend::api::{
+            CosetSpec, ElementOrder, InverseNormalization, TransformDirection, TransformSpec,
+        };
+        let (source_log_size, output_log_size, inverse_normalization) = match direction {
+            TransformDirection::Forward => (self.k, self.extended_k, InverseNormalization::None),
+            TransformDirection::Inverse => (
+                self.extended_k,
+                self.extended_k,
+                InverseNormalization::DivideByLengthOnce,
+            ),
+        };
+        let spec = TransformSpec {
+            root: self.extended_omega,
+            source_log_size,
+            output_log_size,
+            direction,
+            input_order: ElementOrder::Natural,
+            output_order: ElementOrder::Natural,
+            inverse_normalization,
+            coset: Some(CosetSpec {
+                generator: self.g_coset,
+                generator_inverse: self.g_coset_inv,
+            }),
+        };
+        crate::backend::dispatch::accelerated_coset(values, spec)
     }
 
     /// Get the size of the domain

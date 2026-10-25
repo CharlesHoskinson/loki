@@ -8,6 +8,17 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
+// P1 accelerator exclusivity: the new backend owns its device runtime and
+// cannot be combined with the legacy sppark runtime, whether selected
+// directly or through `loki-sppark`.
+#[cfg(all(feature = "loki-gpu-backend", any(feature = "cuda", feature = "cuda-ntt")))]
+compile_error!(
+    "`loki-gpu-backend` is mutually exclusive with the legacy `cuda`/`cuda-ntt` \
+     features (including `loki-sppark`)"
+);
+
+#[cfg(feature = "loki-backend-api")]
+pub mod backend;
 pub mod circuit;
 pub mod plonk;
 pub mod poly;

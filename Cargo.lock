@@ -729,6 +729,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
+name = "loki-backend-api"
+version = "0.1.0"
+dependencies = [
+ "ff",
+ "group",
+]
+
+[[package]]
 name = "loki-cuda-ntt"
 version = "0.1.0"
 dependencies = [
@@ -743,6 +751,16 @@ dependencies = [
 [[package]]
 name = "loki-cuda-runtime"
 version = "0.1.0"
+
+[[package]]
+name = "loki-gpu"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "ff",
+ "group",
+ "loki-backend-api",
+]
 
 [[package]]
 name = "memchr"
@@ -794,9 +812,12 @@ dependencies = [
  "getrandom 0.2.17",
  "group",
  "itertools 0.14.0",
+ "loki-backend-api",
  "loki-cuda-ntt",
  "loki-cuda-runtime",
+ "loki-gpu",
  "midnight-curves",
+ "midnight-proofs 0.8.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-bigint",
  "proptest",
  "rand 0.8.8",
@@ -809,6 +830,27 @@ dependencies = [
  "sha2",
  "sppark",
  "tabbycat",
+ "tracing",
+]
+
+[[package]]
+name = "midnight-proofs"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19b2e4b1acb581ad741b0cb7c0e9dbdf51142f4e9518886f25fcff40a6702dcc"
+dependencies = [
+ "blake2b_simd",
+ "ff",
+ "getrandom 0.2.17",
+ "group",
+ "itertools 0.14.0",
+ "midnight-curves",
+ "num-bigint",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
+ "rayon",
+ "serde",
+ "serde_derive",
  "tracing",
 ]
 
