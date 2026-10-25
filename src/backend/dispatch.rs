@@ -329,7 +329,14 @@ pub(crate) fn msm_specific<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Cur
         let caps = <loki_gpu::LokiGpu as Backend<C::Scalar, C::Curve>>::capabilities(&gpu);
         GLOBAL.msm::<C, _>(Some((&gpu, &caps)), coeffs, bases)
     }
-    #[cfg(not(feature = "loki-gpu-backend"))]
+    // P3: legacy sppark through the typed adapter (exclusive with
+    // `loki-gpu-backend`, see `src/lib.rs`).
+    #[cfg(feature = "loki-sppark")]
+    {
+        let caps = super::sppark::SpparkBackend::capabilities_for(coeffs.len().min(bases.len()));
+        GLOBAL.msm::<C, _>(Some((&super::sppark::SpparkBackend, &caps)), coeffs, bases)
+    }
+    #[cfg(not(any(feature = "loki-gpu-backend", feature = "loki-sppark")))]
     GLOBAL.msm::<C, NoAccelerator>(None, coeffs, bases)
 }
 
