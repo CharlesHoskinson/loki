@@ -216,3 +216,27 @@ fn cuda_no_device_fallback() {
         expected
     );
 }
+
+#[test]
+#[ignore = "requires a GPU; run through gpu-runner with --ignored"]
+fn gpu_large_boundaries() {
+    let mut rng = ChaCha20Rng::from_seed([63; 32]);
+    let pool: Vec<_> = (0..1024).map(|_| G1Projective::random(&mut rng)).collect();
+    // These sizes exercise sppark's multi-batch path with a partial final warp
+    // and a partial final batch, beyond the smaller randomized matrix.
+    for k in 17..=22 {
+        for n in [(1 << k) - 1, (1 << k) + 1] {
+            let mut bases: Vec<_> = (0..n).map(|i| pool[i % pool.len()]).collect();
+            bases[n / 2] = G1Projective::identity();
+            let mut scalars: Vec<_> = (0..n).map(|_| Fq::random(&mut rng)).collect();
+            scalars[0] = Fq::ZERO;
+            scalars[n - 1] = -Fq::ONE;
+            assert_eq!(
+                backend::msm(&scalars, &bases).unwrap(),
+                cpu(&scalars, &bases),
+                "size {n}"
+            );
+            eprintln!("GPU large boundary {n}: passed");
+        }
+    }
+}
