@@ -58,9 +58,11 @@ fn fixed_rng_lookup_proofs_are_reproducible() {
             .unwrap();
             if let Some(reference) = &reference {
                 // Report hashes, rather than dumping a proof on failure.
-                assert_eq!(
-                    blake2b_simd::blake2b(reference),
-                    blake2b_simd::blake2b(&proof)
+                assert!(
+                    reference == &proof,
+                    "proof bytes differ: {} vs {}",
+                    blake2b_simd::blake2b(reference).to_hex(),
+                    blake2b_simd::blake2b(&proof).to_hex(),
                 );
             } else {
                 reference = Some(proof);
