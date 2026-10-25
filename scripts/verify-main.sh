@@ -18,6 +18,7 @@ export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-8}"
 steps=(
   "cargo check --offline --workspace --all-targets"
   "cargo test --offline --release -- --test-threads=4"
+  "cargo run --offline --release --example cpu-bench -- 14 1 target/cpu-fixture"
   "cargo test --offline --release --manifest-path tests-stock/Cargo.toml"
 )
 [[ -f loki-gpu/Cargo.toml ]] && steps+=("cargo test --offline --release --manifest-path loki-gpu/Cargo.toml --workspace")
