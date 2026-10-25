@@ -335,11 +335,24 @@ impl Built {
 }
 
 /// `proof_roundtrip` entry point.
+/// With the GPU MSM feature, route every MSM to the GPU and fail on fallback.
+fn gpu_setup() {
+    #[cfg(feature = "cuda")]
+    crate::msm::init();
+}
+
+fn gpu_check() {
+    #[cfg(feature = "cuda")]
+    crate::msm::gpu_watch::assert_no_fallback();
+}
+
 pub fn roundtrip(data: &[u8]) {
+    gpu_setup();
     let mut input = Input::new(data);
     let case = Case::generate(&mut input);
     let seed = input.u64();
     roundtrip_case(case, seed);
+    gpu_check();
 }
 
 pub fn roundtrip_case(case: Case, seed: u64) {
@@ -396,10 +409,12 @@ pub enum Mutation {
 
 /// `soundness` (negative_cases) entry point.
 pub fn soundness(data: &[u8]) {
+    gpu_setup();
     let mut input = Input::new(data);
     let case = Case::generate(&mut input);
     let seed = input.u64();
     soundness_case(case, seed, &mut input);
+    gpu_check();
 }
 
 fn accepted_any(vs: &[&Verdict]) -> bool {

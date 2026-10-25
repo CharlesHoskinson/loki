@@ -33,7 +33,9 @@ for features in "${configs[@]}"; do
   else
     # cases.rs counts GPU calls, so it runs single-threaded.
     lock "$features" cargo +stable test "${args[@]}" --test cases -- --test-threads=1
-    lock "$features" cargo +stable test "${args[@]}" --test quick --test soundness_mutation
+    # GPU call counters and LOKI_NTT_CPU are process-wide: serialize GPU configs.
+    threads=(); [[ "$features" == cuda* ]] && threads=(-- --test-threads=1)
+    lock "$features" cargo +stable test "${args[@]}" --test quick --test soundness_mutation "${threads[@]}"
   fi
   secs=$(( $(date +%s) - start ))
   total=$(( total + secs ))

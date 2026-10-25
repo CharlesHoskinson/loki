@@ -10,4 +10,4 @@ log="logs/$t-$(date +%Y%m%dT%H%M%S)${LOG_TAG:+-$LOG_TAG}.log"
 echo "log: $log"
 cargo +nightly-2026-10-11 fuzz run "$@" "$t" "corpus/$t" -- \
   -max_total_time="$secs" -timeout=120 -rss_limit_mb=8192 -max_len=4096 \
-  -print_final_stats=1 -print_pcs=0 >"$log" 2>&1
+  -print_final_stats=1 -print_pcs=0 -len_control=0 >"$log" 2>&1
