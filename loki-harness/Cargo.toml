@@ -8,8 +8,8 @@ publish = false
 
 [features]
 default = []
-# Once W4 lands, replace this with cuda = ["loki/cuda"].
-cuda = []
+cuda = ["loki/cuda"]
+cuda-srs-registry = ["cuda", "loki/cuda-srs-registry"]
 loki-multiopen = ["loki/loki-multiopen"]
 
 [dependencies]
