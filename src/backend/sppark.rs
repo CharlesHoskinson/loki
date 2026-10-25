@@ -35,7 +35,7 @@ use super::api::{
     Operation,
 };
 use super::arithmetic_abi;
-use crate::poly::kzg::msm::cuda::{min_len, sppark_msm};
+use crate::poly::kzg::msm::cuda::{min_len, sppark_msm, Failure, FailureClass};
 
 /// Typed adapter over the legacy sppark MSM.
 #[derive(Clone, Copy, Debug, Default)]
@@ -96,7 +96,7 @@ fn admit_result(point: &G1Projective) -> Result<(), BackendError> {
 #[allow(unsafe_code)]
 fn msm_with<F, G>(
     request: MsmRequest<'_, F, G>,
-    gpu: impl FnOnce(&[Fq], &[G1Projective]) -> Result<G1Projective, String>,
+    gpu: impl FnOnce(&[Fq], &[G1Projective]) -> Result<G1Projective, Failure>,
 ) -> Result<G, BackendError>
 where
     F: PrimeField,
@@ -128,11 +128,28 @@ where
             // SAFETY: G is exactly G1Projective (checked above).
             Ok(unsafe { std::mem::transmute_copy::<G1Projective, G>(&point) })
         }
-        Err(error) => {
+        Err(failure) => Err(classify(&failure)),
+    }
+}
+
+/// Map a legacy failure to the dispatcher contract (quint-q2 L2): only a
+/// device fault poisons; a request refused on the host is recomputed on the
+/// CPU with the backend left enabled.
+fn classify(failure: &Failure) -> BackendError {
+    let preserved = |kind| BackendError {
+        operation: Operation::Msm,
+        kind,
+        effect: FailureEffect::InputsPreserved,
+    };
+    match failure.class {
+        FailureClass::Device => {
             static LOGGED: Once = Once::new();
-            LOGGED.call_once(|| tracing::warn!(%error, "GPU MSM failed; using CPU MSM"));
-            Err(poisoned(ErrorKind::Kernel))
+            LOGGED.call_once(|| tracing::warn!(error = %failure.message, "GPU MSM failed; using CPU MSM"));
+            poisoned(ErrorKind::Kernel)
         }
+        FailureClass::InvalidInput => preserved(ErrorKind::InvalidInput),
+        FailureClass::Capacity => preserved(ErrorKind::Capacity),
+        FailureClass::Host => preserved(ErrorKind::Internal),
     }
 }
 
@@ -224,6 +241,81 @@ mod tests {
         // A valid point (identity and the CPU answer) is admitted unchanged.
         let ok = Fake(G1Projective::identity);
         assert_eq!(ok.msm(MsmRequest::new(&s, &b, MsmLengthPolicy::ZipTruncate)), Ok(G1Projective::identity()));
+    }
+
+    /// quint-q2 L2/L3: a legacy device failure poisons and is counted as a
+    /// fallback; a request-level refusal falls back once and leaves the
+    /// accelerator enabled.
+    #[test]
+    fn sppark_adapter_classifies_legacy_failures() {
+        struct Failing(FailureClass);
+        impl MsmBackend<Fq, G1Projective> for Failing {
+            fn msm(&self, r: MsmRequest<'_, Fq, G1Projective>) -> Result<G1Projective, BackendError> {
+                let class = self.0;
+                msm_with(r, move |_, _| Err(Failure { message: "injected".into(), class }))
+            }
+        }
+        let n = min_len();
+        let mut rng = ChaCha20Rng::from_seed([6; 32]);
+        let s: Vec<Fq> = (0..n).map(|_| Fq::random(&mut rng)).collect();
+        let b: Vec<G1Projective> = (0..n).map(|_| G1Projective::random(&mut rng)).collect();
+        let cpu = msm_cpu::<G1Affine>(&s, &b);
+        let caps = SpparkBackend::capabilities_for(n);
+        for (class, kind, sticky) in [
+            (FailureClass::Device, ErrorKind::Kernel, true),
+            (FailureClass::InvalidInput, ErrorKind::InvalidInput, false),
+            (FailureClass::Capacity, ErrorKind::Capacity, false),
+            (FailureClass::Host, ErrorKind::Internal, false),
+        ] {
+            let e = Failing(class).msm(MsmRequest::new(&s, &b, MsmLengthPolicy::ZipTruncate)).unwrap_err();
+            assert_eq!(e.kind, kind);
+            assert_eq!(e.effect == FailureEffect::SessionPoisoned, sticky);
+            let d = Dispatcher::new();
+            for _ in 0..2 {
+                assert_eq!(d.msm::<G1Affine, _>(Some((&Failing(class), &caps)), &s, &b), cpu);
+            }
+            let c = d.counters();
+            let offered = if sticky { 1 } else { 2 };
+            assert_eq!(c.msm_fallback, offered, "{class:?}: legacy failures are fallbacks {c:?}");
+            assert_eq!(c.accelerator_poisoned, u64::from(sticky), "{class:?} {c:?}");
+            assert_eq!(c.msm_accelerated, 0);
+        }
+    }
+
+    /// quint-q2 B3: an accelerator result that returns after another call
+    /// poisoned the dispatcher is discarded and recomputed on the CPU.
+    #[test]
+    fn dispatcher_discards_results_returning_after_poison() {
+        struct PoisonsMidFlight<'a>(&'a Dispatcher);
+        impl MsmBackend<Fq, G1Projective> for PoisonsMidFlight<'_> {
+            fn msm(&self, r: MsmRequest<'_, Fq, G1Projective>) -> Result<G1Projective, BackendError> {
+                // A concurrent call poisons the dispatcher while this one is
+                // in flight (modelled by a nested failing call).
+                struct Device;
+                impl MsmBackend<Fq, G1Projective> for Device {
+                    fn msm(&self, _: MsmRequest<'_, Fq, G1Projective>) -> Result<G1Projective, BackendError> {
+                        Err(poisoned(ErrorKind::Kernel))
+                    }
+                }
+                let caps = SpparkBackend::capabilities_for(r.scalars.len());
+                let _ = self.0.msm::<G1Affine, _>(Some((&Device, &caps)), r.scalars, r.bases);
+                assert!(self.0.accelerator_disabled());
+                // This backend then returns a plausible but unchecked answer.
+                Ok(G1Projective::generator())
+            }
+        }
+        let n = min_len();
+        let mut rng = ChaCha20Rng::from_seed([12; 32]);
+        let s: Vec<Fq> = (0..n).map(|_| Fq::random(&mut rng)).collect();
+        let b: Vec<G1Projective> = (0..n).map(|_| G1Projective::random(&mut rng)).collect();
+        let d = Dispatcher::new();
+        let caps = SpparkBackend::capabilities_for(n);
+        let got = d.msm::<G1Affine, _>(Some((&PoisonsMidFlight(&d), &caps)), &s, &b);
+        assert_eq!(got, msm_cpu::<G1Affine>(&s, &b));
+        let c = d.counters();
+        assert_eq!(c.msm_accelerated, 0, "{c:?}");
+        assert_eq!(c.msm_fallback, 2, "nested failure plus the discarded result {c:?}");
+        assert_eq!(c.accelerator_poisoned, 1);
     }
 
     /// Adapter output equals the legacy direct call and the stock CPU MSM,

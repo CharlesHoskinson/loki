@@ -146,10 +146,14 @@ impl Dispatcher {
                 && arithmetic_abi::<C>().is_some_and(|abi| caps.supports_arithmetic(abi));
             if admitted {
                 match backend.msm(request()) {
-                    Ok(result) => {
+                    // Recheck after return (quint-q2 B3): a result that
+                    // completes after another call poisoned the accelerator
+                    // is discarded and recomputed on the CPU.
+                    Ok(result) if !self.accelerator_disabled() => {
                         bump(&self.msm_accelerated);
                         return result;
                     }
+                    Ok(_) => bump(&self.msm_fallback),
                     Err(error) => self.failed(error, &self.msm_fallback),
                 }
             }
