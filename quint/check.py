@@ -12,7 +12,7 @@ MODELS = {
     "transcript": (180, ["complete", "batched", "thetaReached", "multiopenReached", "phased"]),
     "gpu_dispatch": (120, ["completed", "fellBack", "cacheHit", "concurrent", "staleRejected"]),
     "pk_cache": (120, ["used", "filled", "concurrentWaiters", "differentKeys", "sharedUse"]),
-    "scheduler": (200, ["allDone", "overlap", "checkpointed", "resumed", "completed"]),
+    "scheduler": (1000, ["allDone", "overlap", "checkpointed", "resumed", "completed"]),
 }
 
 

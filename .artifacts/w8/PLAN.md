@@ -26,20 +26,20 @@ stays on loki/w8-quint; stock production sources and default features stay uncha
 
 ## Steps and verification gates
 
-- [ ] Read requested kit skills, agent methods and guidelines; inspect source.
-- [ ] Create types, then executable actions, checking typecheck and short simulation
+- [x] Read requested kit skills, agent methods and guidelines; inspect source.
+- [x] Create types, then executable actions, checking typecheck and short simulation
   after each model. Put deterministic scenarios in separate `_test.qnt` files.
-- [ ] Run all model tests with `--match '.*'`; add negative guard and mutation checks.
-- [ ] Attempt pinned public quint-connect in a separate `quint/mbt` crate. If it
+- [x] Run all model tests with `--match '.*'`; add negative guard and mutation checks.
+- [x] Attempt pinned public quint-connect in a separate `quint/mbt` crate. If it
   cannot build, record the error and use `quint run --mbt --out-itf` replay instead.
-- [ ] Connect real create_proof using a logging transcript, random small circuits,
+- [x] Connect real create_proof using a logging transcript, random small circuits,
   fixed-randomness proof-byte comparison, and stock verifier acceptance. Never log
   witnesses, transcript payloads or setup secrets.
-- [ ] Check each safety conjunction using 10,000 samples, a fixed seed, bounded
+- [x] Check each safety conjunction using 10,000 samples, a fixed seed, bounded
   steps and four simulator threads; require positive witness counts.
-- [ ] Attempt scheduler temporal verification if Apalache works; otherwise perform
+- [x] Attempt scheduler temporal verification if Apalache works; otherwise perform
   long simulations and explicitly retain the temporal-proof limitation.
-- [ ] Review final source mapping, run targeted Rust/default checks, write
+- [x] Review final source mapping, run targeted Rust/default checks, write
   `LOKI-QUINT.md`, commit verified milestones through host runner, send DONE.
 
 ## Reviewable deliverables
@@ -49,3 +49,12 @@ stays on loki/w8-quint; stock production sources and default features stay uncha
 `quint/mbt` for the isolated Rust test driver, and `LOKI-QUINT.md` for evidence and gaps.
 Generated traces/logs live under `.artifacts/w8` and contain only symbolic model
 states; cryptographic values remain in memory.
+
+## Final status
+
+Four safety campaigns completed with 10000 samples each; scheduler also completed
+1000-step progress sampling. All 27 deterministic model scenarios, five mutation
+controls, and 14 combined Rust tests passed their expected outcomes. Default
+Cargo checks passed. Source-pinned W4 host and W6 cache adapters are implemented.
+Known limitations and the stock byte-oracle CRITICAL are recorded in LOKI-QUINT.md.
+Apalache cannot handle the fairness property; no temporal proof is claimed.

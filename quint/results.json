@@ -1,5 +1,35 @@
 {
   "quint": "0.32.0",
+  "rust": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--manifest-path",
+      "quint/mbt/Cargo.toml",
+      "--features",
+      "w4-source,w6-source",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "CARGO_BUILD_JOBS": "4",
+      "RAYON_NUM_THREADS": "2"
+    },
+    "exit": 0,
+    "tests": 14,
+    "seconds": 16.65,
+    "transcriptTraces": 24,
+    "transcriptOperations": 1022,
+    "noLookupByteEqual": 9,
+    "lookupByteUnequal": 15,
+    "w4HostMbtTraces": 24,
+    "w4ConcurrentCallers": 8,
+    "w6MbtTraces": 4,
+    "w6ColdCallersPerBuild": 3,
+    "gpuKernelsExecuted": false
+  },
   "seed": "20261024",
   "results": [
     {
@@ -171,6 +201,45 @@
       "log": ".artifacts/w8/pk_cache-test.log"
     },
     {
+      "model": "pk_cache",
+      "phase": "simulation",
+      "command": [
+        "quint",
+        "run",
+        "quint/pk_cache.qnt",
+        "--backend",
+        "rust",
+        "--n-threads",
+        "4",
+        "--seed",
+        "20261024",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "120",
+        "--invariant",
+        "safety",
+        "--witnesses",
+        "used",
+        "filled",
+        "concurrentWaiters",
+        "differentKeys",
+        "sharedUse",
+        "--verbosity",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 14.401,
+      "witnesses": {
+        "used": 10000,
+        "filled": 10000,
+        "concurrentWaiters": 9761,
+        "differentKeys": 10000,
+        "sharedUse": 9553
+      },
+      "log": ".artifacts/w8/pk_cache-simulation.log"
+    },
+    {
       "model": "scheduler",
       "phase": "typecheck",
       "command": [
@@ -179,7 +248,7 @@
         "quint/scheduler.qnt"
       ],
       "exit": 0,
-      "seconds": 0.493,
+      "seconds": 0.417,
       "witnesses": {},
       "log": ".artifacts/w8/scheduler-typecheck.log"
     },
@@ -196,7 +265,7 @@
         "1"
       ],
       "exit": 0,
-      "seconds": 0.599,
+      "seconds": 0.501,
       "witnesses": {},
       "log": ".artifacts/w8/scheduler-test.log"
     },
@@ -216,7 +285,7 @@
         "--max-samples",
         "10000",
         "--max-steps",
-        "200",
+        "1000",
         "--invariant",
         "safety",
         "--witnesses",
@@ -229,12 +298,12 @@
         "1"
       ],
       "exit": 0,
-      "seconds": 21.563,
+      "seconds": 90.846,
       "witnesses": {
         "allDone": 10000,
-        "overlap": 9998,
-        "checkpointed": 10000,
-        "resumed": 10000,
+        "overlap": 10000,
+        "checkpointed": 9997,
+        "resumed": 9997,
         "completed": 10000
       },
       "log": ".artifacts/w8/scheduler-simulation.log"
@@ -371,5 +440,27 @@
         "1"
       ]
     }
-  ]
+  ],
+  "temporal": {
+    "command": [
+      "quint",
+      "verify",
+      "quint/scheduler.qnt",
+      "--temporal",
+      "admittedEventuallyFinish",
+      "--max-steps",
+      "24",
+      "--verbosity",
+      "1"
+    ],
+    "result": "unsupported",
+    "error": "Handling fairness is not supported yet!",
+    "proved": false
+  },
+  "sourcePins": {
+    "quintConnect": "4f018f54fc7dd4cef341d10111427bab59d3b307",
+    "w4": "fdef4c4d70b6a5ea040a8bc94638a57ecc1eb3b2",
+    "w6": "abe97019b099026698d10c97f57d490a9554018f"
+  },
+  "rustVersion": "1.99.1"
 }
