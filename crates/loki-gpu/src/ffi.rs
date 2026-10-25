@@ -645,6 +645,14 @@ mod native {
             stream: StreamId,
         ) -> Result<(), DriverError> {
             let call = DriverCall::Launch;
+            // D4: every handle must be one this driver minted and still owns;
+            // the native check validates only metadata, epoch and kind.
+            // Checked first, so a foreign handle reaches no native code.
+            let mut handles = vec![&dst.0, &src.0, &stream.0];
+            if let Some(x) = scratch.as_ref() {
+                handles.push(&x.0);
+            }
+            self.known(call, &handles)?;
             let params = ntt_params(launch);
             // Rust and native scratch layouts must agree exactly; refuse
             // before enqueueing anything if they do not.
@@ -655,9 +663,6 @@ mod native {
                 code: INVALID_ARGUMENT,
             };
             let Some(scratch) = scratch else { return Err(refuse) };
-            // D4: every handle must be one this driver minted and still owns;
-            // the native check validates only metadata, epoch and kind.
-            self.known(call, &[&dst.0, &src.0, &scratch.0, &stream.0])?;
             if native == 0 || Some(native) != launch.scratch_bytes() {
                 return Err(refuse);
             }
@@ -769,3 +774,45 @@ mod tests {
         assert_eq!(quotient_out, quotient_before);
     }
 }
+
+#[cfg(all(test, feature = "cuda"))]
+mod native_guard_tests {
+    use super::native::native_driver;
+    use crate::runtime::{
+        DeviceMemory, DriverCall, DriverErrorClass, DriverHandle, HandleKind, StreamId,
+        TransformLaunch, TRANSFORM_ELEM_BYTES, TRANSFORM_MAX_POW_TABLE,
+    };
+
+    fn forged(kind: HandleKind, raw: u64, bytes: u64) -> DriverHandle {
+        DriverHandle { kind, epoch: 1, raw, bytes }
+    }
+
+    /// A handle the native driver never minted is refused before any native
+    /// call (nothing is validated or enqueued in C, no device is touched).
+    #[test]
+    fn ntt_launch_refuses_unminted_handles_before_native_code() {
+        let driver = native_driver();
+        let launch = TransformLaunch {
+            ntt_log: 1,
+            source_len: 2,
+            output_len: 2,
+            input_bitrev: false,
+            output_bitrev: false,
+            pre_coset: false,
+            post_coset: false,
+            root_powers: [[0; TRANSFORM_ELEM_BYTES]; TRANSFORM_MAX_POW_TABLE],
+            coset_powers: [[0; TRANSFORM_ELEM_BYTES]; TRANSFORM_MAX_POW_TABLE],
+            scale: [0; TRANSFORM_ELEM_BYTES],
+        };
+        let mem = |raw| DeviceMemory(forged(HandleKind::DeviceMemory, raw, 64));
+        let stream = StreamId(forged(HandleKind::Stream, 0x5000, 0));
+        for scratch in [Some(mem(0x3000)), None] {
+            let e = driver
+                .launch_transform(mem(0x1000), mem(0x2000), scratch, &launch, stream)
+                .expect_err("unminted handles");
+            assert_eq!((e.call, e.class), (DriverCall::Launch, DriverErrorClass::Poisoned));
+            assert_eq!(e.code, super::STALE_HANDLE);
+        }
+    }
+}
+

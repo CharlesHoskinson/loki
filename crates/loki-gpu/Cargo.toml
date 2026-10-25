@@ -21,7 +21,7 @@ group = "0.13.0"
 # P4 wire boundary: the only scalar type whose `to_repr` the NTT kernels accept
 # (canonical little-endian BLS12-381 Fr). The same crates.io release Loki
 # uses, so the `TypeId` allowlist in `ntt::wire_field_supported` unifies.
-midnight-curves = { version = "0.3.1", default-features = false }
+midnight-curves = { version = "=0.3.1", default-features = false }
 
 [build-dependencies]
 cc = { version = "1", optional = true }
