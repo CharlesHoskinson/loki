@@ -27,6 +27,9 @@ const SRS_BYTES: usize = 201_326_980;
 const SRS_SHA256: &str = "1cc62978558fdc1e445cd70cfd9a86ec3c2e2151b6d74811232d37faf9133ff1";
 const W10_MANIFEST_SHA256: &str =
     "f4e2c035e37f996ee0b13563cc2c8dc7e16e607b044f7f95228b12cb6e4531bb";
+const W10_VK_SHA256: &str =
+    "801467c825c79e063c0603b94c49eef63fd527ff8b3a6d42aa24022b108849a8";
+const W10_VK_PATH: &str = "/home/charles/repos/loki-wt/w10-gpu-quotient/target/a3-profile/gpu-after-1792902759671818294-2247472/artifacts/parent/w.vk";
 const W10_LOKI_HEAD: &str = "053577f6083b329f2bbef1f3711f92cadc92a24f";
 const W10_MORIARTY_HEAD: &str = "6ee918696ab907244c703bbd94bfea9acde7ddd1";
 const W10_PROVER_FEATURES: &str = "loki-gpu,midnight-proofs/loki-profile,midnight-proofs/cuda-argument-commit,midnight-proofs/loki-cpu-budget";
@@ -405,12 +408,32 @@ mod manifest_tests {
 
 #[cfg(test)]
 mod instance_shape_tests {
+    use std::{fs, io::Cursor};
+
     use group::Group;
-    use super::{EXPECTED_TOTAL_VK_INSTANCE_COLUMNS, G1Projective, a3_committed_identity};
+    use super::{
+        EXPECTED_K, EXPECTED_TOTAL_VK_INSTANCE_COLUMNS, G1Projective, SerdeFormat, MidnightVK,
+        W10_VK_PATH, W10_VK_SHA256, a3_committed_identity, sha256_hex,
+    };
 
     #[test]
     fn a3_vk_includes_the_committed_identity_and_public_instance_columns() {
         assert_eq!(EXPECTED_TOTAL_VK_INSTANCE_COLUMNS, 2);
         assert_eq!(a3_committed_identity(), G1Projective::identity());
+    }
+
+    #[test]
+    fn pinned_public_a3_vk_has_two_total_instance_columns() {
+        let bytes = fs::read(W10_VK_PATH).expect("read pinned public W10 A3 VK");
+        assert_eq!(sha256_hex(&bytes), W10_VK_SHA256);
+        let mut cursor = Cursor::new(bytes.as_slice());
+        let vk = MidnightVK::read(&mut cursor, SerdeFormat::Processed)
+            .expect("parse processed W10 A3 VK");
+        assert_eq!(cursor.position(), bytes.len() as u64);
+        assert_eq!(u32::from(vk.k()), EXPECTED_K);
+        assert_eq!(
+            vk.vk().cs().num_instance_columns(),
+            EXPECTED_TOTAL_VK_INSTANCE_COLUMNS
+        );
     }
 }
