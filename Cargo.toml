@@ -251,10 +251,10 @@ optional = true
 
 # CUDA-neutral backend contracts (P1 seam); never enabled by default.
 [dependencies.loki-backend-api]
-path = "/home/charles/repos/loki-gpu/crates/loki-backend-api"
+path = "../loki-gpu/crates/loki-backend-api"
 optional = true
 
 # Apache-2.0 GPU backend; selected only by `loki-gpu-backend`.
 [dependencies.loki-gpu]
-path = "/home/charles/repos/loki-gpu/crates/loki-gpu"
+path = "../loki-gpu/crates/loki-gpu"
 optional = true
