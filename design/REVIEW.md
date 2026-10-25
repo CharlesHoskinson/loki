@@ -2,7 +2,7 @@
 
 CODE: the initial sections record the design-team review of the API, Unsupported skeleton and Lean specification. Later dated sections review implementation branches and their scoped evidence. They do not establish stock acceptance or end-to-end speedups for the new backend. Unless explicitly labeled otherwise, findings are CODE observations or proposed contracts.
 
-## Current implementation review status — 2026-10-25 08:54 UTC
+## Current implementation review status — 2026-10-25 09:08 UTC
 
 SOURCE: revisions below are branch-specific; source review is not a claim that
 all branches are merged or that the combined prover is qualified.
@@ -13,6 +13,8 @@ all branches are merged or that the combined prover is qualified.
 | P3 checked MSM dispatch | CODE: Loki `9fe5da0`/`85586f3` returns cancellation without CPU retry; stock-signature shim is explicitly non-cancellable. MEASURED (P3): CPU-only suite 15 passed, cancellation mutant failed. |
 | P4 transform dispatch | CODE: Loki `7804fa6` propagates cancellation, admits the exact ABI, rejects results after sticky-disable and settles a failed coset offer once on CPU. MEASURED (P4): CPU-only suite 18 passed and stock-default suite 9 passed. OPEN QUESTION: combined P3/P4 merge gate and feature-on stock differential. |
 | P5 quotient | CODE: draft `9d7efb4` corrects Q1/Q3 and the subsequent local-query lock/poison and snapshot-charge findings. MEASURED (P5): fake suite 19 passed; native summary receipt reports the full CUDA suite and three explicit quotient cases passing. OPEN QUESTION: final sanitizer/integration gates and measured qualification of the local-memory estimate. |
+| P5 CPU compiler | CODE: Loki `3f964da` addresses domain coherence and enforced certificate validation. Source review found no well-formed term-order mismatch. MEASURED (P5): 11 tests passed, two ignored; final receipt/mutation gates remain separate. |
+| P7 scheduler/benchmark | CODE: initial review of Loki `18adf0f` found qualification-status, GPU-dispatch evidence and process-cleanup gaps. OPEN QUESTION: scheduler reservation redemption and stale completion policy. Findings sent to owner; no source approval yet. |
 | Lean | SOURCE: components `2a9e9f6` reports both original backend obligations proved, full build and zero `sorry`; this is a separate branch. OPEN QUESTION: reconcile with current gpu-spec modules and run the combined build/axiom audit. |
 
 CODE: R9/R10 repeated-recovery leaks, reservation redemption, actual SRS
@@ -355,3 +357,57 @@ safe shared-driver sequence is excluded by P4's unsafe injection precondition;
 do not wrap that old test in unsafe and call the resulting violation a current
 safe-API bug. Preserve old-revision evidence and use compile-fail/current safe
 construction coverage when integrating it.
+
+## P5 CPU compiler review — Loki 3f964da
+
+CODE: lead read the compiler, register allocator, independent allocation
+checker, host binder and evaluator loops at `40d267e`, then the corrections
+at `3f964da`. No arithmetic or term-order mismatch was found for well-formed
+inputs. The review requested two enforced boundaries: domain metadata must
+match before conversion, and certificate validation must actually run at the
+compile/submission boundary. The correction makes compiled fields private,
+verifies every compilation, checks base/extended domain logs, extent and
+rotation scale before binding, and revalidates the certificate on binding.
+The checker rejects inconsistent logical-register counts before allocation.
+
+CODE: this earns source approval for the CPU-only compiler slice, not a proof
+of compiler correctness or native integration. MEASURED (P5 report): the
+release compiler suite passed 11 tests with two ignored. Raw source/feature
+receipts and guard mutation results remain final integration evidence.
+
+SOURCE/CODE: the differential oracle is the source-audited Loki
+`crate::plonk::evaluation::Evaluator`, not an externally invoked private stock
+function. The stock 0.8.3 evaluator file hashes to
+`b5fde24d4203d1d026f535dd908d071a49b3c469d80129f3ff8394add2a89beb`;
+Loki's `40d267e` file hashes to
+`5f41fd851a795b6ac1d85661530b4ba006cd1324808d139a6c9e192beb69dfe6`.
+The inspected differences are optional hardened rotation indexing, profile
+instrumentation and hardened tests. The reported compiler tests use default
+committed-instances plus `loki-backend-api`, with hardening off. P5 corrected
+the provenance wording. External stock-verifier acceptance remains a later
+whole-proof gate.
+
+## P7 initial review — Loki 18adf0f
+
+CODE: findings below concern benchmark qualification and scheduler integration,
+not a demonstrated proof-verification mismatch. They were reported to P7 and
+the coordinator; corrections and receipts are pending.
+
+| ID | Finding | Required disposition |
+|---|---|---|
+| S1 — high qualification risk | `bench/control/src/main.rs` leaves block status `COMPLETE` and exit 0 after arms marked `FAILED`, `TIMEOUT` or `INVALID`. Existing fixtures deliberately assert this collector behavior; VK mismatch is also only recorded. | Separate collection completion from qualification success. Unusable arms/required VK mismatch must be visible to an automated gate through explicit qualification status and nonzero exit. Continuing collection is compatible with failing qualification. |
+| S2 — high qualification risk | `bench/adapter/driver.rs` records telemetry but never requires successful GPU dispatch or zero fallback/error for G0 samples. The separate `loki-harness::require_dispatch` does not cover this executable. | Enforce per-stage accelerated-operation evidence and zero fallback/error, with CPU-only and failure negative controls, before a GPU performance sample is accepted. |
+| S3 — cleanup gap | Normal group cleanup can leave `orphans_after_kill` nonempty yet retain `ACCEPTED`. Launcher SIGKILL only triggers direct-child PDEATHSIG; the fixture's `sleep 1000` grandchild is not covered by its arm-PID-only assertion. | Invalidate surviving-process cases, test the saved descendant PID, and supply reliable group cleanup or explicitly narrow the guarantee. Close the pre-exec parent-death race by checking expected parent identity after arming PDEATHSIG. |
+| S4 — integration open | `HeavyPermit` holds a P2 reservation but offers no redemption path to operations that independently reserve their own allocations. Reserving a full workspace can exclude that same job's allocations. | Establish an enforced reservation-consumption scope or explicitly label the scheduler as an admission prototype until runtime integration. Do not silently double-count workspace. |
+| S5 — contract open | `complete()` publishes `Completed` even if release returns `Stale`/`Retained`; the stale-generation test calls `check_current()` then `fail()`, not completion. | Define and enforce whether completion requires current healthy generation or an independently verified host artifact. The caller obligation must not be hidden behind an unconditional completion claim. |
+
+CODE: scheduler tests target the earlier safe `with_driver` API. When rebasing
+onto corrected P4, port ordinary fake-runtime tests to `with_fake`/`FakeControl`;
+do not bypass the new exclusive-lifecycle boundary with blanket unsafe blocks.
+
+SOURCE/CODE: the benchmark verifier calls registry `midnight-zk-stdlib` 2.3.5
+`batch_verify`, whose inspected implementation requires full transcript
+consumption and invokes the final accumulated KZG verification. Its separate
+manifest pins registry stock `midnight-proofs =0.8.3`, with disclosed
+`circuit-params`. This source check is not a newly executed chain acceptance
+receipt. The verifier additionally checks stage linkage and carried pairing.
