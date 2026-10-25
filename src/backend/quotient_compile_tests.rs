@@ -711,6 +711,14 @@ mod harness {
     /// Prove `circuits` copies of the harness at `k` up to the trace, then
     /// compare stock `compute_nu_poly`'s numerator with the compiled program.
     pub fn check(k: u32, circuits: usize) {
+        check_timed(k, circuits, None)
+    }
+
+    /// As [`check`]; with `dump`, also time stock `evaluate_numerator`
+    /// (rayon), the argument-coset binding, and write the program shape
+    /// (v1 envelope, constants, rows/scale logs; no column data) for a GPU
+    /// replay with synthetic columns.
+    pub fn check_timed(k: u32, circuits: usize, dump: Option<&std::path::Path>) {
         let params = ParamsKZG::<Bls12>::unsafe_setup(k, ChaCha20Rng::from_seed([0x53; 32]));
         let circuit = Fixture {
             rows: (1usize << k) - 32,
@@ -749,6 +757,7 @@ mod harness {
         let instance: Vec<_> = trace.instance_polys.iter().map(|v| to_ext(v)).collect();
         let advice_refs: Vec<_> = advice.iter().map(Vec::as_slice).collect();
         let instance_refs: Vec<_> = instance.iter().map(Vec::as_slice).collect();
+        let started = std::time::Instant::now();
         let want = pk.ev.evaluate_numerator::<Ext>(
             domain,
             pk.get_vk().cs(),
@@ -769,6 +778,7 @@ mod harness {
             &pk.l_active_row,
             &pk.permutation.cosets,
         );
+        let stock_eval = started.elapsed();
         let compiled = compile_numerator::<Fq, Ext>(
             &pk.ev,
             pk.get_vk().cs(),
@@ -785,6 +795,7 @@ mod harness {
         )
         .unwrap();
         check_allocation(&compiled).unwrap();
+        let started = std::time::Instant::now();
         let columns = bind_host_columns::<Fq, Ext>(
             &compiled,
             domain,
@@ -802,7 +813,43 @@ mod harness {
             },
         )
         .unwrap();
+        let bind = started.elapsed();
+        if let Some(path) = dump {
+            use std::io::Write;
+            let program = loki_gpu::quotient::wire::encode_program(
+                compiled.register_count,
+                compiled.output_register,
+                &compiled.instructions,
+            )
+            .unwrap();
+            let mut f = std::fs::File::create(path).unwrap();
+            // [rows_log u32][scale_log u32][columns u32][constants u32][program..][constants..]
+            for v in [
+                compiled.extended_domain_log,
+                compiled.extended_domain_log - compiled.domain_log,
+                compiled.columns.len() as u32,
+                compiled.constants.len() as u32,
+            ] {
+                f.write_all(&v.to_le_bytes()).unwrap();
+            }
+            f.write_all(&(program.len() as u32).to_le_bytes()).unwrap();
+            f.write_all(&program).unwrap();
+            for c in &compiled.constants {
+                f.write_all(ff::PrimeField::to_repr(c).as_ref()).unwrap();
+            }
+            eprintln!(
+                "harness k{k} x{circuits} timing: stock evaluate_numerator {:?} (rayon {} threads); bind_host_columns (argument cosets + omega) {:?}",
+                stock_eval,
+                rayon::current_num_threads(),
+                bind
+            );
+        }
+        let started = std::time::Instant::now();
         let got = interpret(&compiled, &columns);
+        let interp = started.elapsed();
+        if dump.is_some() {
+            eprintln!("harness k{k} x{circuits}: single-thread CPU bytecode interpreter {interp:?}");
+        }
         assert_rows_equal(&format!("harness k{k} x{circuits}"), &got, &want);
         eprintln!(
             "harness k{k} x{circuits}: rows {} instructions {} physical registers {} (logical {}) constants {} columns {}",
@@ -824,6 +871,17 @@ fn harness_k10_matches_stock_compute_nu_poly() {
 #[test]
 fn harness_k10_two_circuits_match_stock_compute_nu_poly() {
     harness::check(10, 2);
+}
+
+/// Timing/shape probe for the P5 whole-proof estimate. Run explicitly with
+/// `LOKI_P5_DUMP=<file>` under heavy.lock; writes no witness-derived column
+/// data (only program, frozen synthetic challenges and sizes).
+#[test]
+#[ignore = "timing probe: LOKI_P5_DUMP=<path> cargo test --release -- --ignored harness_timing_probe"]
+fn harness_timing_probe() {
+    let path = std::env::var_os("LOKI_P5_DUMP").expect("LOKI_P5_DUMP");
+    let k: u32 = std::env::var("LOKI_P5_K").ok().and_then(|v| v.parse().ok()).unwrap_or(19);
+    harness::check_timed(k, 1, Some(std::path::Path::new(&path)));
 }
 
 #[test]
