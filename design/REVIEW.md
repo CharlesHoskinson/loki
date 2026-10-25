@@ -2,20 +2,21 @@
 
 CODE: the initial sections record the design-team review of the API, Unsupported skeleton and Lean specification. Later dated sections review implementation branches and their scoped evidence. They do not establish stock acceptance or end-to-end speedups for the new backend. Unless explicitly labeled otherwise, findings are CODE observations or proposed contracts.
 
-## Current implementation review status — 2026-10-25 09:08 UTC
+## Current implementation review status — 2026-10-25 09:30 UTC
 
 SOURCE: revisions below are branch-specific; source review is not a claim that
 all branches are merged or that the combined prover is qualified.
 
 | Area | Latest reviewed evidence and remaining gate |
 |---|---|
-| P2/P4 runtime | CODE: P4 `4b2977a` corrects the additional L1/L2/N1/N2 paths, probe classification and native handle guard. MEASURED: the earlier main `eb27233` rerun passed 53 tests. SOURCE: P4 final corrected-source native qualification remains pending. |
+| P2/P4 runtime | CODE: P4 `4b2977a` corrects the additional L1/L2/N1/N2 paths, probe classification and native handle guard; `59464c4` moves that guard before every native call and pins the field dependency exactly. MEASURED: the earlier main `eb27233` rerun passed 53 tests. SOURCE: P4 final corrected-source native qualification remains pending. |
 | P3 checked MSM dispatch | CODE: Loki `9fe5da0`/`85586f3` returns cancellation without CPU retry; stock-signature shim is explicitly non-cancellable. MEASURED (P3): CPU-only suite 15 passed, cancellation mutant failed. |
 | P4 transform dispatch | CODE: Loki `7804fa6` propagates cancellation, admits the exact ABI, rejects results after sticky-disable and settles a failed coset offer once on CPU. MEASURED (P4): CPU-only suite 18 passed and stock-default suite 9 passed. OPEN QUESTION: combined P3/P4 merge gate and feature-on stock differential. |
 | P5 quotient | CODE: draft `9d7efb4` corrects Q1/Q3 and the subsequent local-query lock/poison and snapshot-charge findings. MEASURED (P5): fake suite 19 passed; native summary receipt reports the full CUDA suite and three explicit quotient cases passing. OPEN QUESTION: final sanitizer/integration gates and measured qualification of the local-memory estimate. |
 | P5 CPU compiler | CODE: Loki `3f964da` addresses domain coherence and enforced certificate validation. Source review found no well-formed term-order mismatch. MEASURED (P5): 11 tests passed, two ignored; final receipt/mutation gates remain separate. |
 | P7 scheduler/benchmark | CODE: initial review of Loki `18adf0f` found qualification-status, GPU-dispatch evidence and process-cleanup gaps. OPEN QUESTION: scheduler reservation redemption and stale completion policy. Findings sent to owner; no source approval yet. |
 | Lean | SOURCE: components `2a9e9f6` reports both original backend obligations proved, full build and zero `sorry`; this is a separate branch. OPEN QUESTION: reconcile with current gpu-spec modules and run the combined build/axiom audit. |
+| Lean SRS | CODE: `49fa4ca`/`ea839e5` specifies sequential prefix/lease refinement with explicit kernel, codec and concurrent-pinning obligations. MEASURED (P3): targeted module build and three-theorem standard-axiom audit passed. |
 
 CODE: R9/R10 repeated-recovery leaks, reservation redemption, actual SRS
 submission pinning and native/Lean refinement limits remain under their
@@ -400,6 +401,13 @@ the coordinator; corrections and receipts are pending.
 | S3 — cleanup gap | Normal group cleanup can leave `orphans_after_kill` nonempty yet retain `ACCEPTED`. Launcher SIGKILL only triggers direct-child PDEATHSIG; the fixture's `sleep 1000` grandchild is not covered by its arm-PID-only assertion. | Invalidate surviving-process cases, test the saved descendant PID, and supply reliable group cleanup or explicitly narrow the guarantee. Close the pre-exec parent-death race by checking expected parent identity after arming PDEATHSIG. |
 | S4 — integration open | `HeavyPermit` holds a P2 reservation but offers no redemption path to operations that independently reserve their own allocations. Reserving a full workspace can exclude that same job's allocations. | Establish an enforced reservation-consumption scope or explicitly label the scheduler as an admission prototype until runtime integration. Do not silently double-count workspace. |
 | S5 — contract open | `complete()` publishes `Completed` even if release returns `Stale`/`Retained`; the stale-generation test calls `check_current()` then `fail()`, not completion. | Define and enforce whether completion requires current healthy generation or an independently verified host artifact. The caller obligation must not be hidden behind an unconditional completion claim. |
+| S6 — timing scope | `run_chain` starts its chain timer before the children and includes all three additional stock-verifier requests before stopping it. | Label that value qualification-inclusive and report production-stage time separately, retaining the production driver's existing checks. Extra qualification overhead must not silently dilute the primary recursion-speed metric. |
+
+CODE: S1's required VK comparison is cohort-specific. A same-VK experiment
+must control key artifacts or establish deterministic construction. Independent
+stock lookup-map traversal is not universally byte-deterministic; do not sort
+the default path to make this gate pass. Stock acceptance and exact child-key
+binding remain mandatory independently of that measurement policy.
 
 CODE: scheduler tests target the earlier safe `with_driver` API. When rebasing
 onto corrected P4, port ordinary fake-runtime tests to `with_fake`/`FakeControl`;
@@ -411,3 +419,19 @@ consumption and invokes the final accumulated KZG verification. Its separate
 manifest pins registry stock `midnight-proofs =0.8.3`, with disclosed
 `circuit-params`. This source check is not a newly executed chain acceptance
 receipt. The verifier additionally checks stage linkage and carried pairing.
+
+## Lean SRS review — 49fa4ca / ea839e5
+
+CODE: lead read exact-prefix refinement, acquisition/eviction/budget proofs,
+dispatch composition and concrete examples. The model explicitly assumes
+resident kernel correctness and codec agreement. Its acquire-kernel-release
+step is atomic; it does not prove concurrent native submission lifetimes.
+`ea839e5` adds the requested `OBLIGATION(srs-prefix-kernel)`,
+`OBLIGATION(srs-codec-agreement)` and `OBLIGATION(srs-submission-pinning)`
+markers, with no proof change. The last explicitly leaves quint-q4 F5 open.
+
+MEASURED (P3 report): `LEAN_NUM_THREADS=2 lake build LokiLean.BackendSrs`
+succeeded (8932 jobs); `dispatchSeq_eq`, `acquire_sound` and
+`prefixHit_msm_eq` report only `propext`, `Classical.choice`, `Quot.sound`.
+This targeted receipt does not replace the pending combined gpu-spec/components
+build and axiom audit. Preserve `ea839e5` and P4's `7d3e6a8` during reconciliation.
