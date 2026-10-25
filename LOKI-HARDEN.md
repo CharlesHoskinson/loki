@@ -54,8 +54,11 @@ used in these fixtures.
 Build with `CARGO_BUILD_JOBS=4`. `scripts/verify-w9.sh` is the supplied full
 gate adapted to this worktree, with complete logs and failure propagation.
 It routes GPU commands through `scripts/w9-host-cargo.py`, adds both concurrent
-proof configurations and the combined hardened CPU-budget GPU suite, and holds
-the shared heavy-job lock. Logs are under `target/w9-validation/gate/`; runner
+proof configurations and the combined hardened CPU-budget GPU suite. It holds
+the shared heavy-job lock for each CPU stage, releasing it before host GPU
+queue waits. `W9_GATE_START` resumes at a named stage; earlier results must be
+retained and checked separately when using it. Logs are under
+`target/w9-validation/gate/`; runner
 logs are under `target/gpu-runs/`.
 
 Additional CPU configurations:
