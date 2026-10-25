@@ -2,7 +2,7 @@
 
 CODE: the initial sections record the design-team review of the API, Unsupported skeleton and Lean specification. Later dated sections review implementation branches and their scoped evidence. They do not establish stock acceptance or end-to-end speedups for the new backend. Unless explicitly labeled otherwise, findings are CODE observations or proposed contracts.
 
-## Current implementation review status — 2026-10-25 09:30 UTC
+## Current implementation review status — 2026-10-25 10:15 UTC
 
 SOURCE: revisions below are branch-specific; source review is not a claim that
 all branches are merged or that the combined prover is qualified.
@@ -14,8 +14,8 @@ all branches are merged or that the combined prover is qualified.
 | P4 transform dispatch | CODE: Loki `7804fa6` propagates cancellation, admits the exact ABI, rejects results after sticky-disable and settles a failed coset offer once on CPU. MEASURED (P4): CPU-only suite 18 passed and stock-default suite 9 passed. OPEN QUESTION: combined P3/P4 merge gate and feature-on stock differential. |
 | P5 quotient | CODE: draft `9d7efb4` corrects Q1/Q3 and the subsequent local-query lock/poison and snapshot-charge findings. MEASURED (P5): fake suite 19 passed; native summary receipt reports the full CUDA suite and three explicit quotient cases passing. OPEN QUESTION: final sanitizer/integration gates and measured qualification of the local-memory estimate. |
 | P5 CPU compiler | CODE: Loki `3f964da` addresses domain coherence and enforced certificate validation. Source review found no well-formed term-order mismatch. MEASURED (P5): 11 tests passed, two ignored; final receipt/mutation gates remain separate. |
-| P7 scheduler/benchmark | CODE: initial review of Loki `18adf0f` found qualification-status, GPU-dispatch evidence and process-cleanup gaps. OPEN QUESTION: scheduler reservation redemption and stale completion policy. Findings sent to owner; no source approval yet. |
-| Lean | SOURCE: components `2a9e9f6` reports both original backend obligations proved, full build and zero `sorry`; this is a separate branch. OPEN QUESTION: reconcile with current gpu-spec modules and run the combined build/axiom audit. |
+| P7 scheduler/benchmark | CODE: `19637e3` corrects qualification status, stale completion and timing scope. Source approval is scoped to those items; per-stage operation evidence and bounded descendant cleanup need follow-up. Reservation redemption remains an explicitly unimplemented prototype integration. |
+| Lean | CODE: lead independently reviewed closure `0416b73` in components `2a9e9f6`; both original backend statements are retained with substantive proofs. SOURCE: components reports full build and zero `sorry`; this is a separate branch. OPEN QUESTION: reconcile with current gpu-spec modules and run the combined build/axiom audit. |
 | Lean SRS | CODE: `49fa4ca`/`ea839e5` specifies sequential prefix/lease refinement with explicit kernel, codec and concurrent-pinning obligations. MEASURED (P3): targeted module build and three-theorem standard-axiom audit passed. |
 
 CODE: R9/R10 repeated-recovery leaks, reservation redemption, actual SRS
@@ -435,3 +435,63 @@ succeeded (8932 jobs); `dispatchSeq_eq`, `acquire_sound` and
 `prefixHit_msm_eq` report only `propext`, `Classical.choice`, `Quot.sound`.
 This targeted receipt does not replace the pending combined gpu-spec/components
 build and axiom audit. Preserve `ea839e5` and P4's `7d3e6a8` during reconciliation.
+
+## Further correction reviews — 2026-10-25 10:15 UTC
+
+CODE: P4 `5ce8862` adopts the quint-q3 sticky-setup cases as regression tests
+and restates the shared-driver case over safe, independently owned fake
+runtimes. Lead reviewed the port. The old invalid shared ownership sequence
+is not hidden inside an unsafe block. The two known leak tests retain their
+open-risk status. A compile-fail check for safe invocation of `with_driver`
+was requested: independent-fake behavior alone would not detect accidental
+reintroduction of safe raw-driver injection. MEASURED (P4 report): no-CUDA
+suites pass; corrected-source native qualification remains pending.
+
+CODE: lead read the `9a32d2f..2a9e9f6` differences for `BackendMsm` and
+`BackendQuotient`. Closure `0416b73` retains both original statements. The
+segmented proof reduces exact partition/permutation sums to the radix digit
+identity. Interpreter safety follows from an initialized-register invariant
+over instruction prefixes, with read-before-write semantics. No substitute
+axioms or assumptions were introduced in those differences. This source
+approval does not discharge the separate native, compiler or lifetime contracts.
+
+### P7 corrections — 19637e3
+
+CODE: lead reviewed `25618ff`/`19637e3` and gave scoped source approval:
+
+- S1: collection completion is distinct from qualification; failed/invalid
+  arms and a violated explicit VK policy yield nonzero exit.
+- S5: completion requires current healthy generation and clean reservation
+  release; otherwise the job fails and descendants become unavailable.
+- S6: qualification-inclusive chain time is labelled explicitly, with
+  production-stage time and extra stock-receipt time separately reported.
+- S4: the scheduler now declares itself an admission prototype with no
+  reservation redemption. This is an honest scope correction, not completed
+  runtime integration.
+
+CODE: S2 now rejects missing telemetry, any fallback/error and wholly CPU
+stages, but permits a stage with no MSM acceleration if it has NTT success
+and another stage supplies MSM success. The follow-up requires both expected
+operations in each eligible A2/A3/DEC stage, with negatives for an otherwise
+positive chain whose parent has zero MSM or zero NTT success. Counters cover
+stage keygen/proof work; they are not proof-only counters.
+
+CODE: S3 adds a subreaper, escape detection and parent-identity checks after
+arming PDEATHSIG. Follow-up review found unchecked subreaper setup, blocking
+`waitpid(..., 0)`, only five adoption sweeps, and then unbounded reader join.
+Cleanup needs a deadline, nonblocking reap and explicit remaining-descendant
+reporting, including a deeper escaped-tree regression. The SIGKILL guarantee
+is now limited to the known driver/verifier pair; actual pair coverage remains
+to be demonstrated separately from the arm-only fixture.
+SOURCE: [Linux PDEATHSIG semantics](https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html)
+support the fork-inheritance and setup-race findings.
+
+MEASURED (P7 report, not lead execution): failure/timeout, VK-policy mismatch,
+escape and stale-completion regressions were red before the corrections and
+green afterward. Final source-bound receipts and live forced-GPU-error
+qualification remain pending. No full P7 readiness approval is implied.
+
+SOURCE: `bench/README.md` now records the adapted Moriarty source files and
+revision `f2ea193777897869c2e45c08601cc412e00c3897`. Lead inspected that
+revision's workspace Apache-2.0 declaration and root LICENSE; it has no root
+NOTICE. The review copied no implementation source.
