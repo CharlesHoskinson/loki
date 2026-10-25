@@ -1,0 +1,293 @@
+source commit: f716257b989d5e2c6ce1a655a25c4d2e0fdf6c22 (clean crates/ and Cargo.lock)
+$ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test ntt_differential -- --test-threads=1
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/ntt_differential.rs (target/debug/deps/ntt_differential-86fe44898b882254)
+
+running 18 tests
+test bit_reversed_boundary_orders ... ok
+test canonical_montgomery_boundaries_round_trip_exactly ... ok
+test domain_transforms_helper_builds_the_hand_written_specs ... ok
+test field_boundary_values_are_fully_reduced ... ok
+test inverse_coset_prefixes_match_truncated_stock ... ok
+test inverse_normalization_is_applied_exactly_once ... ok
+test k19_k20_base_and_extended_domains ... ok
+test log_zero_transform_is_identity_with_single_scale ... ok
+test multi_wrap_rotations_of_natural_order_outputs ... ok
+test naive_dft_matches_stock_for_every_conversion ... ok
+test pinned_root_and_zeta_match_stock ... ok
+test rejected_requests_never_launch ... ok
+test rejected_shapes_and_roots ... ok
+test small_domains_every_conversion_every_pattern ... ok
+test spec_root_is_always_the_forward_root ... ok
+test stock_domain_roots_are_the_pinned_roots ... ok
+test wire_field_check_identifies_bls12_381_only ... ok
+test wrong_root_round_trip_is_only_a_negative_control ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 73.14s
+
+exit=0
+$ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test ntt_process_entry -- --test-threads=1
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.36s
+     Running tests/ntt_process_entry.rs (target/debug/deps/ntt_process_entry-a01fd26ccc1c1af8)
+
+running 1 test
+test trait_entry_point_uses_the_process_runtime ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+exit=0
+$ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test resident_ntt -- --test-threads=1
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/resident_ntt.rs (target/debug/deps/resident_ntt-577daf231d4232e9)
+
+running 18 tests
+test chain_releases_intermediates_and_keeps_source ... ok
+test checkpointed_chain_source_survives_mid_chain_poison ... ok
+test completion_failure_poisons_and_publishes_nothing ... ok
+test driver_without_transform_is_unsupported_without_driver_calls ... ok
+test event_wait_failure_poisons ... ok
+test launch_error_after_enqueue_drains_and_preserves_inputs ... ok
+test malformed_requests_and_handles_touch_no_device ... ok
+test native::measure_transform_costs_on_synthetic_inputs ... ignored
+test native::repeated_transforms_have_bounded_resident_state ... ok
+test native::resident_round_chain_matches_stock_with_boundary_readback_only ... ok
+test output_or_scratch_allocation_failure_is_not_started ... ok
+test record_failure_before_launch_drains_cleanly ... ok
+test reservation_covers_output_and_scratch_before_allocation ... ok
+test scratch_free_failure_after_drained_launch_error_poisons ... ok
+test scratch_free_failure_after_success_publishes_nothing ... ok
+test sticky_timing_failure_poisons_and_publishes_nothing ... ok
+test success_publishes_fresh_handle_and_keeps_source ... ok
+test transform_capability_is_advertised_only_when_healthy ... ok
+
+test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.08s
+
+exit=0
+$ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test ffi_abi -- --test-threads=1
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running tests/ffi_abi.rs (target/debug/deps/ffi_abi-a07d0359ef377a29)
+
+running 14 tests
+test device_probe_reports_sm120 ... ok
+test malformed_handles_and_null_pointers_are_rejected_before_use ... ok
+test measure_pinned_budget ... ignored
+test native_bounds_and_stale_epoch_after_reset ... ok
+test native_driver_has_a_single_owner ... ok
+test native_full_slot_transfer_timing ... ok
+test native_operations_from_other_host_threads_use_the_selected_device ... ok
+test native_pageable_fallback_round_trip ... ok
+test native_rejections_and_metadata_checks ... ok
+test native_runtime_lifetime_round_trip ... ok
+test out_of_range_ordinal_is_unsupported_and_allocates_nothing ... ok
+test rust_mirrors_match_native_layout ... ok
+test status_and_kind_constants_match_header ... ok
+test v1_operation_stubs_are_unsupported_and_leave_output_untouched ... ok
+
+test result: ok. 13 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+exit=0
+$ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test runtime_contract -- --test-threads=1
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running tests/runtime_contract.rs (target/debug/deps/runtime_contract-78fda065237f07ac)
+
+running 39 tests
+test admission_and_snapshot_do_not_wait_for_device_work ... ok
+test allocation_ids_are_never_reused ... ok
+test asynchronous_kernel_fault_surfaces_at_sync_and_poisons ... ok
+test budget_exhaustion_rejects_before_device_allocation ... ok
+test budget_is_lower_of_cap_and_free_minus_headroom ... ok
+test cancellation_drains_retires_and_publishes_nothing ... ok
+test cancellation_with_failed_drain_poisons_and_retains ... ok
+test checkpoint_budget_is_bounded ... ok
+test context_loss_then_reinitialize_rejects_stale_handles ... ok
+test corrupt_device_bytes_fail_decode_without_publication ... ok
+test device_allocation_failure_is_transient_and_not_started ... ok
+test driverless_runtime_is_unsupported ... ok
+test duplicate_release_is_rejected_and_accounted_once ... ok
+test empty_upload_is_rejected_without_allocation ... ok
+test event_record_failure_drains_stream_and_preserves ... ok
+test event_record_failure_with_failed_drain_poisons ... ok
+test event_sync_failure_is_uncertain_completion_and_poisons ... ok
+test forged_handle_metadata_is_rejected_before_device_work ... ok
+test healthy_runtime_advertises_resident_buffers_only ... ok
+test host_checkpoint_distinguishes_recoverable_from_resident_only_loss ... ok
+test invalid_config_is_rejected_before_probe ... ok
+test launch_success_publishes_fresh_handle_after_completion ... ok
+test multi_chunk_round_trip_never_reuses_a_live_slot ... ok
+test no_pinned_memory_disables_overlap_capability ... ok
+test non_sm120_device_is_unsupported_and_allocates_nothing ... ok
+test pinned_cap_falls_back_to_pageable_and_still_round_trips ... ok
+test pinned_staging_probe_reports_capability ... ok
+test points_have_no_generic_wire_encoding_and_are_unsupported ... ok
+test poisoned_h2d_failure_poisons_generation_and_quarantines ... ok
+test pre_cancelled_token_does_not_start ... ok
+test reinitialize_of_healthy_generation_is_refused ... ok
+test reservations_are_checked_authoritative_and_single_use ... ok
+test streams_and_events_are_long_lived ... ok
+test teardown_frees_every_healthy_resource ... ok
+test telemetry_separates_paths_and_reports_waits ... ok
+test transient_d2h_failure_publishes_nothing_and_keeps_source ... ok
+test transient_h2d_failure_after_partial_work_drains_and_frees ... ok
+test transient_launch_failure_frees_scratch_and_keeps_source ... ok
+test uninitialized_runtime_fabricates_no_generation ... ok
+
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+exit=0
+$ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test p2_fix_regressions -- --test-threads=1
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/p2_fix_regressions.rs (target/debug/deps/p2_fix_regressions-c716a57ea6057b0e)
+
+running 10 tests
+test cancellation_reports_the_cancelled_kind ... ok
+test foreign_checkpoint_cannot_be_recovered ... ok
+test foreign_release_and_duplicate_are_rejected_without_effect ... ok
+test foreign_reservation_is_rejected ... ok
+test healthy_teardown_without_faults_still_frees_everything ... ok
+test identities_are_unique_across_runtimes ... ok
+test setup_cleanup_stops_at_every_failure_boundary ... ok
+test sticky_timing_failures_poison_upload_download_and_launch ... ok
+test teardown_stops_at_every_failure_boundary ... ok
+test transient_timing_failures_are_ignored ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+exit=0
+$ flock heavy.lock flock gpu.lock cargo test -p loki-gpu --features cuda --test review_regressions -- --test-threads=1
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/review_regressions.rs (target/debug/deps/review_regressions-8472b58b0e36b136)
+
+running 4 tests
+test foreign_runtime_handle_is_rejected ... ok
+test healthy_drop_stops_destructing_after_new_sticky_sync_error ... ok
+test setup_cleanup_stops_after_sticky_destroy_error ... ok
+test sticky_timing_failure_cannot_publish_upload ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit=0
+$ cargo test -p loki-gpu (default features, no device)
+   Compiling loki-gpu v0.1.0 (./crates/loki-gpu)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
+     Running unittests src/lib.rs (target/debug/deps/loki_gpu-29a290513ee0436a)
+
+running 3 tests
+test runtime::tests::lock_order_is_enforced ... ok
+test runtime::identity_tests::identity_counter_fails_instead_of_wrapping ... ok
+test runtime::tests::reentrant_lock_panics ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/p2_fix_regressions.rs (target/debug/deps/p2_fix_regressions-ccf6b4eac6de236e)
+
+running 10 tests
+test healthy_teardown_without_faults_still_frees_everything ... ok
+test foreign_checkpoint_cannot_be_recovered ... ok
+test identities_are_unique_across_runtimes ... ok
+test foreign_release_and_duplicate_are_rejected_without_effect ... ok
+test cancellation_reports_the_cancelled_kind ... ok
+test foreign_reservation_is_rejected ... ok
+test sticky_timing_failures_poison_upload_download_and_launch ... ok
+test transient_timing_failures_are_ignored ... ok
+test setup_cleanup_stops_at_every_failure_boundary ... ok
+test teardown_stops_at_every_failure_boundary ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/resident_ntt.rs (target/debug/deps/resident_ntt-63014a4f0c9ee6f0)
+
+running 15 tests
+test chain_releases_intermediates_and_keeps_source ... ok
+test malformed_requests_and_handles_touch_no_device ... ok
+test output_or_scratch_allocation_failure_is_not_started ... ok
+test event_wait_failure_poisons ... ok
+test launch_error_after_enqueue_drains_and_preserves_inputs ... ok
+test driver_without_transform_is_unsupported_without_driver_calls ... ok
+test record_failure_before_launch_drains_cleanly ... ok
+test completion_failure_poisons_and_publishes_nothing ... ok
+test scratch_free_failure_after_success_publishes_nothing ... ok
+test reservation_covers_output_and_scratch_before_allocation ... ok
+test scratch_free_failure_after_drained_launch_error_poisons ... ok
+test sticky_timing_failure_poisons_and_publishes_nothing ... ok
+test transform_capability_is_advertised_only_when_healthy ... ok
+test success_publishes_fresh_handle_and_keeps_source ... ok
+test checkpointed_chain_source_survives_mid_chain_poison ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/review_regressions.rs (target/debug/deps/review_regressions-6fc0532098c2d833)
+
+running 4 tests
+test setup_cleanup_stops_after_sticky_destroy_error ... ok
+test sticky_timing_failure_cannot_publish_upload ... ok
+test healthy_drop_stops_destructing_after_new_sticky_sync_error ... ok
+test foreign_runtime_handle_is_rejected ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/runtime_contract.rs (target/debug/deps/runtime_contract-442e03d196b4f5e1)
+
+running 39 tests
+test budget_exhaustion_rejects_before_device_allocation ... ok
+test budget_is_lower_of_cap_and_free_minus_headroom ... ok
+test cancellation_with_failed_drain_poisons_and_retains ... ok
+test asynchronous_kernel_fault_surfaces_at_sync_and_poisons ... ok
+test allocation_ids_are_never_reused ... ok
+test admission_and_snapshot_do_not_wait_for_device_work ... ok
+test corrupt_device_bytes_fail_decode_without_publication ... ok
+test context_loss_then_reinitialize_rejects_stale_handles ... ok
+test cancellation_drains_retires_and_publishes_nothing ... ok
+test device_allocation_failure_is_transient_and_not_started ... ok
+test driverless_runtime_is_unsupported ... ok
+test duplicate_release_is_rejected_and_accounted_once ... ok
+test event_record_failure_drains_stream_and_preserves ... ok
+test checkpoint_budget_is_bounded ... ok
+test empty_upload_is_rejected_without_allocation ... ok
+test event_record_failure_with_failed_drain_poisons ... ok
+test event_sync_failure_is_uncertain_completion_and_poisons ... ok
+test healthy_runtime_advertises_resident_buffers_only ... ok
+test invalid_config_is_rejected_before_probe ... ok
+test forged_handle_metadata_is_rejected_before_device_work ... ok
+test host_checkpoint_distinguishes_recoverable_from_resident_only_loss ... ok
+test pinned_staging_probe_reports_capability ... ok
+test non_sm120_device_is_unsupported_and_allocates_nothing ... ok
+test points_have_no_generic_wire_encoding_and_are_unsupported ... ok
+test multi_chunk_round_trip_never_reuses_a_live_slot ... ok
+test reservations_are_checked_authoritative_and_single_use ... ok
+test launch_success_publishes_fresh_handle_after_completion ... ok
+test poisoned_h2d_failure_poisons_generation_and_quarantines ... ok
+test pre_cancelled_token_does_not_start ... ok
+test pinned_cap_falls_back_to_pageable_and_still_round_trips ... ok
+test teardown_frees_every_healthy_resource ... ok
+test reinitialize_of_healthy_generation_is_refused ... ok
+test transient_launch_failure_frees_scratch_and_keeps_source ... ok
+test uninitialized_runtime_fabricates_no_generation ... ok
+test no_pinned_memory_disables_overlap_capability ... ok
+test telemetry_separates_paths_and_reports_waits ... ok
+test transient_d2h_failure_publishes_nothing_and_keeps_source ... ok
+test streams_and_events_are_long_lived ... ok
+test transient_h2d_failure_after_partial_work_drains_and_frees ... ok
+
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests loki_gpu
+
+running 4 tests
+test crates/loki-gpu/src/lib.rs - ffi (line 50) - compile fail ... ok
+test crates/loki-gpu/src/lib.rs - ffi (line 44) - compile fail ... ok
+test crates/loki-gpu/src/lib.rs - ffi (line 38) - compile fail ... ok
+test crates/loki-gpu/src/lib.rs - ffi (line 34) - compile fail ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+exit=0

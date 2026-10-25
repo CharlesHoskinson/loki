@@ -6,3 +6,13 @@ Licensed under the Apache License, Version 2.0 (see LICENSE).
 This is a clean-room implementation. No code from open-icicle (ingonyama-zk/open-icicle) or
 other sources under unclear or incompatible licences is included or derived. Third-party
 Apache-2.0 or MIT code, if any is included, is listed below with its copyright notice.
+
+Third-party code included
+-------------------------
+
+crates/loki-gpu/cuda/vendor/sppark-0.1.16/ff/mont_t.cuh
+crates/loki-gpu/cuda/vendor/sppark-0.1.16/ff/pow.hpp
+  Copied verbatim from sppark 0.1.16 (crates.io; https://github.com/supranational/sppark).
+  Copyright Supranational LLC. Licensed under the Apache License, Version 2.0.
+  The original copyright and SPDX headers are retained in each file. Hashes are
+  recorded in crates/loki-gpu/cuda/vendor/sppark-0.1.16/README.md.

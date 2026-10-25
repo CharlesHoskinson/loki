@@ -1,15 +1,13 @@
 //! Independent P2 review reproducers. No CUDA or native device access.
 mod support;
 
-use std::sync::Arc;
 use loki_backend_api::ResidentBackend;
 use loki_gpu::runtime::{DriverErrorClass, GpuRuntime, RuntimeConfig};
-use loki_gpu::runtime::fake::{DriverCall, FakeConfig, FakeDriver, Fault};
+use loki_gpu::runtime::fake::{DriverCall, FakeConfig, FakeControl, Fault};
 use support::{scalars, Toy, ToyPoint};
 
-fn runtime() -> (Arc<FakeDriver>, GpuRuntime) {
-    let fake = Arc::new(FakeDriver::new(FakeConfig::default()));
-    let runtime = GpuRuntime::with_driver(fake.clone(), RuntimeConfig {
+fn runtime() -> (FakeControl, GpuRuntime) {
+    let (fake, runtime) = GpuRuntime::with_fake(FakeConfig::default(), RuntimeConfig {
         device_budget_cap: Some(1 << 20),
         device_headroom_bytes: 0,
         staging_slots: 2,

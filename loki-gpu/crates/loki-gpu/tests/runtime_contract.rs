@@ -18,7 +18,7 @@ use loki_backend_api::{
     AllocationId, BackendError, DeviceGeneration, ErrorKind, FailureEffect, ReservationId,
     ReservationResult, ReservationToken, ResidentBackend, ResidentBuffer,
 };
-use loki_gpu::runtime::fake::{DriverCall, FakeConfig, FakeDriver, Fault};
+use loki_gpu::runtime::fake::{DriverCall, FakeConfig, FakeControl, Fault};
 use loki_gpu::runtime::{
     CancelToken, DriverErrorClass, GpuRuntime, LossClass, RuntimeConfig, MAX_PINNED_SLOTS,
 };
@@ -39,14 +39,13 @@ fn config() -> RuntimeConfig {
     }
 }
 
-fn setup_with(cfg: RuntimeConfig, fake_cfg: FakeConfig) -> (Arc<FakeDriver>, GpuRuntime) {
-    let fake = Arc::new(FakeDriver::new(fake_cfg));
-    let rt = GpuRuntime::with_driver(fake.clone(), cfg);
+fn setup_with(cfg: RuntimeConfig, fake_cfg: FakeConfig) -> (FakeControl, GpuRuntime) {
+    let (fake, rt) = GpuRuntime::with_fake(fake_cfg, cfg);
     rt.initialize().expect("fake device initializes");
     (fake, rt)
 }
 
-fn setup() -> (Arc<FakeDriver>, GpuRuntime) {
+fn setup() -> (FakeControl, GpuRuntime) {
     setup_with(config(), FakeConfig::default())
 }
 
@@ -65,7 +64,7 @@ fn assert_err<T>(result: Result<T, BackendError>, kind: ErrorKind, effect: Failu
     }
 }
 
-fn assert_clean(fake: &FakeDriver) {
+fn assert_clean(fake: &FakeControl) {
     let v = fake.violations();
     assert!(v.is_empty(), "fake driver recorded lifetime violations: {v:?}");
 }
@@ -81,8 +80,7 @@ fn live_and_reserved(rt: &GpuRuntime) -> (u64, u64) {
 
 #[test]
 fn uninitialized_runtime_fabricates_no_generation() {
-    let fake = Arc::new(FakeDriver::new(FakeConfig::default()));
-    let rt = GpuRuntime::with_driver(fake.clone(), config());
+    let (fake, rt) = GpuRuntime::with_fake(FakeConfig::default(), config());
     assert_err(rb(&rt).generation(), ErrorKind::Unsupported, FailureEffect::NotStarted);
     assert_err(rb(&rt).runtime_snapshot(), ErrorKind::Unsupported, FailureEffect::NotStarted);
     assert_err(rb(&rt).try_reserve(8), ErrorKind::Unsupported, FailureEffect::NotStarted);
@@ -105,11 +103,13 @@ fn driverless_runtime_is_unsupported() {
 
 #[test]
 fn non_sm120_device_is_unsupported_and_allocates_nothing() {
-    let fake = Arc::new(FakeDriver::new(FakeConfig {
-        compute_capability: (8, 9),
-        ..FakeConfig::default()
-    }));
-    let rt = GpuRuntime::with_driver(fake.clone(), config());
+    let (fake, rt) = GpuRuntime::with_fake(
+        FakeConfig {
+            compute_capability: (8, 9),
+            ..FakeConfig::default()
+        },
+        config(),
+    );
     assert_err(rt.initialize(), ErrorKind::Unsupported, FailureEffect::NotStarted);
     assert_err(rb(&rt).generation(), ErrorKind::Unsupported, FailureEffect::NotStarted);
     assert_eq!(fake.calls(DriverCall::StreamCreate), 0);
@@ -124,8 +124,7 @@ fn invalid_config_is_rejected_before_probe() {
         RuntimeConfig { staging_slot_bytes: 0, ..config() },
         RuntimeConfig { staging_slot_bytes: 64 * 1024 * 1024, ..config() },
     ] {
-        let fake = Arc::new(FakeDriver::new(FakeConfig::default()));
-        let rt = GpuRuntime::with_driver(fake.clone(), bad);
+        let (fake, rt) = GpuRuntime::with_fake(FakeConfig::default(), bad);
         assert_err(rt.initialize(), ErrorKind::InvalidInput, FailureEffect::NotStarted);
         assert_eq!(fake.calls(DriverCall::Probe), 0);
     }
