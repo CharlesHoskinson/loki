@@ -556,3 +556,42 @@ revisions are paused. A specification-first ledger/lifecycle gate was proposed
 for a later implementation package; no Lean owner or implementation was
 assigned by this review. Native lifetime and kernel refinement obligations
 remain separate from a bookkeeping proof.
+
+### P4 runtime advice on the reservation proposal — 2026-10-25 11:47 UTC
+
+CODE: P4 reviewed revision 4 against the actual runtime, and lead checked the
+transform allocation/retirement, release and P5 charge paths. The proposal
+omits successful scratch retirement: scratch must move from scope in-flight
+bytes back to credit once freed. Abort settlement must not refund it twice,
+and operation retirement must decrement `active_ops` once per call.
+
+CODE: current operations hold the device lock from charge through settlement.
+Close can therefore validate and complete under one device-lock critical
+section, without condition-variable waiting or retain pins. The scope's Open
+state must be rechecked at the charge linearization point. A nonzero active
+count observed by close is an invariant failure. Any future operation that
+drops this lock before settlement requires a new concurrency contract. This
+recommendation supersedes the proposed wait/pinning refinements above.
+
+CODE: today's allocation-failure paths release internal reservation counters
+before poisoning, and `release_impl` removes live/checkpoint records before
+attempting native free. Quarantined raw memory is not retained in those global
+budget counters. The recommended minimal design therefore states global
+accounting/admission invariants for healthy generations only, preserves a
+scope-local conservation ledger through poison, and prohibits spending until
+reset. Scoped and unscoped release should share the existing ordering. This
+supersedes the proposed requirement to preserve poisoned global charges;
+changing that ordering would be a separately sequenced shared-runtime change.
+
+CODE: checkpoints and retired pageable staging use separate host-memory
+accounting. Open must read the grant from the validated reservation record;
+token metadata is untrusted. IDs are process-global and interleave between
+runtimes. Documented generation-first stale classification can reject old
+metadata without an unbounded tombstone map or invalid ID-range inference.
+Per-job Dispatcher policy/counters remain recommended. These are review
+recommendations pending the coordinator's draft-freeze decision.
+
+CODE: P4 `d23a119` adds an unsafe-constructor compile-fail doctest and a matching
+positive unsafe control. Lead reviewed both snippets. The existing execution
+receipt was requested; source review alone is not a test-pass claim, and final
+corrected-source native qualification remains pending.
