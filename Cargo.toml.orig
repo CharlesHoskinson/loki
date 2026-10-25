@@ -43,8 +43,8 @@ required-features = ["committed-instances", "loki-backend-api"]
 [dependencies]
 loki-cuda-runtime = { path = "cuda-runtime", optional = true }
 loki-cuda-ntt = { path = "cuda-ntt", optional = true }
-loki-backend-api = { path = "../loki-gpu/crates/loki-backend-api", optional = true }
-loki-gpu = { path = "../loki-gpu/crates/loki-gpu", optional = true }
+loki-backend-api = { path = "loki-gpu/crates/loki-backend-api", optional = true }
+loki-gpu = { path = "loki-gpu/crates/loki-gpu", optional = true }
 ff = { workspace = true }
 group = { workspace = true }
 midnight-curves = "0.3.1"

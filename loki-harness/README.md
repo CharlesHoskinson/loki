@@ -8,8 +8,8 @@ so it remains an independent verifier.
 Run the commands below from the Loki repository root. The recorded default gate
 covers k10, k14 and k17 with stock 0.8.3. G2 also lists k20 and stock 0.8.1,
 but no run for those cases is recorded. The Loki path package also resolves
-optional dependencies from the sibling `loki-gpu` checkout, even when the
-backend feature is off. See the checkout layout in [`README.md`](../README.md)
+optional dependencies from the in-repository `loki-gpu/` workspace, even when
+the backend feature is off. See the checkout layout in [`README.md`](../README.md)
 and [`TODO.md`](../TODO.md).
 
 The recorded fixtures do not cover multiple proofs with mixed committed and

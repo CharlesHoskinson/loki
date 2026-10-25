@@ -144,6 +144,5 @@ Design documents label each statement as SOURCE, CODE, MEASURED, ESTIMATE or
 OPEN QUESTION. Unlabelled normative text is a proposed contract, not shipped
 behavior.
 
-In the local paired-worktree layout, the Loki [novelty record](../../loki-wt/docs/docs/NOVELTY.md)
-and [TODO list](../../loki-wt/docs/TODO.md) live in the sibling `loki-wt`
-worktree. These relative links assume that layout.
+The Loki [novelty record](../docs/NOVELTY.md) and [TODO list](../TODO.md)
+live at the root of this repository.

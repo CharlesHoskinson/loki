@@ -70,12 +70,11 @@ W10 lives on the branch `loki/w10-gpu-quotient` and is not part of Loki `main` a
 
 ## 3. Quick start
 
-The Loki crate and sibling `loki-gpu` workspace declare Rust 1.76.0. Validation used Rust 1.99.1. Cargo resolves Loki's optional path crates even for a CPU-only build, so check out `loki-proofs` and `loki-gpu` side by side:
+The Loki crate and the `loki-gpu/` workspace inside this repository declare Rust 1.76.0. Validation used Rust 1.99.1. Cargo resolves Loki's optional `loki-gpu/crates/*` path crates even for a CPU-only build; they are part of this checkout, so no second repository is needed:
 
 ```text
 workspace/
-  loki-gpu/
-  loki-proofs/
+  loki/          # this repository, including loki-gpu/
   consumer/
 ```
 
@@ -83,14 +82,14 @@ Add the patch to the manifest of the downstream workspace that depends on `midni
 
 ```toml
 [patch.crates-io]
-midnight-proofs = { path = "../loki-proofs" }
-# or, from a git remote that hosts this repository:
-# midnight-proofs = { git = "<repository url>", rev = "<commit>" }
+midnight-proofs = { path = "../loki" }
+# or from git:
+# midnight-proofs = { git = "https://github.com/CharlesHoskinson/loki", rev = "<commit>" }
 ```
 
-The git line is a placeholder. Loki also requires the sibling `../loki-gpu` checkout, and a git-based checkout layout has not been validated. Use the local path patch above for now.
+The git form has not yet been validated by a standalone consumer (TODO T02); the local path patch is the tested form.
 
-Resolve `path` from the downstream workspace root to the directory containing Loki's `Cargo.toml`. In the layout above, `../loki-proofs` points to it. Keep the dependency requirement at `midnight-proofs = "0.8"`. The patch selects the Loki source under the existing package name. A validated standalone consumer example remains open under TODO T02; see [`TODO.md`](TODO.md).
+Resolve `path` from the downstream workspace root to the directory containing Loki's `Cargo.toml`. In the layout above, `../loki` points to it. Keep the dependency requirement at `midnight-proofs = "0.8"`. The patch selects the Loki source under the existing package name. A validated standalone consumer example remains open under TODO T02; see [`TODO.md`](TODO.md).
 
 ### Feature flags
 
@@ -129,7 +128,7 @@ The prover and the verifier must agree on `truncated-challenges`. A mismatch mak
 
 ### Build without CUDA
 
-Run these commands from the Loki repository root, with the sibling `loki-gpu` checkout in place. No CUDA toolkit or `nvcc` is needed for the default build or the `loki-cpu-budget`, `loki-multiopen`, `loki-harden`, `loki-profile` and `loki-backend-api` features.
+Run these commands from the Loki repository root. No CUDA toolkit or `nvcc` is needed for the default build or the `loki-cpu-budget`, `loki-multiopen`, `loki-harden`, `loki-profile` and `loki-backend-api` features.
 
 ```sh
 cargo build --release

@@ -35,7 +35,7 @@ Two boundaries matter:
 - **Inside `create_proof`** is Loki's territory. Loki and its optional GPU adapters act only here.
 - **Outside `create_proof`** is orchestration owned by Moriarty and Sherlock: building the cost model, setting up the proving key, verifying child proofs and running pairing checks. Loki does not own these steps. They are part of the recursion latency (see [section 8](#8-the-recursion-latency-priority)).
 
-The recursion roles above come from the loki-gpu design (`~/repos/loki-gpu/design/RECURSION.md`) and the Loki design note (`Moriarty-factory/wiki-llm/loki/LOKI-DESIGN.md`). The diagram shows the roles used in those design notes.
+The recursion roles above come from the loki-gpu design (`loki-gpu/design/RECURSION.md`) and the Loki design note (`Moriarty-factory/wiki-llm/loki/LOKI-DESIGN.md`). The diagram shows the roles used in those design notes.
 
 ## 2. Crates and modules
 
@@ -56,8 +56,8 @@ The recursion roles above come from the loki-gpu design (`~/repos/loki-gpu/desig
 | Fuzzing (W7) | `fuzz/`, `fuzz/diff/` | cargo-fuzz and proptest differential targets. | Main |
 | Quint models (W8) | `quint/` | Four state models. Transcript, dispatch and proving-key cache models have Rust replay tests; the scheduler model has no implementation to replay. | Main |
 | Lean spec | `~/repos/loki-lean` (outside this repository) | Refinement of stock, with component contracts. | Main, external repository |
-| `loki-backend-api` | `~/repos/loki-gpu/crates/loki-backend-api` | CUDA-neutral request, capability and error types. | Main integration, P1 |
-| `loki-gpu` | `~/repos/loki-gpu/crates/loki-gpu` | Apache-2.0 GPU backend with the P2 transactional runtime. MSM, NTT, quotient and SRS operations remain unsupported. | P2 runtime merged at `d71b7ca`; P4 in progress |
+| `loki-backend-api` | `loki-gpu/crates/loki-backend-api` | CUDA-neutral request, capability and error types. | Main integration, P1 |
+| `loki-gpu` | `loki-gpu/crates/loki-gpu` | Apache-2.0 GPU backend with the P2 transactional runtime. MSM, NTT, quotient and SRS operations remain unsupported. | P2 runtime merged at `d71b7ca`; P4 in progress |
 | Loki adapter `src/backend/` | `src/backend/` | Dispatcher and stock CPU adapter behind the seam. | Main, P1 merged at `a256a9a15ff18ae12a8131b86cff576787fa5e3c` |
 
 External dependencies that Loki relies on but does not own: `midnight-curves` 0.3.1 (field and curve types), `blst` 0.3.16 (CPU MSM), and sppark 0.1.16 (CUDA MSM and NTT kernels, Apache-2.0). Each module is explained in [`docs/modules/README.md`](modules/README.md).
@@ -284,7 +284,7 @@ P1 added the plug-in seam to Loki main. P2 added the transactional runtime and v
 
 ## 7. The loki-gpu plug-in seam (P1 on main, GPU work in progress)
 
-The design sources are `~/repos/loki-gpu/design/ARCHITECTURE.md`, `LOKI-PATCH-PLAN.md` and `PLAN.md`. P1 is merged into Loki main, and P2's transactional runtime and versioned C ABI are in loki-gpu main at `d71b7ca`. The MSM, NTT, quotient and SRS operations still return `Unsupported`; P4 is in progress. The user-facing description is in [`docs/GPU.md`](GPU.md).
+The design sources are `loki-gpu/design/ARCHITECTURE.md`, `LOKI-PATCH-PLAN.md` and `PLAN.md`. P1 is merged into Loki main, and P2's transactional runtime and versioned C ABI are in loki-gpu main at `d71b7ca`. The MSM, NTT, quotient and SRS operations still return `Unsupported`; P4 is in progress. The user-facing description is in [`docs/GPU.md`](GPU.md).
 
 The goal is an Apache-2.0, clean-room backend that plugs into Loki behind opt-in features, keeps stock behavior with the features off, and reduces the latency of the whole Sherlock recursion chain at k19 to k20. The owner's priority order is correctness, then complete recursion latency, then kernel speed.
 

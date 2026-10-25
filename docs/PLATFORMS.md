@@ -45,7 +45,7 @@ The checklists use acceptance gates G1 to G6:
 ## 2. What the backend API has to provide
 
 The API and its CUDA-neutral design are described in loki-gpu at
-`~/repos/loki-gpu/crates/loki-backend-api/src/lib.rs` and
+`loki-gpu/crates/loki-backend-api/src/lib.rs` and
 `design/ARCHITECTURE.md`. Those local source paths have no canonical public URL
 in this checkout. The [Loki GPU overview](GPU.md)
 summarizes the design. The points below describe what each non-CUDA target

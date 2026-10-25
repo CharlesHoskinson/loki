@@ -1,7 +1,7 @@
 # loki-gpu backend modules
 
-`loki-gpu` is a separate Apache-2.0 clean-room repository
-(`~/repos/loki-gpu`). P1, the Loki-side backend API seam, is merged in Loki
+`loki-gpu` is the Apache-2.0 clean-room GPU workspace in
+[`loki-gpu/`](../../loki-gpu/). P1, the Loki-side backend API seam, is merged in Loki
 main at `a256a9a15ff18ae12a8131b86cff576787fa5e3c`. Its P2 transactional
 runtime is implemented in loki-gpu main at
 `d71b7cafd4308206cc7f283b07a4e67baae89305`, and P4 resident NTT work is in progress.
