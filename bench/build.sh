@@ -27,8 +27,8 @@ for arm in "${arms[@]}"; do
   esac
   target="$here/target-circuits-$arm"
   echo "== $arm: $ws --features $feats -> $target"
-  cargo $toolchain metadata --locked --offline --format-version 1 --manifest-path "$ws/Cargo.toml" --features "$feats" > "$out/$arm.metadata.json"
-  cargo $toolchain tree --locked --offline -e normal,build,features --manifest-path "$ws/Cargo.toml" --features "$feats" > "$out/$arm.tree.txt"
+  cargo $toolchain metadata --locked --offline --format-version 1 --filter-platform x86_64-unknown-linux-gnu --manifest-path "$ws/Cargo.toml" --features "$feats" > "$out/$arm.metadata.json"
+  cargo $toolchain tree --locked --offline --target x86_64-unknown-linux-gnu -e normal,build,features --manifest-path "$ws/Cargo.toml" --features "$feats" > "$out/$arm.tree.txt"
   CARGO_TARGET_DIR="$target" cargo $toolchain build --release --locked --offline \
     --manifest-path "$ws/Cargo.toml" --bin "$bin" --features "$feats" > "$out/$arm.build.log" 2>&1
   b="$target/release/$bin"
