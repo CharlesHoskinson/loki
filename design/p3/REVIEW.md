@@ -1,6 +1,6 @@
 # P3 — legacy sppark adapter and validated SRS registry: implementation record
 
-Owner: loki-p3 (Opus implementer). Base: loki-gpu `eb27233` (P2-fix merge); Loki `0c4ab9d`;
+Owner: loki-p3 (Opus implementer). Base: loki-gpu `0cdd230` (P4 merge); Loki `1c8615f` (P4 merge);
 Lean gpu-spec `49fa4ca`. Labels follow the repository convention (CODE / MEASURED /
 OPEN QUESTION). Every figure below is from synthetic inputs; no production SRS was used.
 
@@ -8,19 +8,20 @@ OPEN QUESTION). Every figure below is from synthetic inputs; no production SRS w
 
 | Tree | Commit | Content |
 |---|---|---|
-| loki-gpu `p3-srs` | `fdfaaf3` | runtime seam: crate-private `Form::SrsPointWire`, `upload_wire` / `download_wire` / `release_wire` (also `design/p3/runtime-seam.patch`, handed to P4) |
-| loki-gpu `p3-srs` | `ababd2c` | `src/srs.rs` registry, `tests/srs_registry.rs` (17 cases incl. native) |
-| loki-gpu `p3-srs` | `d66f4c8` | quarantine a failed release of an upload that crossed a generation (lean-w1 finding 2) |
+| loki-gpu `p3-srs` | `aa6daa3` | runtime seam: crate-private `Form::SrsPointWire`, `upload_wire` / `download_wire` / `release_wire` (also `design/p3/runtime-seam.patch`, handed to P4) |
+| loki-gpu `p3-srs` | `6204e4e` | `src/srs.rs` registry, `tests/srs_registry.rs` (17 cases incl. native) |
+| loki-gpu `p3-srs` | `75c4112` | quarantine a failed release of an upload that crossed a generation (lean-w1 finding 2) |
 | loki-gpu `p3-srs` | (this record) | review, verification logs |
+| loki-gpu `p3-srs` | `d869ab9` | `tests/srs_registry.rs` on the safe `GpuRuntime::with_fake` (P4 made `with_driver` unsafe) |
 | gpu-spec | `ea839e5`, `ac95fe8` | OBLIGATION markers (srs-prefix-kernel, srs-codec-agreement, srs-submission-pinning) |
-| Loki `loki/p3-srs` | `4190617` | shared W13 validation (`poly/kzg/msm/srs_validate.rs`) |
-| Loki `loki/p3-srs` | `6b46cd2` | pre-existing `best_fft` import break under `loki-sppark` |
-| Loki `loki/p3-srs` | `b14ee73` | `loki-sppark` typed adapter (`backend/sppark.rs`), G1 codec (`backend/gpu_srs.rs`), `loki-gpu-srs-registry` feature |
-| Loki `loki/p3-srs` | `0d7d8f5` | kernel-prefix differential (lean-w1 finding 1) |
-| Loki `loki/p3-srs` | `3dae2f5` | only device faults disable legacy GPU MSM (quint-q2 L2) |
-| Loki `loki/p3-srs` | `b096a38` | adapter result validation (lean-w3), dispatcher post-return recheck (quint-q2 B3) |
-| Loki `loki/p3-srs` | `f40cfcf` | legacy handles stay reachable on release/prepare failure (quint-q4 F2, F4) |
-| Loki `loki/p3-srs` | `9fe5da0`, `85586f3` | checked `Dispatcher::try_msm`: Cancelled returned, never recomputed (quint-q2 B1, astra-gpu decision); CPU-only gate |
+| Loki `loki/p3-srs` | `58b2cd0` | shared W13 validation (`poly/kzg/msm/srs_validate.rs`) |
+| Loki `loki/p3-srs` | `47468da` | pre-existing `best_fft` import break under `loki-sppark` |
+| Loki `loki/p3-srs` | `0ee7613` | `loki-sppark` typed adapter (`backend/sppark.rs`), G1 codec (`backend/gpu_srs.rs`), `loki-gpu-srs-registry` feature |
+| Loki `loki/p3-srs` | `26905ae` | kernel-prefix differential (lean-w1 finding 1) |
+| Loki `loki/p3-srs` | `ca21e99` | only device faults disable legacy GPU MSM (quint-q2 L2) |
+| Loki `loki/p3-srs` | `37c0993` | adapter result validation (lean-w3), dispatcher post-return recheck (quint-q2 B3) |
+| Loki `loki/p3-srs` | `b5e8b13` | legacy handles stay reachable on release/prepare failure (quint-q4 F2, F4) |
+| Loki `loki/p3-srs` | `9aac839`, `05a3c7a` | checked `Dispatcher::try_msm`: Cancelled returned, never recomputed (quint-q2 B1, astra-gpu decision); CPU-only gate |
 | gpu-spec | `49fa4ca` | `LokiLean/BackendSrs.lean` and its single import |
 
 ## W13 comparison
@@ -51,7 +52,7 @@ project) and the P2 runtime; no open-icicle source, derivative or H21 material w
     across a runtime call) → exact compare outside the lock → hit lease, or miss → validate
     and encode the whole request → reserve budget and choose LRU victims → release victims →
     `upload_wire` → publish with the first lease.
-  - Failed victim release, and (d66f4c8) failed release of an upload that landed in a newer
+  - Failed victim release, and (75c4112) failed release of an upload that landed in a newer
     generation, are never retried; their bytes stay charged (quarantined) until that
     generation ends.
   - `srs_msm` validates the lease and the length policy, then returns `Unsupported` (P6);
@@ -82,7 +83,7 @@ additionally prevents two native runtimes in one process.
 Environment: `CARGO_BUILD_JOBS=4`, CUDA 13.4.3, one WSL2 GPU; device jobs under
 `flock gpu.lock` (heavy jobs `heavy.lock` first).
 
-CPU / fake driver — on final commits (loki-gpu `d66f4c8`, Loki `85586f3`):
+CPU / fake driver — on final commits (loki-gpu `75c4112`, Loki `05a3c7a`):
 
 | Gate | Command | Result |
 |---|---|---|
@@ -95,11 +96,11 @@ CPU / fake driver — on final commits (loki-gpu `d66f4c8`, Loki `85586f3`):
 | adapter mutants | output check, L2 classification, B3 recheck, Cancelled arm | each caught by its test |
 | feature matrix | `cargo check --all-targets` for default, cuda, cuda-srs-registry(+loki-profile), loki-sppark(+cuda-srs-registry), loki-gpu-backend, loki-gpu-srs-registry | 0 new warnings |
 | exclusivity | `verification/loki-exclusivity.txt` | all four mixed combinations exit 101 |
-| W2 harness | `flock heavy.lock ./loki-harness/run.sh` (Loki `f40cfcf`) | k10/k14/k17 cross-verified, VK equal, no-lookup control byte-equal; exit 0 |
+| W2 harness | `flock heavy.lock ./loki-harness/run.sh` (Loki `b5e8b13`) | k10/k14/k17 cross-verified, VK equal, no-lookup control byte-equal; exit 0 |
 | independent stock verifier | `cpu-bench -- 14 1 target/cpu-fixture` then `cargo test --release --offline --manifest-path tests-stock/Cargo.toml` | 1 passed (proof sha256 `e74f650e…`) |
 | Lean | `lake build LokiLean.BackendSrs` at gpu-spec `ac95fe8`; full build at `49fa4ca` | OK (8932 / 8940 jobs); axioms {propext, Classical.choice, Quot.sound} (`verification/lean-backend-srs.txt`) |
 
-Native — measured before the final fixes (loki-gpu `ababd2c`, Loki pre-`3dae2f5`):
+Native — measured before the final fixes (loki-gpu `6204e4e`, Loki pre-`ca21e99`):
 
 | Gate | Result |
 |---|---|
@@ -108,7 +109,11 @@ Native — measured before the final fixes (loki-gpu `ababd2c`, Loki pre-`3dae2f
 | Loki `loki-sppark` GPU: adapter vs legacy vs CPU, `gpu_proof`, `gpu_differential` (10,108 cases), `gpu_large_boundaries` | all pass |
 | `tests/gpu-compat` stock verifier on the `loki-sppark` GPU proof | accepted; mutated input rejected |
 
-**PENDING (W12 GPU hold):** rerun the native rows on the final commits, plus the W13
+MERGE-CPU (`docs/MERGE-GATES.md`): `CARGO_BUILD_JOBS=4 scripts/verify-main.sh --tier cpu` on
+Loki `loki/p3-srs` rebased onto `1c8615f` with loki-gpu `p3-srs` subtree-pulled into `loki-gpu/`
+(see the READY-MERGE message for the exact sha and log).
+
+**RECEIPT-NATIVE (post-merge):** rerun the native rows on the merged sha, plus the W13
 `gpu_srs_*` set (nine tests, including the new `gpu_srs_kernel_prefix_differential` and the
 L2-updated budget / invalid-suffix tests) and `gpu_srs_registry_k19_k20_on_device`. Every job
 is under 10 minutes; they are scripted in this order and have not been started.
@@ -124,7 +129,7 @@ uploads 4, uploaded 2,097,152 B, evictions 2 (1,048,576 B), rejected invalid 1 /
 high-water 1,048,576 B = budget, no stale purge.
 
 Real 96-byte G1 figures (`gpu_srs_registry_k19_k20_on_device`: expected uploads 5, hits 3,
-rejected 1, resident (3·2^20 + 2·2^19)·96 B) are PENDING the GPU hold.
+rejected 1, resident (3·2^20 + 2·2^19)·96 B) come with the post-merge RECEIPT-NATIVE.
 
 ## Review findings and dispositions
 
@@ -132,7 +137,7 @@ rejected 1, resident (3·2^20 + 2·2^19)·96 B) are PENDING the GPU hold.
 |---|---|---|
 | lean-w3 | dispatcher publishes an accelerator MSM point unchecked | FIXED in the adapter (`admit_result`); fake off-curve / order-3 device points → CPU + poison |
 | lean-w1 1 | prefix soundness rests on unverified kernel prefix behaviour | native differential `gpu_srs_kernel_prefix_differential` |
-| lean-w1 2 | stray-generation release failure neither quarantined nor charged | FIXED `d66f4c8`, test + mutant M8 |
+| lean-w1 2 | stray-generation release failure neither quarantined nor charged | FIXED `75c4112`, test + mutant M8 |
 | lean-w1 3 | unparsable budget must be rejected; recheck on hits | P3 rejects; budget immutable. Legacy W13 `parse_budget` still defaults (pinned by its W13 test) — left for the coordinator |
 | quint-q2 L2 | any legacy error sticky-disables GPU MSM | FIXED: `FailureClass`; only device faults sticky |
 | quint-q2 L3 | legacy failures invisible in fallback counters | FIXED for MSM by routing through the dispatcher; NTT legacy arm is P4's |
@@ -145,7 +150,7 @@ rejected 1, resident (3·2^20 + 2·2^19)·96 B) are PENDING the GPU hold.
 
 ## Open risks (OPEN QUESTION)
 
-1. The runtime seam (`fdfaaf3`) touches P4-owned `runtime.rs`; it is isolated and sent to P4
+1. The runtime seam (`aa6daa3`) touches P4-owned `runtime.rs`; it is isolated and sent to P4
    as `runtime-seam.patch` for sequencing.
 2. Concurrent identical misses may both upload (sound, wasteful); the second publishes a
    duplicate entry that ages out by LRU.
@@ -161,7 +166,7 @@ rejected 1, resident (3·2^20 + 2·2^19)·96 B) are PENDING the GPU hold.
 8. Loki shared-file edits (manifests, `dispatch.rs` MSM arm, `msm.rs`, `gpu_tests.rs`) were
    approved by the coordinator; whoever merges second rebases.
 9. A PROVENANCE row is proposed to its owner rather than edited here.
-10. P4 (`p4-ntt` 5ce8862) makes `GpuRuntime::with_driver` unsafe; `tests/srs_registry.rs` uses
-    it, so whichever of P3/P4 merges second switches to `with_fake` or an `unsafe` block.
+10. Resolved: P4 made `GpuRuntime::with_driver` unsafe; `tests/srs_registry.rs` now uses
+    `GpuRuntime::with_fake` (`d869ab9`).
 11. The legacy `cuda-srs-registry` budget parser still defaults on garbage (W13 compatibility,
     pinned by its W13 test); the P3 registry rejects it.
