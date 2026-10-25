@@ -39,6 +39,8 @@ pub fn g_to_lagrange<C: PrimeCurve>(g_projective: &[C], k: u32) -> Vec<C> {
     }
 
     let mut g_lagrange = g_projective.to_vec();
+    #[cfg(feature = "loki-profile")]
+    crate::profile::record_fft(g_lagrange.len());
     best_fft(&mut g_lagrange, omega_inv, k);
     parallelize(&mut g_lagrange, |g, _| {
         for g in g.iter_mut() {

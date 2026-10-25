@@ -15,6 +15,10 @@ keywords = ["halo", "proofs", "zkp", "zkSNARKs"]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 
+[[example]]
+name = "loki-profile"
+required-features = ["loki-profile"]
+
 [[bench]]
 name = "commit_zk"
 harness = false
@@ -72,6 +76,9 @@ dev-curves = ["midnight-curves/serde", "midnight-curves/dev-curves"]
 
 # This feature truncates challenges to half the size of the scalar field.
 truncated-challenges = []
+
+# Optional wall timing and arithmetic counts; no hooks are built by default.
+loki-profile = []
 
 # This feature adds a new argument to prover and verifier functions, which
 # represents instances in committed form (e.g. in the form of a polynomial

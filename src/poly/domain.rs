@@ -238,6 +238,8 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     pub fn coeff_to_lagrange(&self, mut a: Polynomial<F, Coeff>) -> Polynomial<F, LagrangeCoeff> {
         assert_eq!(a.values.len(), 1 << self.k);
 
+        #[cfg(feature = "loki-profile")]
+        crate::profile::record_fft(a.values.len());
         best_fft(&mut a.values, self.omega, self.k);
 
         Polynomial {
@@ -256,6 +258,8 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
 
         self.distribute_powers_zeta(&mut a.values, true);
         a.values.resize(self.extended_len(), F::ZERO);
+        #[cfg(feature = "loki-profile")]
+        crate::profile::record_fft(a.values.len());
         best_fft(&mut a.values, self.extended_omega, self.extended_k);
 
         Polynomial {
@@ -308,6 +312,8 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         a.values.truncate(self.n as usize);
         self.distribute_powers_zeta(&mut a.values, false);
 
+        #[cfg(feature = "loki-profile")]
+        crate::profile::record_fft(a.values.len());
         best_fft(&mut a.values, self.omega, self.k);
 
         Polynomial {
@@ -365,6 +371,8 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     }
 
     fn ifft(a: &mut [F], omega_inv: F, log_n: u32, divisor: F) {
+        #[cfg(feature = "loki-profile")]
+        crate::profile::record_fft(a.len());
         best_fft(a, omega_inv, log_n);
         parallelize(a, |a, _| {
             for a in a {

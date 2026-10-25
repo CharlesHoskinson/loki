@@ -119,9 +119,15 @@ impl<F: WithSmallOrderMulGroup<3>> Committed<F> {
         let h_pieces: Vec<_> =
             h_pieces.into_iter().map(|h_piece| domain.coeff_from_vec(h_piece)).collect();
 
+        #[cfg(feature = "loki-profile")]
+        let _profile_phase = crate::profile::PhaseGuard::start("quotient_commitment");
+
         // Compute commitments to each h(X) piece
         let h_commitments: Vec<_> =
             h_pieces.iter().map(|h_piece| CS::commit(params, h_piece)).collect();
+
+        #[cfg(feature = "loki-profile")]
+        drop(_profile_phase);
 
         // Hash each h(X) piece
         for c in h_commitments {
