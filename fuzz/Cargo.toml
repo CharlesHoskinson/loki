@@ -1,0 +1,62 @@
+[package]
+name = "loki-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Independent workspace: the parent Loki package and unmodified crates.io
+# midnight-proofs 0.8.3 are compared side by side. Never patch crates.io here.
+[workspace]
+members = [".", "diff"]
+
+[features]
+# GPU MSM (Loki `cuda`).
+cuda = ["loki-diff/cuda"]
+cuda-ntt = ["loki-diff/cuda-ntt"]
+truncated = ["loki-diff/truncated"]
+truncated-loki-only = ["loki-diff/truncated-loki-only"]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+loki-diff = { path = "diff" }
+
+[[bin]]
+name = "msm_diff"
+path = "fuzz_targets/msm_diff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ntt_diff"
+path = "fuzz_targets/ntt_diff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "proof_roundtrip"
+path = "fuzz_targets/proof_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "soundness"
+path = "fuzz_targets/soundness.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "proof_parse"
+path = "fuzz_targets/proof_parse.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1
