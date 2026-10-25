@@ -220,3 +220,58 @@ reporting `SessionPoisoned`). P4 should preserve the cleanup error consistently.
 SOURCE: the coordinator paused new native/GPU jobs for W12's reserved window;
 CPU/fake-driver work may continue. Native results must identify the final
 integrated source, including these corrections and the P3 point-wire seam.
+
+
+## P4 correction source review and cancellation decision — 2026-10-25
+
+CODE: astra-gpu reviewed P4 `eb0d299` and `4b2977a`. The reported L1/L2/N1/N2
+paths are corrected in that branch: failed setup and sticky probe failures
+persist uncertainty through retry/drop; failed reset preserves it; raw driver
+injection is explicitly unsafe with sole-owner lifetime preconditions; safe
+fake controls cannot reset/free/launch; transform cleanup errors prevent
+success publication; and NTT accepts the concrete supported field type rather
+than inferring its encoding from samples. Native NTT submission now checks
+all minted handles. C++ field-offset assertions and matching Rust checks cover
+the new NTT params structure. Original D5 device-query error preservation is
+also corrected there. This is source-review closure; final native gates on
+the corrected revision remain pending, and the earlier `f716257` receipts are
+not evidence for these later changes.
+
+CODE (API decision to P3/coordinator): checked MSM dispatch must return
+`Result<Curve, BackendError>` and return `Cancelled` without CPU work or
+fallback-counter increments. A poisoned effect still disables acceleration.
+The stock-signature shim remains synchronous/non-cancellable; unexpected
+cancellation aborts/unwinds that call instead of recomputing or inventing a
+point. P7 must propagate errors through a cancellable prover boundary before
+user cancellation is advertised. The backend trait already returns `Result`,
+so this decision requires no backend-API crate signature change. Tests must
+cover all cancellation effects and verify no CPU retry.
+
+SOURCE: lean-components `2a9e9f6` reportedly proves the two inherited backend
+obligations with a full build and zero `sorry`. That separate-branch report
+does not yet establish a merged gpu-spec build; reconcile it with P4/P3
+modules and repeat the combined build/axiom audit before updating that claim.
+
+
+## P5 quotient launch review — draft abc8480
+
+CODE: astra-gpu reviewed the proposed native launch, Rust driver wrapper,
+resident validation and resource admission. The independent C++ decoder
+checks envelope/arity/canonical unused fields, bounds and define-before-use;
+column metadata and native minted-handle checks precede submission. The
+following gates remain open before promotion.
+
+| Finding | Required correction/evidence |
+|---|---|
+| Q1 — temporary host copy lifetime | `NativeDriver::launch_quotient` creates a temporary constants byte vector. C enqueues constants and program copies, but returns immediately if the second copy or synchronization fails. The constants vector then drops before the Rust runtime can drain; sticky failure may prevent a completion proof entirely. Use runtime-owned bounded staging retained through completion/reset, including uncertain-failure quarantine. Test a queued first copy plus failed second copy, failed synchronization, and caller descriptor destruction. Successful-path synchronization alone is insufficient. |
+| Q2 — implicit local-memory resource admission | Scratch accounting covers constants and instructions, while dynamically indexed `fr_t regs[R]` uses local memory (implementer reports up to 8208 bytes/thread) and the grid can reach 2^20 blocks. Bound/account kernel local/stack backing or use explicit budgeted workspace and a capped grid-stride plan. Establish a conservative bound/headroom policy; no exact CUDA backing-allocation formula is asserted here. |
+| Q3 — caps checked after validation allocation | `evaluate_resident` calls `validate_program`, allocating a boolean vector of `register_count`, before checking the native 256-register cap. Check native resource caps before allocating validator state, so malformed large counts return a bounded error. |
+
+SOURCE: NVIDIA says pageable asynchronous transfers may synchronize with the
+host; this is not a guarantee that temporary host buffers may be dropped on
+all error paths. [CUDA synchronization behavior](https://docs.nvidia.com/cuda/cuda-runtime-api/api-sync-behavior.html).
+The documented `localSizeBytes` attribute is per thread; it is not a complete
+allocation-budget guarantee. [CUDA function attributes](https://docs.nvidia.com/cuda/cuda-runtime-api/cuda_runtime_api/structcudaFuncAttributes.html).
+CODE: the by-value column pointer table avoids retaining the host handle
+array; its large kernel-parameter requirement must remain tied to the supported
+CUDA/toolchain target. Header shape alone does not approve the launch lifetime.
