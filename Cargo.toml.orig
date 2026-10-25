@@ -83,6 +83,8 @@ sha2 = { workspace = true }
 rand = { workspace = true }
 criterion = "0.7"
 stock = { package = "midnight-proofs", version = "=0.8.3" }
+# P5 CPU differential: the loki-gpu CPU bytecode interpreter, without `cuda`.
+loki-gpu = { path = "loki-gpu/crates/loki-gpu" }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }

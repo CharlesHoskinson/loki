@@ -26,6 +26,7 @@ pub mod sppark;
 /// P3 BLS12-381 G1 point codec for the new backend's SRS registry.
 #[cfg(feature = "loki-gpu-srs-registry")]
 pub mod gpu_srs;
+pub mod quotient_compile;
 
 use std::any::TypeId;
 
