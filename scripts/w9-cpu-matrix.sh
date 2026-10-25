@@ -3,6 +3,10 @@
 set -euo pipefail
 cd /home/charles/repos/loki-wt/w9-harden
 export CARGO_BUILD_JOBS=4
+# Acquire before publishing the benchmark marker so a running gate cannot
+# wait on a benchmark that is itself waiting for the heavy-job lock.
+exec 9>/home/charles/.cache/doctorwatson/heavy.lock
+flock 9
 mkdir -p target/w9-validation
 touch target/w9-validation/cpu-benchmark.running
 cleanup() {
@@ -16,7 +20,7 @@ cp target/release/examples/cpu-bench target/w9-validation/cpu-bench-budget
 sha256sum target/w9-validation/cpu-bench-{default,budget}
 # Affinity remains at all 20 CPUs for both configurations. RAYON_NUM_THREADS=4
 # limits Rayon only; stock BLST retains its own independent pool by design.
-flock /home/charles/.cache/doctorwatson/heavy.lock python3 - <<'PY'
+python3 - <<'PY'
 import os
 from pathlib import Path
 import statistics
