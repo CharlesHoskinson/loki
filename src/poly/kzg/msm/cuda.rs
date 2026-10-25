@@ -41,8 +41,11 @@ pub(super) fn try_msm<C: CurveAffine>(
 /// adapter (`crate::backend::sppark`) calls exactly this, so routing through
 /// the dispatcher cannot change the arithmetic.
 #[cfg(feature = "loki-sppark")]
-pub(crate) fn sppark_msm(coeffs: &[Fq], bases: &[G1Projective]) -> Result<G1Projective, String> {
-    backend::msm(coeffs, bases)
+pub(crate) use backend::{Failure, FailureClass};
+
+#[cfg(feature = "loki-sppark")]
+pub(crate) fn sppark_msm(coeffs: &[Fq], bases: &[G1Projective]) -> Result<G1Projective, Failure> {
+    backend::classified_msm(coeffs, bases)
 }
 
 #[cfg(feature = "cuda")]

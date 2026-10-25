@@ -1,7 +1,7 @@
 use ff::Field;
 use group::Group;
 use midnight_curves::{Fq, G1Affine, G1Projective};
-use rand_chacha::{rand_core::{RngCore, SeedableRng}, ChaCha20Rng};
+use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 use super::backend;
 
@@ -409,7 +409,8 @@ fn gpu_srs_mutation() {
     );
     assert_eq!(bases.as_ptr(), address);
     // A raw corrupted suffix stays unused by the prefix, but the full request
-    // must reject it before upload. This runs last: errors disable the backend.
+    // must reject it before upload. A rejected request is not a device fault,
+    // so the backend stays enabled (quint-q2 L2).
     let raw = blst::blst_p1 {
         x: Fp::ONE.into(),
         y: Fp::ONE.into(),
@@ -423,7 +424,7 @@ fn gpu_srs_mutation() {
     assert!(backend::msm(&scalars, &bases)
         .unwrap_err()
         .contains("off curve"));
-    assert!(backend::failed());
+    assert!(!backend::failed(), "request rejections are not sticky");
     proof.success = true;
     drop(proof);
     let report = crate::profile::take_report();
@@ -547,17 +548,19 @@ fn gpu_srs_budget_rejects_oversize() {
     assert!(backend::msm(&scalars, &bases)
         .unwrap_err()
         .contains("budget"));
-    assert!(backend::failed());
+    assert!(!backend::failed(), "a budget refusal is not sticky");
+    // The public path retries the GPU, is refused again, and falls back.
     assert_eq!(
         super::super::msm_specific::<G1Affine>(&scalars, &bases),
         bases[0]
     );
+    assert!(!backend::failed());
     assert_eq!(backend::gpu_calls(), 0);
     proof.success = true;
     drop(proof);
     let report = crate::profile::take_report();
     let counts = &report.proofs.last().unwrap().phases["other"].backends;
-    assert_eq!(counts["msm.prepare.miss"].calls, 1);
+    assert_eq!(counts["msm.prepare.miss"].calls, 2);
     assert!(!counts.contains_key("msm.prepare.upload"));
 }
 
@@ -582,7 +585,7 @@ fn gpu_srs_invalid_unused_suffix_fallback() {
         super::super::msm_specific::<G1Affine>(&[Fq::ONE], &bases),
         bases[0]
     );
-    assert!(backend::failed());
+    assert!(!backend::failed(), "an invalid SRS is not a device fault");
     assert_eq!(backend::gpu_calls(), 0);
     proof.success = true;
     drop(proof);
@@ -601,6 +604,7 @@ fn gpu_srs_invalid_unused_suffix_fallback() {
 #[test]
 #[ignore = "registry kernel-prefix differential; run alone through gpu-runner"]
 fn gpu_srs_kernel_prefix_differential() {
+    use rand_chacha::rand_core::RngCore;
     backend::clear_cache().unwrap();
     let mut rng = ChaCha20Rng::from_seed([117; 32]);
     let size = (1 << 15) + 5;
