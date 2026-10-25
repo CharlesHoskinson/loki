@@ -222,3 +222,18 @@ fn lookup_leftovers_follow_stock_hashmap_order() {
         );
     }
 }
+
+/// Structural check for the controlled-order fixture: with exactly one
+/// leftover key of nonzero count, placement cannot depend on `HashMap` order,
+/// so two in-process proofs are byte-identical in every build.
+#[test]
+fn single_leftover_fixture_is_order_independent() {
+    let proofs: Vec<Vec<u8>> = single_thread(|| {
+        let params = fixture::loki::setup();
+        (0..3)
+            .map(|_| fixture::loki::prove::<SINGLE_LEFTOVER>(&params, 0x42).proof)
+            .collect()
+    });
+    assert_eq!(first_difference(&proofs[0], &proofs[1]), None);
+    assert_eq!(first_difference(&proofs[0], &proofs[2]), None);
+}
