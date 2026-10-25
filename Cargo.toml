@@ -235,6 +235,10 @@ version = "1"
 [dev-dependencies.sha2]
 version = "0.10.9"
 
+# P5 CPU differential: the loki-gpu CPU bytecode interpreter, without `cuda`.
+[dev-dependencies.loki-gpu]
+path = "loki-gpu/crates/loki-gpu"
+
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies.getrandom]
 version = "0.2"
 features = ["js"]
