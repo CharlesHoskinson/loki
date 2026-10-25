@@ -1,0 +1,639 @@
+{
+  "quint": "0.32.0",
+  "rust": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--manifest-path",
+      "quint/mbt/Cargo.toml",
+      "--features",
+      "w4-source,w6-source",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "CARGO_BUILD_JOBS": "4",
+      "RAYON_NUM_THREADS": "2"
+    },
+    "exit": 0,
+    "tests": 15,
+    "seconds": 15.0,
+    "transcriptTraces": 24,
+    "transcriptOperations": 1022,
+    "noLookupByteEqual": 9,
+    "lookupByteUnequal": 15,
+    "w4HostMbtTraces": 24,
+    "w4ConcurrentCallers": 8,
+    "w6MbtTraces": 4,
+    "w6ColdCallersPerBuild": 3,
+    "gpuKernelsExecuted": false,
+    "instanceOrderCases": [
+      {
+        "proofs": 1,
+        "committed": 0,
+        "plain": 2,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 1,
+        "committed": 1,
+        "plain": 1,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 1,
+        "committed": 2,
+        "plain": 0,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 2,
+        "committed": 0,
+        "plain": 2,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 2,
+        "committed": 1,
+        "plain": 1,
+        "absorbedEqual": false,
+        "stockAccepted": false,
+        "firstDifference": 2
+      },
+      {
+        "proofs": 2,
+        "committed": 2,
+        "plain": 0,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 3,
+        "committed": 0,
+        "plain": 2,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      },
+      {
+        "proofs": 3,
+        "committed": 1,
+        "plain": 1,
+        "absorbedEqual": false,
+        "stockAccepted": false,
+        "firstDifference": 2
+      },
+      {
+        "proofs": 3,
+        "committed": 2,
+        "plain": 0,
+        "absorbedEqual": true,
+        "stockAccepted": true,
+        "firstDifference": null
+      }
+    ]
+  },
+  "seed": "20261024",
+  "results": [
+    {
+      "model": "transcript",
+      "phase": "typecheck",
+      "command": [
+        "quint",
+        "typecheck",
+        "quint/transcript.qnt"
+      ],
+      "exit": 0,
+      "seconds": 0.63,
+      "witnesses": {},
+      "log": ".artifacts/w8/transcript-typecheck.log"
+    },
+    {
+      "model": "transcript",
+      "phase": "test",
+      "command": [
+        "quint",
+        "test",
+        "quint/transcript_test.qnt",
+        "--match",
+        ".*Test$",
+        "--max-samples",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 0.788,
+      "witnesses": {},
+      "log": ".artifacts/w8/transcript-test.log"
+    },
+    {
+      "model": "transcript",
+      "phase": "simulation",
+      "command": [
+        "quint",
+        "run",
+        "quint/transcript.qnt",
+        "--backend",
+        "rust",
+        "--n-threads",
+        "4",
+        "--seed",
+        "20261024",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "180",
+        "--invariant",
+        "safety",
+        "--witnesses",
+        "complete",
+        "batched",
+        "thetaReached",
+        "multiopenReached",
+        "phased",
+        "--verbosity",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 153.366,
+      "witnesses": {
+        "complete": 10000,
+        "batched": 9674,
+        "thetaReached": 10000,
+        "multiopenReached": 10000,
+        "phased": 4991
+      },
+      "log": ".artifacts/w8/transcript-simulation.log"
+    },
+    {
+      "model": "gpu_dispatch",
+      "phase": "typecheck",
+      "command": [
+        "quint",
+        "typecheck",
+        "quint/gpu_dispatch.qnt"
+      ],
+      "exit": 0,
+      "seconds": 0.492,
+      "witnesses": {},
+      "log": ".artifacts/w8/gpu_dispatch-typecheck.log"
+    },
+    {
+      "model": "gpu_dispatch",
+      "phase": "test",
+      "command": [
+        "quint",
+        "test",
+        "quint/gpu_dispatch_test.qnt",
+        "--match",
+        ".*Test$",
+        "--max-samples",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 0.664,
+      "witnesses": {},
+      "log": ".artifacts/w8/gpu_dispatch-test.log"
+    },
+    {
+      "model": "gpu_dispatch",
+      "phase": "simulation",
+      "command": [
+        "quint",
+        "run",
+        "quint/gpu_dispatch.qnt",
+        "--backend",
+        "rust",
+        "--n-threads",
+        "4",
+        "--seed",
+        "20261024",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "120",
+        "--invariant",
+        "safety",
+        "--witnesses",
+        "completed",
+        "fellBack",
+        "cacheHit",
+        "concurrent",
+        "staleRejected",
+        "--verbosity",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 8.556,
+      "witnesses": {
+        "completed": 10000,
+        "fellBack": 9999,
+        "cacheHit": 3526,
+        "concurrent": 2367,
+        "staleRejected": 4400
+      },
+      "log": ".artifacts/w8/gpu_dispatch-simulation.log"
+    },
+    {
+      "model": "pk_cache",
+      "phase": "typecheck",
+      "command": [
+        "quint",
+        "typecheck",
+        "quint/pk_cache.qnt"
+      ],
+      "exit": 0,
+      "seconds": 0.428,
+      "witnesses": {},
+      "log": ".artifacts/w8/pk_cache-typecheck.log"
+    },
+    {
+      "model": "pk_cache",
+      "phase": "test",
+      "command": [
+        "quint",
+        "test",
+        "quint/pk_cache_test.qnt",
+        "--match",
+        ".*Test$",
+        "--max-samples",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 0.57,
+      "witnesses": {},
+      "log": ".artifacts/w8/pk_cache-test.log"
+    },
+    {
+      "model": "pk_cache",
+      "phase": "simulation",
+      "command": [
+        "quint",
+        "run",
+        "quint/pk_cache.qnt",
+        "--backend",
+        "rust",
+        "--n-threads",
+        "4",
+        "--seed",
+        "20261024",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "120",
+        "--invariant",
+        "safety",
+        "--witnesses",
+        "used",
+        "filled",
+        "concurrentWaiters",
+        "differentKeys",
+        "sharedUse",
+        "--verbosity",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 14.401,
+      "witnesses": {
+        "used": 10000,
+        "filled": 10000,
+        "concurrentWaiters": 9761,
+        "differentKeys": 10000,
+        "sharedUse": 9553
+      },
+      "log": ".artifacts/w8/pk_cache-simulation.log"
+    },
+    {
+      "model": "scheduler",
+      "phase": "typecheck",
+      "command": [
+        "quint",
+        "typecheck",
+        "quint/scheduler.qnt"
+      ],
+      "exit": 0,
+      "seconds": 0.417,
+      "witnesses": {},
+      "log": ".artifacts/w8/scheduler-typecheck.log"
+    },
+    {
+      "model": "scheduler",
+      "phase": "test",
+      "command": [
+        "quint",
+        "test",
+        "quint/scheduler_test.qnt",
+        "--match",
+        ".*Test$",
+        "--max-samples",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 0.501,
+      "witnesses": {},
+      "log": ".artifacts/w8/scheduler-test.log"
+    },
+    {
+      "model": "scheduler",
+      "phase": "simulation",
+      "command": [
+        "quint",
+        "run",
+        "quint/scheduler.qnt",
+        "--backend",
+        "rust",
+        "--n-threads",
+        "4",
+        "--seed",
+        "20261024",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "1000",
+        "--invariant",
+        "safety",
+        "--witnesses",
+        "allDone",
+        "overlap",
+        "checkpointed",
+        "resumed",
+        "completed",
+        "--verbosity",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 90.846,
+      "witnesses": {
+        "allDone": 10000,
+        "overlap": 10000,
+        "checkpointed": 9997,
+        "resumed": 9997,
+        "completed": 10000
+      },
+      "log": ".artifacts/w8/scheduler-simulation.log"
+    }
+  ],
+  "mutations": [
+    {
+      "name": "transcript",
+      "detected": true,
+      "exit": 1,
+      "command": [
+        "quint",
+        "run",
+        "quint/mutations.qnt",
+        "--main",
+        "mutation_transcript",
+        "--step",
+        "mutantStep",
+        "--invariant",
+        "safety",
+        "--max-samples",
+        "1000",
+        "--max-steps",
+        "120",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1"
+      ]
+    },
+    {
+      "name": "gpu",
+      "detected": true,
+      "exit": 1,
+      "command": [
+        "quint",
+        "run",
+        "quint/mutations.qnt",
+        "--main",
+        "mutation_gpu",
+        "--step",
+        "mutantStep",
+        "--invariant",
+        "safety",
+        "--max-samples",
+        "1000",
+        "--max-steps",
+        "120",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1"
+      ]
+    },
+    {
+      "name": "pk_build",
+      "detected": true,
+      "exit": 1,
+      "command": [
+        "quint",
+        "run",
+        "quint/mutations.qnt",
+        "--main",
+        "mutation_pk_build",
+        "--step",
+        "mutantStep",
+        "--invariant",
+        "safety",
+        "--max-samples",
+        "1000",
+        "--max-steps",
+        "120",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1"
+      ]
+    },
+    {
+      "name": "pk_partial",
+      "detected": true,
+      "exit": 1,
+      "command": [
+        "quint",
+        "run",
+        "quint/mutations.qnt",
+        "--main",
+        "mutation_pk_partial",
+        "--step",
+        "mutantStep",
+        "--invariant",
+        "safety",
+        "--max-samples",
+        "1000",
+        "--max-steps",
+        "120",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1"
+      ]
+    },
+    {
+      "name": "scheduler",
+      "detected": true,
+      "exit": 1,
+      "command": [
+        "quint",
+        "run",
+        "quint/mutations.qnt",
+        "--main",
+        "mutation_scheduler",
+        "--step",
+        "mutantStep",
+        "--invariant",
+        "safety",
+        "--max-samples",
+        "1000",
+        "--max-steps",
+        "120",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1"
+      ]
+    }
+  ],
+  "temporal": {
+    "command": [
+      "quint",
+      "verify",
+      "quint/scheduler.qnt",
+      "--temporal",
+      "admittedEventuallyFinish",
+      "--max-steps",
+      "24",
+      "--verbosity",
+      "1"
+    ],
+    "result": "unsupported",
+    "error": "Handling fairness is not supported yet!",
+    "proved": false
+  },
+  "sourcePins": {
+    "quintConnect": "4f018f54fc7dd4cef341d10111427bab59d3b307",
+    "w4": "fdef4c4d70b6a5ea040a8bc94638a57ecc1eb3b2",
+    "w6": "abe97019b099026698d10c97f57d490a9554018f"
+  },
+  "rustVersion": "1.99.1",
+  "modelScenarioTests": 27,
+  "instanceOrderScenarioTests": 6,
+  "instanceOrderExhaustiveLayouts": 81,
+  "instanceOrderAudit": [
+    {
+      "phase": "typecheck",
+      "command": [
+        "quint",
+        "typecheck",
+        "quint/transcript.qnt"
+      ],
+      "exit": 0,
+      "expectedExit": 0,
+      "seconds": 0.6,
+      "witnesses": {}
+    },
+    {
+      "phase": "tests",
+      "command": [
+        "quint",
+        "test",
+        "quint/transcript_instances_test.qnt",
+        "--match",
+        ".*Test$",
+        "--max-samples",
+        "1"
+      ],
+      "exit": 0,
+      "expectedExit": 0,
+      "seconds": 0.713,
+      "witnesses": {}
+    },
+    {
+      "phase": "classification",
+      "command": [
+        "quint",
+        "run",
+        "quint/transcript.qnt",
+        "--main",
+        "transcript_instances",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "1",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1",
+        "--invariant",
+        "mismatchExactlyMixedBatch",
+        "--witnesses",
+        "allPlain",
+        "allCommitted",
+        "singleMixed",
+        "multiMixed"
+      ],
+      "exit": 0,
+      "expectedExit": 0,
+      "seconds": 0.867,
+      "witnesses": {
+        "allPlain": 2273,
+        "allCommitted": 2184,
+        "singleMixed": 1480,
+        "multiMixed": 2957
+      }
+    },
+    {
+      "phase": "counterexample",
+      "command": [
+        "quint",
+        "run",
+        "quint/transcript.qnt",
+        "--main",
+        "transcript_instances",
+        "--max-samples",
+        "10000",
+        "--max-steps",
+        "1",
+        "--seed",
+        "20261024",
+        "--n-threads",
+        "4",
+        "--verbosity",
+        "1",
+        "--init",
+        "mixedCounterexample",
+        "--invariant",
+        "proverEqualsVerifier",
+        "--out-itf",
+        ".artifacts/w8/instance-order-counterexample.itf.json"
+      ],
+      "exit": 1,
+      "expectedExit": 1,
+      "seconds": 0.604,
+      "witnesses": {}
+    }
+  ]
+}
