@@ -7,6 +7,39 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{collections::VecDeque, ffi::c_void, sync::Mutex};
 
 use group::Curve;
+
+struct PrepareTimer {
+    name: &'static str,
+    size: usize,
+    started: std::time::Instant,
+}
+
+impl PrepareTimer {
+    fn start(name: &'static str, size: usize) -> Self {
+        Self {
+            name,
+            size,
+            started: std::time::Instant::now(),
+        }
+    }
+}
+
+impl Drop for PrepareTimer {
+    fn drop(&mut self) {
+        record(
+            self.name,
+            self.size,
+            self.started.elapsed().as_nanos() as u64,
+        );
+    }
+}
+
+fn record(name: &'static str, size: usize, wall_ns: u64) {
+    #[cfg(feature = "loki-profile")]
+    crate::profile::record_backend_timing(name, size, wall_ns);
+    #[cfg(not(feature = "loki-profile"))]
+    let _ = (name, size, wall_ns);
+}
 use midnight_curves::{Fq, G1Affine, G1Projective};
 
 use super::convert::{self, Affine, Scalar};
@@ -67,6 +100,7 @@ impl Cache {
         if self.failed {
             return Err("GPU backend disabled after an earlier error".into());
         }
+        let _prepare = PrepareTimer::start("msm.prepare", bases.len());
         let address = bases.as_ptr() as usize;
         let hit = self.entries.iter().position(|entry| {
             entry.address == address
@@ -78,8 +112,11 @@ impl Cache {
                     .all(|(a, b)| same_coordinates(a, b))
         });
         let entry = if let Some(index) = hit {
+            record("msm.prepare.hit", bases.len(), 0);
             self.entries.remove(index).unwrap()
         } else {
+            record("msm.prepare.miss", bases.len(), 0);
+            let validation = PrepareTimer::start("msm.prepare.validation", bases.len());
             // LokiLean/Msm.lean: MeetsMsmSpecific assumes prime-order G1
             // inputs. Validate once per upload, before preparing device bases;
             // a cache hit compares every coordinate against this validated copy.
@@ -90,9 +127,13 @@ impl Cache {
             }
             let mut affine = vec![G1Affine::default(); bases.len()];
             G1Projective::batch_normalize(bases, &mut affine);
-            if affine.iter().any(|base| !bool::from(base.is_torsion_free())) {
+            if affine
+                .iter()
+                .any(|base| !bool::from(base.is_torsion_free()))
+            {
                 return Err("invalid SRS base: outside G1 subgroup".into());
             }
+            drop(validation);
             // Bound residency to two SRS arrays (coefficient and Lagrange).
             if self.entries.len() == 2 {
                 let old = self.entries.pop_front().unwrap();
@@ -102,7 +143,14 @@ impl Cache {
             let wire: Vec<_> = affine.iter().map(convert::affine).collect();
             let mut resident = std::ptr::null_mut();
             // SAFETY: live, correctly sized/aligned arrays; C++ copies them.
+            let upload = PrepareTimer::start("msm.prepare.upload", wire.len());
             status(unsafe { loki_gpu_prepare(&mut resident, wire.as_ptr(), wire.len()) })?;
+            drop(upload);
+            record(
+                "msm.prepare.upload_bytes",
+                wire.len() * std::mem::size_of::<Affine>(),
+                0,
+            );
             if resident.is_null() {
                 return Err("GPU preparation returned a null handle".into());
             }
@@ -117,6 +165,7 @@ impl Cache {
         // sppark destructors on a potentially poisoned context.
         let resident = entry.resident;
         self.entries.push_back(entry);
+        drop(_prepare);
         let scalars: Vec<_> = scalars.iter().map(convert::scalar).collect();
         let mut output = Affine::default();
         // SAFETY: resident owns at least scalars.len() bases. Wire structs have

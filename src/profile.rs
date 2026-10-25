@@ -40,6 +40,9 @@ pub struct PhaseTiming {
     pub calls: u64,
     /// Exclusive elapsed wall time in nanoseconds.
     pub wall_ns: u64,
+    /// Backend outcomes and preparation counters for this phase.
+    #[serde(default)]
+    pub backends: BTreeMap<String, OperationCounts>,
 }
 
 /// Arithmetic call counts and input-size histogram.
@@ -51,6 +54,9 @@ pub struct OperationCounts {
     pub elements: u64,
     /// Input length to call count.
     pub sizes: BTreeMap<usize, u64>,
+    /// Accumulated backend wall time in nanoseconds (zero for untimed counts).
+    #[serde(default)]
+    pub wall_ns: u64,
 }
 
 impl OperationCounts {
@@ -133,6 +139,7 @@ impl ProofGuard {
             PhaseTiming {
                 calls: 1,
                 wall_ns: 0,
+                backends: BTreeMap::new(),
             },
         );
         let active = ActiveProof {
@@ -219,6 +226,39 @@ pub(crate) fn record_fft(size: usize) {
     });
 }
 
+/// Record preparation counts and elapsed time on the calling proof thread.
+pub(crate) fn record_backend_timing(outcome: &'static str, size: usize, wall_ns: u64) {
+    ACTIVE.with(|slot| {
+        if let Some(active) = slot.borrow_mut().as_mut() {
+            let counts = active
+                .report
+                .phases
+                .get_mut(&active.phase)
+                .unwrap()
+                .backends
+                .entry(outcome.into())
+                .or_default();
+            counts.record(size);
+            counts.wall_ns += wall_ns;
+        }
+    });
+}
+
+fn write_counts(mut out: impl Write, counts: &OperationCounts) -> io::Result<()> {
+    write!(
+        out,
+        "{{\"calls\":{},\"elements\":{},\"wall_ns\":{},\"sizes\":{{",
+        counts.calls, counts.elements, counts.wall_ns
+    )?;
+    for (i, (size, calls)) in counts.sizes.iter().enumerate() {
+        if i != 0 {
+            write!(out, ",")?;
+        }
+        write!(out, "\"{}\":{}", size, calls)?;
+    }
+    write!(out, "}}}}")
+}
+
 // The schema has only fixed internal phase names and numeric/boolean values,
 // so emitting JSON here needs no runtime serializer dependency. Public report
 // types implement serde for consumers that need other encodings.
@@ -235,24 +275,22 @@ fn append_jsonl(path: std::ffi::OsString, report: &ProofReport) -> io::Result<()
         }
         write!(
             line,
-            "\"{}\":{{\"calls\":{},\"wall_ns\":{}}}",
+            "\"{}\":{{\"calls\":{},\"wall_ns\":{},\"backends\":{{",
             name, phase.calls, phase.wall_ns
         )?;
-    }
-    write!(line, "}}")?;
-    for (name, counts) in [("msm", &report.msm), ("fft", &report.fft)] {
-        write!(
-            line,
-            ",\"{}\":{{\"calls\":{},\"elements\":{},\"sizes\":{{",
-            name, counts.calls, counts.elements
-        )?;
-        for (i, (size, calls)) in counts.sizes.iter().enumerate() {
+        for (i, (outcome, counts)) in phase.backends.iter().enumerate() {
             if i != 0 {
                 write!(line, ",")?;
             }
-            write!(line, "\"{}\":{}", size, calls)?;
+            write!(line, "\"{}\":", outcome)?;
+            write_counts(&mut line, counts)?;
         }
         write!(line, "}}}}")?;
+    }
+    write!(line, "}}")?;
+    for (name, counts) in [("msm", &report.msm), ("fft", &report.fft)] {
+        write!(line, ",\"{}\":", name)?;
+        write_counts(&mut line, counts)?;
     }
     writeln!(line, ",\"jsonl_error\":null}}")?;
     OpenOptions::new()
@@ -286,6 +324,8 @@ mod tests {
                     let mut proof = ProofGuard::start(k, 1);
                     let outer = PhaseGuard::start("compute_nu_poly");
                     record_msm(16);
+                    record_backend_timing("msm.prepare", 16, 123);
+                    record_backend_timing("msm.prepare", 8, 77);
                     {
                         let _inner = PhaseGuard::start("quotient_evaluation");
                         record_fft(32);
@@ -308,6 +348,10 @@ mod tests {
         assert_eq!(reports.proofs.len(), 2);
         for proof in &reports.proofs {
             assert!(proof.success);
+            let prepare = &proof.phases["compute_nu_poly"].backends["msm.prepare"];
+            assert_eq!(prepare.calls, 2);
+            assert_eq!(prepare.elements, 24);
+            assert_eq!(prepare.wall_ns, 200);
             assert_eq!(proof.msm.calls, 1);
             assert_eq!(proof.msm.sizes[&16], 1);
             assert_eq!(proof.fft.calls, 1);

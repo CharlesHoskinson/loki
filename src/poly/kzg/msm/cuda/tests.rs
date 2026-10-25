@@ -319,3 +319,58 @@ fn gpu_concurrent_proofs() {
         "concurrent proofs must not silently fall back"
     );
 }
+
+#[cfg(feature = "loki-profile")]
+#[test]
+#[ignore = "measurement; run alone through gpu-runner with --ignored --nocapture"]
+fn gpu_srs_prepare_measurement() {
+    std::env::set_var("RAYON_NUM_THREADS", "4");
+    let mut rng = ChaCha20Rng::from_seed([113; 32]);
+    let pool: Vec<_> = (0..1024).map(|_| G1Projective::random(&mut rng)).collect();
+    let n = 1 << 20;
+    let bases: Vec<_> = (0..n).map(|i| pool[i % pool.len()]).collect();
+    let scalars: Vec<_> = (0..n).map(|_| Fq::random(&mut rng)).collect();
+    let expected_full = cpu(&scalars, &bases);
+    let expected_prefix = cpu(&scalars[..n - 1], &bases);
+    for sample in 0..3 {
+        backend::clear_cache().unwrap();
+        for (label, len, expected) in [
+            ("cold_full", n, expected_full),
+            ("prefix", n - 1, expected_prefix),
+            ("warm_prefix", n - 1, expected_prefix),
+        ] {
+            let mut proof = crate::profile::ProofGuard::start(20, 1);
+            let start = std::time::Instant::now();
+            assert_eq!(backend::msm(&scalars[..len], &bases).unwrap(), expected);
+            let elapsed = start.elapsed().as_nanos();
+            proof.success = true;
+            drop(proof);
+            let report = crate::profile::take_report();
+            eprintln!("SRS_MEASURE sample={sample} label={label} n={len} wall_ns={elapsed} registry={} report={}",
+                cfg!(feature = "cuda-srs-registry"), serde_json::to_string(&report).unwrap());
+        }
+    }
+}
+
+#[cfg(feature = "loki-profile")]
+#[test]
+#[ignore = "registry regression; run alone through gpu-runner"]
+fn gpu_srs_prefix_reuses_upload() {
+    backend::clear_cache().unwrap();
+    let mut rng = ChaCha20Rng::from_seed([114; 32]);
+    let bases: Vec<_> = (0..1025).map(|_| G1Projective::random(&mut rng)).collect();
+    let scalars: Vec<_> = (0..1025).map(|_| Fq::random(&mut rng)).collect();
+    let mut proof = crate::profile::ProofGuard::start(10, 1);
+    // A short first request must still upload the supplied capacity once.
+    for n in [1024, 1025, 17, 1, 0, 1024] {
+        assert_eq!(backend::msm(&scalars[..n], &bases).unwrap(), cpu(&scalars[..n], &bases));
+    }
+    proof.success = true;
+    drop(proof);
+    let report = crate::profile::take_report();
+    let counts = &report.proofs.last().unwrap().phases["other"].backends;
+    assert_eq!(counts["msm.prepare.miss"].calls, 1);
+    assert_eq!(counts["msm.prepare.upload"].calls, 1);
+    assert_eq!(counts["msm.prepare.upload_bytes"].elements, 1025 * 96);
+    assert_eq!(counts["msm.prepare.hit"].calls, 4);
+}
