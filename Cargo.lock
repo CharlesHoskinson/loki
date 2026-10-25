@@ -760,6 +760,7 @@ dependencies = [
  "ff",
  "group",
  "loki-backend-api",
+ "midnight-curves",
 ]
 
 [[package]]
