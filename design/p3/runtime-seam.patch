@@ -1,0 +1,344 @@
+diff --git a/crates/loki-gpu/src/runtime.rs b/crates/loki-gpu/src/runtime.rs
+index 585d184..6717c4a 100644
+--- a/crates/loki-gpu/src/runtime.rs
++++ b/crates/loki-gpu/src/runtime.rs
+@@ -472,7 +472,7 @@ const fn err(operation: Operation, kind: ErrorKind, effect: FailureEffect) -> Ba
+ // ===========================================================================
+ 
+ const LEVEL_DEVICE: u8 = 1;
+-const LEVEL_REGISTRY: u8 = 2;
++pub(crate) const LEVEL_REGISTRY: u8 = 2;
+ const LEVEL_TELEMETRY: u8 = 3;
+ 
+ thread_local! {
+@@ -492,7 +492,7 @@ pub(crate) struct OrderedGuard<'a, T> {
+ }
+ 
+ impl<T> OrderedMutex<T> {
+-    const fn new(level: u8, value: T) -> Self {
++    pub(crate) const fn new(level: u8, value: T) -> Self {
+         Self {
+             level,
+             inner: Mutex::new(value),
+@@ -502,7 +502,7 @@ impl<T> OrderedMutex<T> {
+     /// Acquire in lock order. Panics if this thread already holds a lock at an
+     /// equal or higher level. A std-poisoned lock (a panic while held) is
+     /// reported as `Err` so the runtime treats its state as untrusted.
+-    fn lock(&self) -> Result<OrderedGuard<'_, T>, ()> {
++    pub(crate) fn lock(&self) -> Result<OrderedGuard<'_, T>, ()> {
+         let level = self.level;
+         HELD_LEVELS.with(|held| {
+             let mask = held.get();
+@@ -589,9 +589,16 @@ struct DeviceState {
+ }
+ 
+ #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+-enum Form {
++pub(crate) enum Form {
+     /// Canonical `PrimeField::to_repr` bytes, one element per `elem_size`.
+     ScalarCanonicalRepr,
++    /// P3: validated SRS point wire bytes produced by the registry's concrete
++    /// point codec (`elem_size` bytes per point, layout pinned by the codec's
++    /// `CurveAbi`). Owned by `srs::GpuSrsRegistry`; the public
++    /// `ResidentBackend` upload/download/release paths require
++    /// `ScalarCanonicalRepr`, so no caller can read or free a registry
++    /// allocation through them.
++    SrsPointWire,
+ }
+ 
+ #[derive(Debug)]
+@@ -650,6 +657,16 @@ impl Registry {
+         &self,
+         op: Operation,
+         handle: &ResidentBuffer<T>,
++    ) -> Result<&AllocRecord, BackendError> {
++        self.validate_form(op, handle, Form::ScalarCanonicalRepr)
++    }
++
++    /// Validate untrusted handle metadata, requiring the recorded `form`.
++    fn validate_form<T: 'static>(
++        &self,
++        op: Operation,
++        handle: &ResidentBuffer<T>,
++        form: Form,
+     ) -> Result<&AllocRecord, BackendError> {
+         let invalid = err(op, ErrorKind::InvalidInput, FailureEffect::NotStarted);
+         if self.generation.is_none() {
+@@ -660,7 +677,7 @@ impl Registry {
+             || record.element != TypeId::of::<T>()
+             || record.len != handle.len()
+             || record.bytes != handle.bytes()
+-            || record.form != Form::ScalarCanonicalRepr
++            || record.form != form
+         {
+             return Err(invalid);
+         }
+@@ -1349,6 +1366,72 @@ impl GpuRuntime {
+         cancel: &CancelToken,
+         checkpoint: bool,
+     ) -> Result<ResidentBuffer<F>, BackendError> {
++        let elem_size = F::Repr::default().as_ref().len();
++        let mut fill = |first: usize, dst: &mut [u8]| -> bool {
++            let count = dst.len() / elem_size;
++            for (i, value) in values[first..first + count].iter().enumerate() {
++                let repr = value.to_repr();
++                let src = repr.as_ref();
++                if src.len() != elem_size {
++                    return false;
++                }
++                dst[i * elem_size..(i + 1) * elem_size].copy_from_slice(src);
++            }
++            true
++        };
++        self.upload_raw::<F>(
++            values.len(),
++            elem_size,
++            Form::ScalarCanonicalRepr,
++            cancel,
++            checkpoint,
++            &mut fill,
++        )
++    }
++
++    /// P3: upload registry-encoded SRS point wire bytes (`elem_size` bytes per
++    /// point) as a `SrsPointWire` allocation. `wire.len()` must be an exact
++    /// nonzero multiple of `elem_size`. The bytes are copied into
++    /// backend-owned bounded staging exactly like scalar uploads, and the
++    /// handle is published only after the completion event retires. Only the
++    /// SRS registry may read or release the result.
++    pub(crate) fn upload_wire<T: 'static>(
++        &self,
++        wire: &[u8],
++        elem_size: usize,
++    ) -> Result<ResidentBuffer<T>, BackendError> {
++        let op = Operation::Upload;
++        if elem_size == 0 || wire.len() % elem_size != 0 {
++            return Err(err(op, ErrorKind::InvalidInput, FailureEffect::NotStarted));
++        }
++        let mut fill = |first: usize, dst: &mut [u8]| -> bool {
++            let start = first * elem_size;
++            dst.copy_from_slice(&wire[start..start + dst.len()]);
++            true
++        };
++        self.upload_raw::<T>(
++            wire.len() / elem_size,
++            elem_size,
++            Form::SrsPointWire,
++            &CancelToken::new(),
++            false,
++            &mut fill,
++        )
++    }
++
++    /// Shared upload transaction. `fill(first_element, dst)` writes the
++    /// encoded bytes of `dst.len() / elem_size` elements starting at
++    /// `first_element` into backend-owned staging; `false` rejects the input.
++    #[allow(clippy::too_many_arguments)]
++    fn upload_raw<T: 'static>(
++        &self,
++        len: usize,
++        elem_size: usize,
++        form: Form,
++        cancel: &CancelToken,
++        checkpoint: bool,
++        fill: &mut dyn FnMut(usize, &mut [u8]) -> bool,
++    ) -> Result<ResidentBuffer<T>, BackendError> {
+         let op = Operation::Upload;
+         let driver = self.driver.as_deref().ok_or(BackendError::unsupported(op))?;
+         let not_started = |kind| err(op, kind, FailureEffect::NotStarted);
+@@ -1357,15 +1440,14 @@ impl GpuRuntime {
+             let reg = self.lock_registry(op)?;
+             reg.require_healthy(op)?;
+         }
+-        if values.is_empty() {
++        if len == 0 {
+             return Err(not_started(ErrorKind::InvalidInput));
+         }
+-        let elem_size = F::Repr::default().as_ref().len();
+         let chunk_elems = self.config.staging_slot_bytes / elem_size.max(1);
+         if elem_size == 0 || chunk_elems == 0 {
+             return Err(not_started(ErrorKind::Unsupported));
+         }
+-        let bytes = (values.len() as u64)
++        let bytes = (len as u64)
+             .checked_mul(elem_size as u64)
+             .ok_or(not_started(ErrorKind::Capacity))?;
+         let host_bytes: usize = usize::try_from(bytes).map_err(|_| not_started(ErrorKind::Capacity))?;
+@@ -1421,7 +1503,7 @@ impl GpuRuntime {
+             None
+         };
+         let result = self.upload_chunks(
+-            driver, ctx, op, values, elem_size, chunk_elems, memory, bytes, cancel,
++            driver, ctx, op, len, fill, elem_size, chunk_elems, memory, bytes, cancel,
+             snapshot.as_mut(),
+         );
+         match result {
+@@ -1442,10 +1524,10 @@ impl GpuRuntime {
+                 id,
+                 AllocRecord {
+                     generation,
+-                    element: TypeId::of::<F>(),
++                    element: TypeId::of::<T>(),
+                     elem_size,
+-                    form: Form::ScalarCanonicalRepr,
+-                    len: values.len(),
++                    form,
++                    len,
+                     bytes,
+                     quarantined: false,
+                     checkpoint: snapshot.map(Vec::into_boxed_slice),
+@@ -1460,18 +1542,19 @@ impl GpuRuntime {
+         Ok(ResidentBuffer::from_untrusted_metadata(
+             generation,
+             id,
+-            values.len(),
++            len,
+             bytes,
+         ))
+     }
+ 
+     #[allow(clippy::too_many_arguments)]
+-    fn upload_chunks<F: PrimeField>(
++    fn upload_chunks(
+         &self,
+         driver: &dyn DeviceDriver,
+         ctx: &mut Context,
+         op: Operation,
+-        values: &[F],
++        len_elems: usize,
++        fill: &mut dyn FnMut(usize, &mut [u8]) -> bool,
+         elem_size: usize,
+         chunk_elems: usize,
+         memory: DeviceMemory,
+@@ -1485,7 +1568,8 @@ impl GpuRuntime {
+         let mem = Some((memory, bytes));
+         let r = driver.record_event(ctx.timing_start, stream);
+         let mut timing = self.optional(ctx, op, r, mem)?.is_some();
+-        for (index, chunk) in values.chunks(chunk_elems).enumerate() {
++        for (index, first) in (0..len_elems).step_by(chunk_elems).enumerate() {
++            let count = chunk_elems.min(len_elems - first);
+             if cancel.is_cancelled() {
+                 let kind = ErrorKind::Cancelled;
+                 return Err(if enqueued {
+@@ -1511,7 +1595,7 @@ impl GpuRuntime {
+                 self.wait_event(driver, ctx, op, event, Some((memory, bytes)))?;
+                 ctx.slots[s].pending = None;
+             }
+-            let len = chunk.len() * elem_size;
++            let len = count * elem_size;
+             let offset = index * chunk_elems * elem_size;
+             {
+                 let slot = &ctx.slots[s];
+@@ -1521,16 +1605,11 @@ impl GpuRuntime {
+                 // it (chunk_elems * elem_size <= slot bytes), and its last
+                 // transfer has retired (pending == None), so no DMA reads it.
+                 let dst = unsafe { std::slice::from_raw_parts_mut(slot.buffer.ptr, len) };
+-                for (i, value) in chunk.iter().enumerate() {
+-                    let repr = value.to_repr();
+-                    let src = repr.as_ref();
+-                    if src.len() != elem_size {
+-                        return Err(self.fail_after_enqueue(
+-                            driver, ctx, op, ErrorKind::InvalidInput, None, stream,
+-                            Some((memory, bytes)),
+-                        ));
+-                    }
+-                    dst[i * elem_size..(i + 1) * elem_size].copy_from_slice(src);
++                if !fill(first, dst) {
++                    return Err(self.fail_after_enqueue(
++                        driver, ctx, op, ErrorKind::InvalidInput, None, stream,
++                        Some((memory, bytes)),
++                    ));
+                 }
+                 if let Some(cp) = snapshot.as_deref_mut() {
+                     cp.extend_from_slice(dst);
+@@ -1588,6 +1667,34 @@ impl GpuRuntime {
+         source: &ResidentBuffer<F>,
+         cancel: &CancelToken,
+     ) -> Result<Vec<F>, BackendError> {
++        let op = Operation::Download;
++        let (out, elem_size) = self.download_raw(source, Form::ScalarCanonicalRepr, cancel)?;
++        // Decode and validate every element before publishing the vector.
++        let decoded = decode::<F>(&out, elem_size)
++            .ok_or(err(op, ErrorKind::Internal, FailureEffect::InputsPreserved))?;
++        self.with_telemetry(|t| t.transfers += 1);
++        Ok(decoded)
++    }
++
++    /// P3: download the raw wire bytes of a registry-owned SRS allocation
++    /// into a fresh host vector (exact-residency diagnostics).
++    pub(crate) fn download_wire<T: 'static>(
++        &self,
++        source: &ResidentBuffer<T>,
++    ) -> Result<Vec<u8>, BackendError> {
++        let (out, _) = self.download_raw(source, Form::SrsPointWire, &CancelToken::new())?;
++        self.with_telemetry(|t| t.transfers += 1);
++        Ok(out)
++    }
++
++    /// Shared download transaction: a private complete byte copy of `source`,
++    /// returned only after the completion event retires.
++    fn download_raw<T: 'static>(
++        &self,
++        source: &ResidentBuffer<T>,
++        form: Form,
++        cancel: &CancelToken,
++    ) -> Result<(Vec<u8>, usize), BackendError> {
+         let op = Operation::Download;
+         let driver = self.driver.as_deref().ok_or(BackendError::unsupported(op))?;
+         if cancel.is_cancelled() {
+@@ -1600,7 +1707,7 @@ impl GpuRuntime {
+             .ok_or(BackendError::unsupported(op))?;
+         let (elem_size, bytes) = {
+             let reg = self.lock_registry(op)?;
+-            let record = reg.validate(op, source)?;
++            let record = reg.validate_form(op, source, form)?;
+             (record.elem_size, record.bytes)
+         };
+         if ctx.poisoned {
+@@ -1696,12 +1803,7 @@ impl GpuRuntime {
+             }
+         }
+         drop(device);
+-
+-        // Decode and validate every element before publishing the vector.
+-        let decoded = decode::<F>(&out, elem_size)
+-            .ok_or(err(op, ErrorKind::Internal, FailureEffect::InputsPreserved))?;
+-        self.with_telemetry(|t| t.transfers += 1);
+-        Ok(decoded)
++        Ok((out, elem_size))
+     }
+ 
+     // -----------------------------------------------------------------------
+@@ -1831,6 +1933,23 @@ impl GpuRuntime {
+     // -----------------------------------------------------------------------
+ 
+     fn release_impl<T: 'static>(&self, handle: ResidentBuffer<T>) -> Result<(), BackendError> {
++        self.release_raw(handle, Form::ScalarCanonicalRepr)
++    }
++
++    /// P3: release a registry-owned SRS allocation. The registry calls this
++    /// only for entries with no active lease or pin, outside its own lock.
++    pub(crate) fn release_wire<T: 'static>(
++        &self,
++        handle: ResidentBuffer<T>,
++    ) -> Result<(), BackendError> {
++        self.release_raw(handle, Form::SrsPointWire)
++    }
++
++    fn release_raw<T: 'static>(
++        &self,
++        handle: ResidentBuffer<T>,
++        form: Form,
++    ) -> Result<(), BackendError> {
+         let op = Operation::Release;
+         let driver = self.driver.as_deref().ok_or(BackendError::unsupported(op))?;
+         let mut device = self.lock_device(op)?;
+@@ -1840,7 +1959,7 @@ impl GpuRuntime {
+             .ok_or(BackendError::unsupported(op))?;
+         {
+             let mut reg = self.lock_registry(op)?;
+-            reg.validate(op, &handle)?;
++            reg.validate_form(op, &handle, form)?;
+             let record = reg
+                 .allocations
+                 .remove(&handle.allocation())
