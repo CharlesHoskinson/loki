@@ -1,0 +1,19 @@
+[package]
+name = "loki-stock-verifier-check"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Keep registry resolution isolated from Loki and any caller's workspace patch.
+[workspace]
+
+[features]
+default = ["committed-instances"]
+committed-instances = ["stock/committed-instances"]
+circuit-params = ["stock/circuit-params"]
+
+[dev-dependencies]
+stock = { package = "midnight-proofs", version = "=0.8.3", default-features = false }
+midnight-curves = "=0.3.1"
+blake2b_simd = "1"
+ff = "0.13"

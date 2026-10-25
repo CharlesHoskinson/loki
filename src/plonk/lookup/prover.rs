@@ -1,8 +1,8 @@
 use std::{collections::HashMap, hash::Hash, iter};
 
 use ff::{FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
-use group::ff::BatchInvert;
 use rand_core::{CryptoRng, RngCore};
+use rayon::slice::ParallelSliceMut;
 
 use super::{
     super::{circuit::Expression, Error, ProvingKey},
@@ -15,7 +15,7 @@ use crate::{
         ProverQuery, Rotation,
     },
     transcript::{Hashable, Transcript},
-    utils::arithmetic::{eval_polynomial, parallelize},
+    utils::arithmetic::{batch_invert_parallel, eval_polynomial, parallelize, prefix_product},
 };
 
 #[cfg_attr(feature = "bench-internal", derive(Clone))]
@@ -179,7 +179,9 @@ impl<F: WithSmallOrderMulGroup<3>> Permuted<F> {
         // s_j(X) is the jth table expression in this lookup,
         // s'(X) is the compression of the permuted table expressions,
         // and i is the ith row of the expression.
-        let mut lookup_product = vec![F::ZERO; pk.vk.n() as usize];
+        let usable_rows = pk.vk.n() as usize - (blinding_factors + 1);
+        let mut lookup_product = Vec::with_capacity(pk.vk.n() as usize);
+        lookup_product.resize(usable_rows, F::ZERO);
         // Denominator uses the permuted input expression and permuted table expression
         parallelize(&mut lookup_product, |lookup_product, start| {
             for ((lookup_product, permuted_input_value), permuted_table_value) in lookup_product
@@ -193,7 +195,7 @@ impl<F: WithSmallOrderMulGroup<3>> Permuted<F> {
 
         // Batch invert to obtain the denominators for the lookup product
         // polynomials
-        lookup_product.iter_mut().batch_invert();
+        batch_invert_parallel(&mut lookup_product);
 
         // Finish the computation of the entire fraction by computing the numerators
         // (\theta^{m-1} a_0(\omega^i) + \theta^{m-2} a_1(\omega^i) + ... + \theta
@@ -226,18 +228,11 @@ impl<F: WithSmallOrderMulGroup<3>> Permuted<F> {
 
         // Compute the evaluations of the lookup product polynomial
         // over our domain, starting with z[0] = 1
-        let z = iter::once(F::ONE)
-            .chain(lookup_product)
-            .scan(F::ONE, |state, cur| {
-                *state *= &cur;
-                Some(*state)
-            })
-            // Take all rows including the "last" row which should
-            // be a boolean (and ideally 1, else soundness is broken)
-            .take(pk.vk.n() as usize - blinding_factors)
-            // Chain random blinding factors.
-            .chain((0..blinding_factors).map(|_| F::random(&mut *rng)))
-            .collect::<Vec<_>>();
+        let last = prefix_product(&mut lookup_product, F::ONE);
+        // Include the last row and retain the same sequential RNG consumption.
+        lookup_product.push(last);
+        lookup_product.extend((0..blinding_factors).map(|_| F::random(&mut *rng)));
+        let z = lookup_product;
         assert_eq!(z.len(), pk.vk.n() as usize);
         let z = pk.vk.domain.lagrange_from_vec(z);
 
@@ -393,9 +388,10 @@ where
     permuted_input_expression.truncate(usable_rows);
 
     // Sort input lookup expression values
-    permuted_input_expression.sort();
+    permuted_input_expression.par_sort();
 
-    // A HashMap of each unique element in the table expression and its count
+    // Count with hashing; sorting only the distinct leftovers below is much
+    // cheaper than comparing field elements for every BTreeMap insertion.
     let mut leftover_table_map = HashMap::<F, u32>::with_capacity(table_expression.len());
     table_expression.iter().take(usable_rows).for_each(|coeff| {
         *leftover_table_map.entry(*coeff).or_insert(0) += 1;
@@ -427,7 +423,9 @@ where
         .collect::<Result<Vec<_>, _>>()?;
 
     // Populate permuted table at unfilled rows with leftover table elements
-    for (coeff, count) in leftover_table_map.iter() {
+    let mut leftovers: Vec<_> = leftover_table_map.iter().collect();
+    leftovers.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+    for (coeff, count) in leftovers {
         for _ in 0..*count {
             permuted_table_coeffs[repeated_input_rows.pop().unwrap()] = *coeff;
         }
@@ -458,4 +456,120 @@ where
         domain.lagrange_from_vec(permuted_input_expression),
         domain.lagrange_from_vec(permuted_table_coeffs),
     ))
+}
+
+/// Isolate the deterministic-map and sorting costs from the rest of proving.
+#[test]
+#[ignore = "manual k16 CPU benchmark"]
+fn time_lookup_preparation_k16() {
+    use midnight_curves::Fq;
+    use std::{collections::BTreeMap, hint::black_box, time::Instant};
+
+    let input: Vec<_> = (0..(1 << 16)).map(|row| Fq::from((row % 128) as u64)).collect();
+    let table: Vec<_> =
+        (0..input.len()).map(|row| Fq::from(if row < 256 { row as u64 } else { 0 })).collect();
+    let mut hash_times = Vec::new();
+    let mut tree_times = Vec::new();
+    let mut sorted_hash_times = Vec::new();
+    let mut serial_sort = Vec::new();
+    let mut parallel_sort = Vec::new();
+    let mut serial_unstable_sort = Vec::new();
+    let mut parallel_stable_sort = Vec::new();
+    for round in 0..9 {
+        for optimized in [round % 2 == 0, round % 2 != 0] {
+            let start = Instant::now();
+            macro_rules! count_table {
+                ($map:expr) => {{
+                    let mut map = $map;
+                    for value in &table {
+                        *map.entry(*value).or_insert(0u32) += 1;
+                    }
+                    for value in 0..128 {
+                        *map.get_mut(&Fq::from(value)).unwrap() -= 1;
+                    }
+                    map
+                }};
+            }
+            if optimized {
+                let map = count_table!(BTreeMap::new());
+                assert_eq!(
+                    black_box(map.values().map(|v| *v as usize).sum::<usize>()),
+                    input.len() - 128
+                );
+            } else {
+                let map = count_table!(HashMap::with_capacity(table.len()));
+                assert_eq!(
+                    black_box(map.values().map(|v| *v as usize).sum::<usize>()),
+                    input.len() - 128
+                );
+            }
+            let ms = start.elapsed().as_secs_f64() * 1000.0;
+            if optimized {
+                tree_times.push(ms);
+            } else {
+                hash_times.push(ms);
+            }
+
+            let start = Instant::now();
+            let map = count_table!(HashMap::with_capacity(table.len()));
+            let mut leftovers: Vec<_> = map.iter().collect();
+            leftovers.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+            assert_eq!(
+                black_box(leftovers.iter().map(|(_, v)| **v as usize).sum::<usize>()),
+                input.len() - 128
+            );
+            drop(leftovers);
+            drop(map);
+            sorted_hash_times.push(start.elapsed().as_secs_f64() * 1000.0);
+
+            let mut values = input.clone();
+            let start = Instant::now();
+            if optimized {
+                values.par_sort_unstable();
+            } else {
+                values.sort();
+            }
+            let ms = start.elapsed().as_secs_f64() * 1000.0;
+            black_box(values);
+            if optimized {
+                parallel_sort.push(ms);
+            } else {
+                serial_sort.push(ms);
+            }
+            let mut values = input.clone();
+            let start = Instant::now();
+            if optimized {
+                values.par_sort();
+            } else {
+                values.sort_unstable();
+            }
+            let ms = start.elapsed().as_secs_f64() * 1000.0;
+            black_box(values);
+            if optimized {
+                parallel_stable_sort.push(ms);
+            } else {
+                serial_unstable_sort.push(ms);
+            }
+        }
+    }
+    for times in [
+        &mut hash_times,
+        &mut tree_times,
+        &mut sorted_hash_times,
+        &mut serial_sort,
+        &mut parallel_sort,
+        &mut serial_unstable_sort,
+        &mut parallel_stable_sort,
+    ] {
+        times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    }
+    println!(
+        "k=16 threads={} hash_map_ms={:.3} tree_map_ms={:.3} sorted_hash_ms={:.3}",
+        rayon::current_num_threads(),
+        hash_times[4],
+        tree_times[4],
+        sorted_hash_times[8]
+    );
+    println!("stable_sort_ms={:.3} parallel_unstable_sort_ms={:.3} serial_unstable_sort_ms={:.3} parallel_stable_sort_ms={:.3}",
+        serial_sort[4], parallel_sort[4], serial_unstable_sort[4], parallel_stable_sort[4]);
 }

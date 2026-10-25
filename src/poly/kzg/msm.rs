@@ -8,7 +8,10 @@ use midnight_curves::{
     pairing::{Engine, MillerLoopResult, MultiMillerLoop},
     CurveAffine, Fq, G1Projective,
 };
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use rayon::{
+    iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
+    slice::ParallelSlice,
+};
 
 use super::params::ParamsVerifierKZG;
 use crate::{
@@ -187,12 +190,100 @@ pub fn msm_specific<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C::Curve]) ->
         let bases_slice = bases.as_slice();
         let coeffs = unsafe { &*(coeffs_slice as *const _ as *const [Fq]) };
         let bases = unsafe { &*(bases_slice as *const _ as *const [G1Projective]) };
-        let res = G1Projective::multi_exp(bases, coeffs);
+        // BLST's no-threads feature disables its independent global pool.
+        // Schedule serial Pippenger chunks on the caller's active Rayon pool.
+        // Nested commitments therefore share the same worker budget.
+        let chunk_size = coeffs.len().div_ceil(rayon::current_num_threads()).max(1024);
+        let res = coeffs
+            .par_chunks(chunk_size)
+            .zip(bases.par_chunks(chunk_size))
+            .map(|(coeffs, bases)| G1Projective::multi_exp(bases, coeffs))
+            .reduce(G1Projective::identity, |a, b| a + b);
         unsafe { std::mem::transmute_copy(&res) }
     } else {
         let mut affine_bases = vec![C::identity(); coeffs.len()];
         C::Curve::batch_normalize(&bases, &mut affine_bases);
         msm_best(&coeffs, &affine_bases)
+    }
+}
+
+#[cfg(test)]
+mod cpu_tests {
+    use super::*;
+    use midnight_curves::G1Affine;
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
+
+    #[test]
+    fn msm_matches_individual_multiplications() {
+        let mut rng = ChaCha20Rng::from_seed([3; 32]);
+        let bases: Vec<_> = (0..4097)
+            .map(|i| {
+                if i % 13 == 0 {
+                    G1Projective::identity()
+                } else {
+                    G1Projective::generator() * Fq::from((i % 31 + 1) as u64)
+                }
+            })
+            .collect();
+        let scalars: Vec<_> = (0..bases.len())
+            .map(|i| match i % 5 {
+                0 => Fq::ZERO,
+                1 => Fq::ONE,
+                2 => -Fq::ONE,
+                _ => Fq::random(&mut rng),
+            })
+            .collect();
+        for threads in [1, 2, 4] {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+            for len in [0, 1, 2, 31, 32, 1023, 1024, 1025, 4097] {
+                let expected = scalars[..len]
+                    .iter()
+                    .zip(&bases[..len])
+                    .fold(G1Projective::identity(), |sum, (scalar, base)| sum + base * scalar);
+                let actual =
+                    pool.install(|| msm_specific::<G1Affine>(&scalars[..len], &bases[..len]));
+                assert_eq!(actual, expected);
+            }
+        }
+        assert_eq!(
+            msm_specific::<G1Affine>(&vec![Fq::ZERO; bases.len()], &bases),
+            G1Projective::identity()
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn msm_uses_only_the_active_rayon_pool() {
+        // Isolate process thread accounting from concurrently running tests.
+        const CHILD: &str = "LOKI_MSM_CPU_BUDGET_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "poly::kzg::msm::cpu_tests::msm_uses_only_the_active_rayon_pool",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
+        let count_threads = || std::fs::read_dir("/proc/self/task").unwrap().count();
+        let before = count_threads();
+        let scalars = vec![Fq::from(7); 4097];
+        let bases = vec![G1Projective::generator(); scalars.len()];
+        let result = pool.install(|| msm_specific::<G1Affine>(&scalars, &bases));
+        assert_eq!(result, G1Projective::generator() * Fq::from(7 * 4097));
+        pool.install(|| {
+            use rayon::iter::IntoParallelIterator;
+            (0..4).into_par_iter().for_each(|_| {
+                assert_eq!(msm_specific::<G1Affine>(&scalars, &bases), result);
+            });
+        });
+        assert_eq!(count_threads(), before, "MSM created workers outside the active Rayon pool");
     }
 }
 

@@ -67,6 +67,10 @@ path = "examples/loki-profile.rs"
 required-features = ["loki-profile"]
 
 [[example]]
+name = "cpu-bench"
+path = "examples/cpu-bench.rs"
+
+[[example]]
 name = "proof-size"
 path = "examples/proof-size.rs"
 
@@ -91,6 +95,10 @@ name = "vector-ops-unblinded"
 path = "examples/vector-ops-unblinded.rs"
 
 [[test]]
+name = "cpu"
+path = "tests/cpu.rs"
+
+[[test]]
 name = "plonk_api"
 path = "tests/plonk_api.rs"
 
@@ -112,6 +120,11 @@ required-features = ["bench-internal"]
 
 [dependencies.blake2b_simd]
 version = "1"
+
+# All MSM parallelism uses the active Rayon pool, including nested callers.
+[dependencies.blst]
+version = "0.3"
+features = ["no-threads"]
 
 [dependencies.criterion]
 version = "0.7"

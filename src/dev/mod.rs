@@ -615,6 +615,7 @@ impl<F: Field> Assignment<F> for MockProver<F> {
 /// # impl Circuit<Scalar> for MyCircuit {
 /// #     type Config = ();
 /// #     type FloorPlanner = SimpleFloorPlanner;
+/// #     #[cfg(feature = "circuit-params")]
 /// #     type Params = ();
 /// #     fn without_witnesses(&self) -> Self { Self }
 /// #     fn configure(_: &mut ConstraintSystem<Scalar>) {}

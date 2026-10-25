@@ -11,11 +11,14 @@ use std::{
     },
 };
 
-use ff::{BatchInvert, PrimeField, WithSmallOrderMulGroup};
+use ff::{PrimeField, WithSmallOrderMulGroup};
 use group::ff::Field;
 use midnight_curves::serde::SerdeObject;
 
-use crate::utils::{arithmetic::parallelize, SerdeFormat};
+use crate::utils::{
+    arithmetic::{batch_invert_parallel, parallelize},
+    SerdeFormat,
+};
 
 mod domain;
 mod query;
@@ -287,42 +290,144 @@ impl<F: PrimeField + SerdeObject, B> Polynomial<F, B> {
 pub(crate) fn batch_invert_rational<F: Field>(
     assigned: Vec<Polynomial<Rational<F>, LagrangeCoeff>>,
 ) -> Vec<Polynomial<F, LagrangeCoeff>> {
-    let mut assigned_denominators: Vec<_> = assigned
+    // Compact only denominators that require inversion. In particular, trivial
+    // and zero assignments need neither denominator storage nor multiplication.
+    let mut denominators: Vec<_> = assigned
         .iter()
-        .map(|f| f.iter().map(|value| value.denominator()).collect::<Vec<_>>())
-        .collect();
-
-    assigned_denominators
-        .iter_mut()
-        .flat_map(|f| {
-            f.iter_mut()
-                // If the denominator is trivial, we can skip it, reducing the
-                // size of the batch inversion.
-                .filter_map(|d| d.as_mut())
+        .flat_map(|poly| {
+            poly.iter().filter_map(|value| value.denominator().filter(|d| *d != F::ONE))
         })
-        .batch_invert();
-
+        .collect();
+    batch_invert_parallel(&mut denominators);
+    let mut inverses = denominators.into_iter();
     assigned
-        .iter()
-        .zip(assigned_denominators)
-        .map(|(poly, inv_denoms)| poly.invert(inv_denoms.into_iter().map(|d| d.unwrap_or(F::ONE))))
+        .into_iter()
+        .map(|poly| Polynomial {
+            values: poly.values.into_iter()
+                .map(|value| match value {
+                    Rational::Zero => F::ZERO,
+                    Rational::Trivial(numerator) => numerator,
+                    Rational::Rational(numerator, denominator) if denominator == F::ONE => numerator,
+                    Rational::Rational(numerator, _) => numerator * inverses.next().unwrap(),
+                })
+                .collect(),
+            _marker: poly._marker,
+        })
         .collect()
 }
 
-impl<F: Field> Polynomial<Rational<F>, LagrangeCoeff> {
-    pub(crate) fn invert(
-        &self,
-        inv_denoms: impl ExactSizeIterator<Item = F>,
-    ) -> Polynomial<F, LagrangeCoeff> {
-        assert_eq!(inv_denoms.len(), self.values.len());
-        Polynomial {
-            values: self
-                .values
+#[cfg(test)]
+mod cpu_tests {
+    use super::*;
+    use midnight_curves::Fq;
+
+    #[test]
+    fn rational_batch_matches_individual_evaluation() {
+        let values = [
+            Rational::Zero,
+            Rational::Trivial(Fq::from(7)),
+            Rational::Rational(Fq::from(9), Fq::ONE),
+            Rational::Rational(Fq::from(11), Fq::ZERO),
+            Rational::Rational(Fq::ZERO, Fq::from(5)),
+            Rational::Rational(Fq::from(13), Fq::from(5)),
+        ];
+        for threads in [1, 4] {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+            for len in [0, 1, 1025, 65531] {
+                let assigned: Vec<_> = (0..3)
+                    .map(|column| Polynomial {
+                        values: (0..len).map(|row| values[(row + column) % values.len()]).collect(),
+                        _marker: PhantomData,
+                    })
+                    .collect();
+                let expected: Vec<Vec<_>> = assigned
+                    .iter()
+                    .map(|poly| poly.iter().map(|value| value.evaluate()).collect())
+                    .collect();
+                let actual = pool.install(|| batch_invert_rational(assigned));
+                for (actual, expected) in actual.iter().zip(expected) {
+                    assert_eq!(actual.values, expected);
+                }
+            }
+            assert!(batch_invert_rational::<Fq>(vec![]).is_empty());
+        }
+    }
+
+    /// Paired conversion-only measurements, with clones excluded from timing.
+    #[test]
+    #[ignore = "manual k16 CPU benchmark"]
+    fn time_rational_conversion_k16() {
+        use ff::BatchInvert;
+        use std::{hint::black_box, time::Instant};
+
+        fn reference(
+            assigned: Vec<Polynomial<Rational<Fq>, LagrangeCoeff>>,
+        ) -> Vec<Polynomial<Fq, LagrangeCoeff>> {
+            let mut denominators: Vec<Vec<_>> = assigned
                 .iter()
-                .zip(inv_denoms)
-                .map(|(a, inv_den)| a.numerator() * inv_den)
-                .collect(),
-            _marker: self._marker,
+                .map(|poly| poly.iter().map(Rational::denominator).collect())
+                .collect();
+            denominators
+                .iter_mut()
+                .flat_map(|column| column.iter_mut().filter_map(Option::as_mut))
+                .batch_invert();
+            assigned
+                .iter()
+                .zip(denominators)
+                .map(|(poly, denominators)| Polynomial {
+                    values: poly
+                        .iter()
+                        .zip(denominators)
+                        .map(|(value, inverse)| value.numerator() * inverse.unwrap_or(Fq::ONE))
+                        .collect(),
+                    _marker: PhantomData,
+                })
+                .collect()
+        }
+
+        for density in [10, 100] {
+            let template: Vec<_> = (0..3)
+                .map(|_| Polynomial {
+                    values: (0..(1 << 16))
+                        .map(|row| {
+                            let value = Fq::from((row % 128) as u64);
+                            if row % 100 < density {
+                                Rational::Rational(value, Fq::from((row % 31 + 1) as u64))
+                            } else if row % 2 == 0 {
+                                Rational::Zero
+                            } else {
+                                Rational::Trivial(value)
+                            }
+                        })
+                        .collect(),
+                    _marker: PhantomData,
+                })
+                .collect();
+            let mut before = Vec::new();
+            let mut after = Vec::new();
+            for round in 0..9 {
+                // Alternate order to reduce systematic warm-cache bias.
+                for optimized in [round % 2 == 0, round % 2 != 0] {
+                    let assigned = template.clone();
+                    let start = Instant::now();
+                    let output = if optimized {
+                        batch_invert_rational(assigned)
+                    } else {
+                        reference(assigned)
+                    };
+                    let ms = start.elapsed().as_secs_f64() * 1000.0;
+                    black_box(output);
+                    if optimized {
+                        after.push(ms);
+                    } else {
+                        before.push(ms);
+                    }
+                }
+            }
+            before.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            after.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            println!("k=16 columns=3 rational_percent={density} threads={} stock_median_ms={:.3} loki_median_ms={:.3}",
+                rayon::current_num_threads(), before[4], after[4]);
         }
     }
 }
