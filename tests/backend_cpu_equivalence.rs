@@ -280,13 +280,13 @@ fn cpu_transform_small_domains_and_normalization() {
     let two = [Fq::from(3), Fq::from(5)];
     let f = cpu_transform(&two, plain(-Fq::ONE, 1, TransformDirection::Forward)).unwrap();
     assert_eq!(f, vec![Fq::from(8), -Fq::from(2)]);
-    // Inverse without normalization is n times the normalized inverse.
+    // The inverse applies exactly one 1/n; an inverse without it is not an
+    // inverse transform and is rejected (API contract).
     let mut spec = plain(-Fq::ONE, 1, TransformDirection::Inverse);
     let normalized = cpu_transform(&f, spec).unwrap();
     assert_eq!(normalized, two);
     spec.inverse_normalization = InverseNormalization::None;
-    let raw = cpu_transform(&f, spec).unwrap();
-    assert_eq!(raw, two.iter().map(|v| v.double()).collect::<Vec<_>>());
+    assert_eq!(cpu_transform(&f, spec).unwrap_err(), invalid(Operation::Transform));
     // A non-cube-root coset generator takes the generic power path.
     let g = Fq::from(7);
     let spec = TransformSpec {
@@ -318,6 +318,7 @@ fn malformed_transform_requests_are_rejected_before_start() {
     assert_eq!(bad(TransformSpec { output_log_size: 5, ..fwd }, &values), invalid(Operation::Transform), "plain size change");
     assert_eq!(bad(TransformSpec { output_log_size: 3, coset: Some(zeta_coset()), ..fwd }, &values), invalid(Operation::Transform), "forward coset shrink");
     assert_eq!(bad(TransformSpec { inverse_normalization: InverseNormalization::DivideByLengthOnce, ..fwd }, &values), invalid(Operation::Transform), "forward normalization");
+    assert_eq!(bad(TransformSpec { inverse_normalization: InverseNormalization::None, ..plain(omega, 4, TransformDirection::Inverse) }, &values), invalid(Operation::Transform), "inverse without normalization");
     let inv = TransformSpec { coset: Some(zeta_coset()), ..plain(omega, 4, TransformDirection::Inverse) };
     assert_eq!(bad(TransformSpec { output_log_size: 5, ..inv }, &values), invalid(Operation::Transform), "inverse coset grow");
     assert_eq!(bad(TransformSpec { coset: Some(CosetSpec { generator: Fq::ZETA, generator_inverse: Fq::ZETA }), ..inv }, &values), invalid(Operation::Transform), "inconsistent coset inverse");
@@ -530,4 +531,133 @@ fn accelerator_skipped_without_capability_or_for_empty_msm() {
     assert_eq!(stub.calls(), 0);
     let c = dispatcher.counters();
     assert_eq!((c.msm_cpu, c.msm_fallback, c.transform_cpu, c.transform_fallback), (4, 0, 1, 0));
+}
+
+// ------------------------------------------------ P4 transform dispatch fixes
+
+fn coset_spec(domain: &stock::poly::EvaluationDomain<Fq>, direction: TransformDirection) -> TransformSpec<Fq> {
+    let (k, ek) = (domain.k(), domain.extended_k());
+    TransformSpec {
+        root: domain.get_extended_omega(),
+        source_log_size: if direction == TransformDirection::Forward { k } else { ek },
+        output_log_size: ek,
+        direction,
+        input_order: ElementOrder::Natural,
+        output_order: ElementOrder::Natural,
+        inverse_normalization: match direction {
+            TransformDirection::Forward => InverseNormalization::None,
+            TransformDirection::Inverse => InverseNormalization::DivideByLengthOnce,
+        },
+        coset: Some(zeta_coset()),
+    }
+}
+
+#[test]
+fn cancelled_transform_is_returned_without_cpu_retry() {
+    let domain = stock::poly::EvaluationDomain::<Fq>::new(3, 5);
+    let values = scalars(32, 6);
+    let spec = plain(domain.get_omega(), 5, TransformDirection::Forward);
+    let caps = advertised();
+    for (effect, disables) in [
+        (FailureEffect::NotStarted, false),
+        (FailureEffect::InputsPreserved, false),
+        (FailureEffect::SessionPoisoned, true),
+    ] {
+        let dispatcher = Dispatcher::new();
+        let cancelled = BackendError { operation: Operation::Transform, kind: ErrorKind::Cancelled, effect };
+        let stub = Stub::new(Some(cancelled));
+        let mut v = values.clone();
+        let err = dispatcher.transform(Some((&stub, &caps)), &mut v, spec).unwrap_err();
+        assert_eq!(err, cancelled);
+        assert_eq!(v, values, "host values changed by a cancelled transform");
+        let c = dispatcher.counters();
+        assert_eq!((stub.calls(), c.transform_cpu, c.transform_fallback, c.transform_accelerated), (1, 0, 0, 0));
+        assert_eq!(dispatcher.accelerator_disabled(), disables, "{effect:?}");
+        // Coset conversions propagate the same way.
+        let stub = Stub::new(Some(cancelled));
+        let d2 = Dispatcher::new();
+        let e = d2.coset_transform(Some((&stub, &caps)), &values, coset_spec(&domain, TransformDirection::Forward));
+        assert_eq!(e.unwrap_err(), cancelled);
+        assert_eq!(d2.counters().transform_cpu, 0);
+    }
+}
+
+/// Accelerator that, while computing, lets another dispatcher call poison the
+/// accelerator, then returns a well-formed (but now untrusted) result.
+struct LatePoison<'a> {
+    dispatcher: &'a Dispatcher,
+    calls: AtomicUsize,
+}
+
+impl TransformBackend<Fq> for LatePoison<'_> {
+    fn transform(&self, values: &[Fq], spec: TransformSpec<Fq>) -> Result<Vec<Fq>, BackendError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let poison = BackendError { operation: Operation::Msm, kind: ErrorKind::ContextLost, effect: FailureEffect::SessionPoisoned };
+        let concurrent = Stub::new(Some(poison));
+        let caps = advertised();
+        self.dispatcher.msm::<G1Affine, _>(Some((&concurrent, &caps)), &scalars(4, 1), &g1_bases(4, 2));
+        cpu_transform(values, spec)
+    }
+}
+
+#[test]
+fn transform_result_arriving_after_sticky_disable_is_discarded() {
+    let dispatcher = Dispatcher::new();
+    let late = LatePoison { dispatcher: &dispatcher, calls: AtomicUsize::new(0) };
+    let caps = advertised();
+    let domain = stock::poly::EvaluationDomain::<Fq>::new(3, 5);
+    let values = scalars(32, 7);
+    let mut v = values.clone();
+    dispatcher.transform(Some((&late, &caps)), &mut v, plain(domain.get_omega(), 5, TransformDirection::Forward)).unwrap();
+    assert_eq!(v[..], domain.coeff_to_lagrange(domain.coeff_from_vec(values))[..]);
+    let c = dispatcher.counters();
+    assert!(dispatcher.accelerator_disabled());
+    assert_eq!((late.calls.load(Ordering::SeqCst), c.transform_accelerated, c.transform_fallback, c.transform_cpu), (1, 0, 1, 1));
+}
+
+#[test]
+fn transform_admission_requires_the_exact_arithmetic_abi() {
+    let dispatcher = Dispatcher::new();
+    let stub = Stub::new(None);
+    let domain = stock::poly::EvaluationDomain::<Fq>::new(3, 4);
+    let spec = plain(domain.get_omega(), 4, TransformDirection::Forward);
+    // Same scalar field, different curve: not the ABI the caps were asked for.
+    let other_curve = ArithmeticAbi { curve: CurveAbi { curve_id: CURVE_BLS12_381_G1 + 100, ..BLS.curve }, ..BLS };
+    let other_encoding = ArithmeticAbi { scalar_field: FieldAbi { encoding_version: WIRE_ENCODING_V1 + 1, ..BLS.scalar_field }, ..BLS };
+    for abi in [other_curve, other_encoding] {
+        let caps = BackendCapabilities { supported_arithmetic: vec![abi], ..advertised() };
+        let mut v = scalars(16, 3);
+        dispatcher.transform(Some((&stub, &caps)), &mut v, spec).unwrap();
+        assert_eq!(dispatcher.coset_transform(Some((&stub, &caps)), &scalars(16, 3), coset_spec(&domain, TransformDirection::Forward)).unwrap(), None);
+    }
+    assert_eq!(stub.calls(), 0);
+    let mut v = scalars(16, 3);
+    dispatcher.transform(Some((&stub, &advertised())), &mut v, spec).unwrap();
+    assert_eq!(stub.calls(), 1, "exact ABI admitted");
+}
+
+#[test]
+fn failed_coset_offer_is_settled_once_on_cpu() {
+    let domain = stock::poly::EvaluationDomain::<Fq>::new(3, 5);
+    let caps = advertised();
+    let coeffs = scalars(32, 8);
+    let ext = domain.coeff_to_extended(domain.coeff_from_vec(coeffs.clone()));
+    let failure = BackendError { operation: Operation::Transform, kind: ErrorKind::Kernel, effect: FailureEffect::InputsPreserved };
+    // Forward: one offer, one CPU computation of the whole conversion.
+    let dispatcher = Dispatcher::new();
+    let stub = Stub::new(Some(failure));
+    let got = dispatcher.coset_transform(Some((&stub, &caps)), &coeffs, coset_spec(&domain, TransformDirection::Forward)).unwrap().expect("settled");
+    assert_eq!(got[..], ext[..]);
+    let c = dispatcher.counters();
+    assert_eq!((stub.calls(), c.transform_fallback, c.transform_cpu, c.transform_accelerated), (1, 1, 1, 0));
+    // Inverse.
+    let back = dispatcher.coset_transform(Some((&stub, &caps)), &ext[..], coset_spec(&domain, TransformDirection::Inverse)).unwrap().expect("settled");
+    assert_eq!(back, domain.extended_to_coeff(ext.clone()));
+    assert_eq!(stub.calls(), 2);
+    // Success publishes the accelerator result; not admitted returns None.
+    let ok = Stub::new(None);
+    assert_eq!(dispatcher.coset_transform(Some((&ok, &caps)), &coeffs, coset_spec(&domain, TransformDirection::Forward)).unwrap().unwrap()[..], ext[..]);
+    let none = BackendCapabilities { host_transform: false, ..advertised() };
+    assert_eq!(dispatcher.coset_transform(Some((&ok, &none)), &coeffs, coset_spec(&domain, TransformDirection::Forward)).unwrap(), None);
+    assert_eq!(ok.calls(), 1);
 }
