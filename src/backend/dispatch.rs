@@ -2,9 +2,11 @@
 //!
 //! The dispatcher validates each request before any backend entry, offers it
 //! to an accelerator only when that accelerator advertises the operation and
-//! the exact arithmetic ABI, and otherwise (or on any error) runs the stock
-//! CPU adapter. Inputs are borrowed host slices that Loki retains, so every
-//! accelerator error permits CPU recomputation. An error that poisons a
+//! the exact arithmetic ABI, and otherwise (or on an accelerator error) runs
+//! the stock CPU adapter. Inputs are borrowed host slices that Loki retains,
+//! so an accelerator error permits CPU recomputation, except `Cancelled`:
+//! cancellation never authorizes a CPU retry; the checked MSM entry
+//! (`try_msm`) and the transform entries return it to the caller. An error that poisons a
 //! session, or a contract violation such as a wrong-length result, disables
 //! the accelerator for the rest of the process (sticky). Backends never call
 //! back into the dispatcher, so fallback cannot recurse.
@@ -110,8 +112,10 @@ impl Dispatcher {
         }
     }
 
-    /// Account for a failed accelerator call. Inputs are retained host
-    /// slices, so CPU recomputation is always permitted.
+    /// Account for a failed (non-cancelled) accelerator call. Inputs are
+    /// retained host slices, so CPU recomputation is permitted. Both the
+    /// checked MSM entry and the transform arm return `Cancelled` before
+    /// reaching here.
     fn failed(&self, error: BackendError, fallback: &AtomicU64) {
         assert!(
             error.preserves_observable_state(),

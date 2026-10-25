@@ -660,4 +660,43 @@ fn failed_coset_offer_is_settled_once_on_cpu() {
     let none = BackendCapabilities { host_transform: false, ..advertised() };
     assert_eq!(dispatcher.coset_transform(Some((&ok, &none)), &coeffs, coset_spec(&domain, TransformDirection::Forward)).unwrap(), None);
     assert_eq!(ok.calls(), 1);
+||||||| parent of 85586f3 (Gate MSM cancellation in the CPU-only backend test and correct the fallback docs)
+
+/// quint-q2 B1 (astra-gpu decision): `try_msm` returns an accelerator
+/// `Cancelled` without CPU recomputation or CPU/fallback accounting,
+/// sticky-disables only for a poisoning effect, and the non-cancellable
+/// value shim unwinds instead of recomputing. Fresh dispatcher per case.
+#[test]
+fn cancelled_msm_is_returned_not_recomputed() {
+    let coeffs = scalars(64, 7);
+    let bases = g1_bases(64, 8);
+    let caps = advertised();
+    for (effect, sticky) in [
+        (FailureEffect::NotStarted, false),
+        (FailureEffect::InputsPreserved, false),
+        (FailureEffect::SessionPoisoned, true),
+    ] {
+        let cancelled = BackendError {
+            operation: Operation::Msm,
+            kind: ErrorKind::Cancelled,
+            effect,
+        };
+        let dispatcher = Dispatcher::new();
+        let stub = Stub::new(Some(cancelled));
+        let got = dispatcher.try_msm::<G1Affine, _>(Some((&stub, &caps)), &coeffs, &bases);
+        assert_eq!(got.unwrap_err(), cancelled);
+        let c = dispatcher.counters();
+        assert_eq!((stub.calls(), c.msm_accelerated, c.msm_fallback, c.msm_cpu), (1, 0, 0, 0), "{effect:?}");
+        assert_eq!(dispatcher.accelerator_disabled(), sticky, "{effect:?}");
+        assert_eq!(c.accelerator_poisoned, u64::from(sticky));
+
+        let dispatcher = Dispatcher::new();
+        let stub = Stub::new(Some(cancelled));
+        let shim = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            dispatcher.msm::<G1Affine, _>(Some((&stub, &caps)), &coeffs, &bases)
+        }));
+        assert!(shim.is_err(), "{effect:?}: the value shim must not recompute cancelled work");
+        let c = dispatcher.counters();
+        assert_eq!((stub.calls(), c.msm_fallback, c.msm_cpu), (1, 0, 0), "{effect:?}");
+    }
 }
