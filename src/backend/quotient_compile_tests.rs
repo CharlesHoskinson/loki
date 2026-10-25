@@ -1,6 +1,17 @@
 //! P5 CPU differential: the compiled bytecode, run by the independent
 //! `loki-gpu` CPU interpreter on the *physical* register allocation, must
-//! equal stock `Evaluator::evaluate_numerator` on every extended-domain row.
+//! equal `Evaluator::evaluate_numerator` on every extended-domain row.
+//!
+//! Oracle provenance: the reference is Loki's own
+//! `crate::plonk::evaluation::Evaluator` (a stock-derived copy), not the
+//! external midnight-proofs 0.8.3 crate, whose `evaluate_numerator` and
+//! `compute_nu_poly` are private. A source audit (astra-gpu, 40d267e) found
+//! Loki's `evaluation.rs` differs from 0.8.3 only in the `loki-harden`
+//! rotation type/branch, the `loki-profile` guard and harden tests; these
+//! tests run with default features (`committed-instances`) plus `loki-backend-api`, without `loki-harden`, where the
+//! numerator arithmetic is stock-equivalent. "stock" in test names below
+//! means that stock-derived evaluator. External stock acceptance is a later
+//! whole-proof gate (stock 0.8.3 verifier), not claimed here.
 //!
 //! Two fixture families:
 //! - synthetic constraint systems with random (deliberately unconstrained)
@@ -529,6 +540,84 @@ fn certificate_checker_is_sound_under_consistent_remaps() {
     }
     assert!(rejected > 0 && changed > 0, "no clobbering remap was exercised");
     eprintln!("consistent remaps: {accepted} accepted, {rejected} rejected, {changed} changed output");
+}
+
+/// The submission boundary (`bind_host_columns`) re-verifies a compiled
+/// program: domain metadata against the actual domain before any coset
+/// conversion, and the allocation certificate, so a mutated
+/// `CompiledQuotient` cannot be bound merely because a certificate exists.
+#[test]
+fn binding_rechecks_domain_and_certificate() {
+    use crate::backend::api::Operand;
+    let mut rng = ChaCha20Rng::seed_from_u64(0x7035_7175_6f74_0008);
+    let case = case(4, 0, true, true, true, &mut rng);
+    let values: [Fq; 6] = std::array::from_fn(|_| Fq::random(&mut rng));
+    let compiled = check_case("rebind", &case, values);
+    let to_ext = |p: &[Polynomial<Fq, Coeff>]| -> Vec<Polynomial<Fq, Ext>> {
+        p.iter().map(|p| case.domain.coeff_to_extended(p.clone())).collect()
+    };
+    let fixed = to_ext(&case.fixed);
+    let advice: Vec<_> = case.advice.iter().map(|v| to_ext(v)).collect();
+    let instance: Vec<_> = case.instance.iter().map(|v| to_ext(v)).collect();
+    let sigma = to_ext(&case.sigma);
+    let weights = to_ext(&case.weights);
+    let advice_refs: Vec<_> = advice.iter().map(Vec::as_slice).collect();
+    let instance_refs: Vec<_> = instance.iter().map(Vec::as_slice).collect();
+    let inputs = NumeratorInputs {
+        fixed: &fixed,
+        advice: &advice_refs,
+        instance: &instance_refs,
+        lookups: &case.lookups,
+        trashcans: &case.trashcans,
+        permutations: &case.permutations,
+        l0: &weights[0],
+        l_last: &weights[1],
+        l_active_row: &weights[2],
+        permutation_pk_cosets: &sigma,
+    };
+    let bind = |c: &CompiledQuotient<Fq>| bind_host_columns::<Fq, Ext>(c, &case.domain, &inputs);
+    assert!(bind(&compiled).is_ok());
+
+    // Same extended length, different base k: must be refused.
+    let mut c = compiled.clone();
+    c.domain_log -= 1;
+    c.rotation_scale *= 2;
+    assert_eq!(bind(&c).unwrap_err(), CompileError::Binding("domain"));
+    let mut c = compiled.clone();
+    c.extended_domain_log += 1;
+    assert_eq!(bind(&c).unwrap_err(), CompileError::Binding("domain"));
+    let mut c = compiled.clone();
+    c.rotation_scale += 1;
+    assert_eq!(bind(&c).unwrap_err(), CompileError::Binding("domain"));
+
+    // A corrupted certificate or physical program is refused at binding.
+    let mut c = compiled.clone();
+    let l = c.certificate.physical_of_logical.len() / 2;
+    c.certificate.physical_of_logical[l] =
+        (c.certificate.physical_of_logical[l] + 1) % c.register_count;
+    assert!(matches!(bind(&c).unwrap_err(), CompileError::Certificate(_)));
+    let mut c = compiled.clone();
+    let i = c.instructions.iter().position(|x| matches!(x.left, Operand::Register(_))).unwrap();
+    if let Operand::Register(r) = c.instructions[i].left {
+        c.instructions[i].left = Operand::Register((r + 1) % c.register_count);
+    }
+    assert!(matches!(bind(&c).unwrap_err(), CompileError::Certificate(_)));
+}
+
+#[test]
+fn certificate_register_count_is_checked_before_allocating() {
+    let mut rng = ChaCha20Rng::seed_from_u64(0x7035_7175_6f74_0009);
+    let case = case(4, 0, true, true, true, &mut rng);
+    let values: [Fq; 6] = std::array::from_fn(|_| Fq::random(&mut rng));
+    let compiled = check_case("count", &case, values);
+    // SSA: exactly one logical register per instruction.
+    assert_eq!(
+        compiled.certificate.logical_register_count as usize,
+        compiled.certificate.logical_instructions.len()
+    );
+    let mut c = compiled.clone();
+    c.certificate.logical_register_count = u32::MAX;
+    assert_eq!(check_allocation(&c), Err(AllocationError::ShapeMismatch { instruction: 0 }));
 }
 
 #[test]

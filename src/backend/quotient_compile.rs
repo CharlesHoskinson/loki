@@ -105,34 +105,41 @@ pub enum CompileError {
     TooLarge,
     /// Host inputs do not match the compiled column table.
     Binding(&'static str),
+    /// The allocation certificate does not validate the physical program.
+    Certificate(AllocationError),
 }
 
 /// Logical (single-assignment) program and its physical register map.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AllocationCertificate {
-    pub logical_instructions: Vec<QuotientInstruction>,
-    pub logical_register_count: u32,
-    pub logical_output: u32,
+    logical_instructions: Vec<QuotientInstruction>,
+    logical_register_count: u32,
+    logical_output: u32,
     /// `physical_of_logical[l]` is the physical register holding logical `l`.
-    pub physical_of_logical: Vec<u32>,
+    physical_of_logical: Vec<u32>,
 }
 
 /// A compiled numerator program with its constant and column tables.
+///
+/// Fields are private to this module so a caller cannot mutate a program
+/// after its certificate was checked; `compile_numerator` checks the
+/// certificate before returning and [`CompiledQuotient::verify`] re-checks
+/// it at every submission (`bind_host_columns`).
 #[derive(Clone, Debug)]
 pub struct CompiledQuotient<F> {
-    pub rows: usize,
-    pub domain_log: u32,
-    pub extended_domain_log: u32,
-    pub rotation_scale: usize,
-    pub register_count: u32,
-    pub instructions: Vec<QuotientInstruction>,
-    pub constants: Vec<F>,
-    pub columns: Vec<ColumnBinding>,
-    pub output_register: u32,
-    pub certificate: AllocationCertificate,
+    rows: usize,
+    domain_log: u32,
+    extended_domain_log: u32,
+    rotation_scale: usize,
+    register_count: u32,
+    instructions: Vec<QuotientInstruction>,
+    constants: Vec<F>,
+    columns: Vec<ColumnBinding>,
+    output_register: u32,
+    certificate: AllocationCertificate,
     /// Committed-argument shape the program was compiled for; host or
     /// resident inputs must match it exactly.
-    pub shape: ArgumentShape,
+    shape: ArgumentShape,
 }
 
 /// Number of circuit instances and per-instance argument counts.
@@ -142,6 +149,64 @@ pub struct ArgumentShape {
     pub permutation_sets: usize,
     pub lookups: usize,
     pub trashcans: usize,
+}
+
+impl<F> CompiledQuotient<F> {
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+    pub fn domain_log(&self) -> u32 {
+        self.domain_log
+    }
+    pub fn extended_domain_log(&self) -> u32 {
+        self.extended_domain_log
+    }
+    pub fn rotation_scale(&self) -> usize {
+        self.rotation_scale
+    }
+    pub fn register_count(&self) -> u32 {
+        self.register_count
+    }
+    pub fn instructions(&self) -> &[QuotientInstruction] {
+        &self.instructions
+    }
+    pub fn constants(&self) -> &[F] {
+        &self.constants
+    }
+    pub fn columns(&self) -> &[ColumnBinding] {
+        &self.columns
+    }
+    pub fn output_register(&self) -> u32 {
+        self.output_register
+    }
+    pub fn certificate(&self) -> &AllocationCertificate {
+        &self.certificate
+    }
+    pub fn shape(&self) -> ArgumentShape {
+        self.shape
+    }
+
+    /// Submission-boundary check: table indices in range and the
+    /// allocation certificate validates the physical program.
+    pub fn verify(&self) -> Result<(), CompileError> {
+        let in_range = |op: &Operand| match *op {
+            Operand::Register(r) => r < self.register_count,
+            Operand::Constant(c) => (c as usize) < self.constants.len(),
+            Operand::Column { column, .. } => (column as usize) < self.columns.len(),
+        };
+        let ok = self.output_register < self.register_count
+            && self.instructions.iter().all(|i| {
+                i.destination < self.register_count
+                    && in_range(&i.left)
+                    && i.right.as_ref().map_or(true, in_range)
+            });
+        if !ok {
+            return Err(CompileError::Certificate(AllocationError::ShapeMismatch {
+                instruction: 0,
+            }));
+        }
+        check_allocation(self).map_err(CompileError::Certificate)
+    }
 }
 
 /// Why an allocation certificate does not match the emitted program.
@@ -354,7 +419,7 @@ where
     let (instructions, physical_of_logical, register_count) =
         allocate(&lw.code, logical_register_count, logical_output);
     let output_register = physical_of_logical[logical_output as usize];
-    Ok(CompiledQuotient {
+    let compiled = CompiledQuotient {
         rows,
         domain_log,
         extended_domain_log,
@@ -376,7 +441,10 @@ where
             lookups: cs.lookups.len(),
             trashcans: cs.trashcans.len(),
         },
-    })
+    };
+    // Translation validation of the allocator on every compile.
+    compiled.verify()?;
+    Ok(compiled)
 }
 
 /// Single-assignment instruction builder with interned constant/column tables.
@@ -641,6 +709,11 @@ pub fn check_allocation<F>(compiled: &CompiledQuotient<F>) -> Result<(), Allocat
     let logical = &cert.logical_instructions;
     let physical = &compiled.instructions;
     let map = &cert.physical_of_logical;
+    // SSA: one logical register per instruction. Checked before any
+    // vector sized by the (untrusted) count is allocated.
+    if cert.logical_register_count as usize != logical.len() {
+        return Err(AllocationError::ShapeMismatch { instruction: 0 });
+    }
     let count = cert.logical_register_count as usize;
     if map.len() != count {
         return Err(AllocationError::MapMismatch { instruction: 0 });
@@ -744,6 +817,20 @@ where
     F: WithSmallOrderMulGroup<3>,
     B: PolynomialRepresentation,
 {
+    // Domain metadata first, before any conversion: the same extended
+    // length can hide a different base k or rotation scale.
+    let domain_ok = domain.k() == compiled.domain_log
+        && B::k(domain) == compiled.extended_domain_log
+        && B::len(domain) == compiled.rows
+        && compiled
+            .extended_domain_log
+            .checked_sub(compiled.domain_log)
+            .and_then(|d| 1usize.checked_shl(d))
+            == Some(compiled.rotation_scale);
+    if !domain_ok {
+        return Err(CompileError::Binding("domain"));
+    }
+    compiled.verify()?;
     let shape = compiled.shape;
     let instances_ok = inputs.advice.len() == shape.instances
         && inputs.instance.len() == shape.instances
