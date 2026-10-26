@@ -16,8 +16,11 @@ if [[ -n "${LOKI_VERIFY_CMD:-}" ]]; then exec bash -c "$LOKI_VERIFY_CMD"; fi
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-8}"
 # no cuda features: nothing here may touch a GPU. loki-gpu fake-driver tests run as plain cargo tests.
 steps=(
+  "! git grep -n -I -E '^(<<<<<<<|\\|\\|\\|\\|\\|\\|\\||>>>>>>>)( |$)' -- . ':!*.md'"
   "cargo check --offline --locked --workspace --all-targets"
+  "cargo check --offline --locked --features loki-backend-api --all-targets"
   "cargo test --offline --release -- --test-threads=4"
+  "cargo test --offline --release --features loki-backend-api -- --test-threads=4"
   "cargo run --offline --release --example cpu-bench -- 14 1 target/cpu-fixture"
   "cargo test --offline --release --manifest-path tests-stock/Cargo.toml"
 )
