@@ -52,9 +52,18 @@ GPU, measured before the final fixes: the adapter equals the legacy call and the
 cases) and `gpu_large_boundaries` pass under `loki-sppark`; the `tests/gpu-compat` stock
 verifier accepts the GPU proof and rejects a mutated one.
 
-RECEIPT-NATIVE (post-merge, per `docs/MERGE-GATES.md`): the GPU rows on the merged sha, the
-W13 `gpu_srs_*` set including `gpu_srs_kernel_prefix_differential`, and
-`gpu_srs_registry_k19_k20_on_device`.
+RECEIPT-NATIVE on the merged sha `5f0df8b` (MEASURED; every job under heavy.lock then gpu.lock,
+`timeout 580`; logs in `loki-gpu/design/p3/verification/`): all 20 jobs pass.
+- loki-gpu `srs_registry --features cuda`: 18 passed. compute-sanitizer memcheck (0 leaks),
+  racecheck, synccheck and initcheck: 0 errors.
+- The nine W13 `gpu_srs_*` tests, including the L2-updated budget and invalid-suffix tests, and
+  `gpu_srs_kernel_prefix_differential`: 22 MSMs on one resident handle of 32,773 points equal
+  the CPU over every prefix and scalar pattern, with one upload.
+- `gpu_srs_registry_k19_k20_on_device`: real 96-byte G1 figures. Cold k20 is about 10.2 s and
+  cold k19 about 5.3 s (validation-dominated); hits take 0.36-12.7 ms. 402,653,184 B are
+  resident, matching the expected count exactly.
+- `loki-sppark`: the adapter, `gpu_proof`, `gpu_differential` and `gpu_large_boundaries` pass,
+  and the `tests/gpu-compat` stock verifier accepts the CUDA proof and rejects a mutated one.
 
 ## Open questions
 
