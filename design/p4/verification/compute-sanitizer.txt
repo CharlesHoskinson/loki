@@ -1,5 +1,5 @@
-source commit: f716257b989d5e2c6ce1a655a25c4d2e0fdf6c22 (clean crates/ and Cargo.lock)
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool memcheck --leak-check full --error-exitcode 99 target/debug/deps/resident_ntt-577daf231d4232e9 native:: --test-threads=1
+source commit: d23a1195605d936ff7b69712c8f5e8179c0d2733; crates tree: dd65e330bab64ccc67dd71a79e347df4fc523d90; Cargo.lock blob: 4b094ada36150ddb4834fce4627e1421ba086aab (clean)
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool memcheck --leak-check full --error-exitcode 99 target/debug/deps/resident_ntt-8badc46ca331d908 native:: --test-threads=1
 ========= COMPUTE-SANITIZER
 
 running 3 tests
@@ -7,47 +7,22 @@ test native::measure_transform_costs_on_synthetic_inputs ... ignored
 test native::repeated_transforms_have_bounded_resident_state ... ok
 test native::resident_round_chain_matches_stock_with_boundary_readback_only ... ok
 
-test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 15 filtered out; finished in 4.10s
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 20 filtered out; finished in 5.13s
 
 ========= LEAK SUMMARY: 0 bytes leaked in 0 allocations
 ========= ERROR SUMMARY: 0 errors
 exit=0
 
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool memcheck --leak-check full --error-exitcode 99 target/debug/deps/ntt_differential-86fe44898b882254 --skip k19_k20 --test-threads=1
-========= COMPUTE-SANITIZER
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool memcheck --leak-check full --error-exitcode 99 target/debug/deps/ntt_differential-7d83b5ecc973b40d --skip k19_k20 --test-threads=1
+exit=1
 
-running 17 tests
-test bit_reversed_boundary_orders ... ok
-test canonical_montgomery_boundaries_round_trip_exactly ... ok
-test domain_transforms_helper_builds_the_hand_written_specs ... ok
-test field_boundary_values_are_fully_reduced ... ok
-test inverse_coset_prefixes_match_truncated_stock ... ok
-test inverse_normalization_is_applied_exactly_once ... ok
-test log_zero_transform_is_identity_with_single_scale ... ok
-test multi_wrap_rotations_of_natural_order_outputs ... ok
-test naive_dft_matches_stock_for_every_conversion ... ok
-test pinned_root_and_zeta_match_stock ... ok
-test rejected_requests_never_launch ... ok
-test rejected_shapes_and_roots ... ok
-test small_domains_every_conversion_every_pattern ... ok
-test spec_root_is_always_the_forward_root ... ok
-test stock_domain_roots_are_the_pinned_roots ... ok
-test wire_field_check_identifies_bls12_381_only ... ok
-test wrong_root_round_trip_is_only_a_negative_control ... ok
-
-test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 41.67s
-
-========= LEAK SUMMARY: 0 bytes leaked in 0 allocations
-========= ERROR SUMMARY: 0 errors
-exit=0
-
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool memcheck --leak-check full --error-exitcode 99 target/debug/deps/ntt_process_entry-a01fd26ccc1c1af8 --test-threads=1
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool memcheck --leak-check full --error-exitcode 99 target/debug/deps/ntt_process_entry-0694065cfea82fd4 --test-threads=1
 ========= COMPUTE-SANITIZER
 
 running 1 test
 test trait_entry_point_uses_the_process_runtime ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
 
 ========= Leaked 33554432 bytes at 0x204e00000
 =========     Saved host backtrace up to driver entry point at allocation time
@@ -55,19 +30,19 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 =========         Host Frame:  [0x4d07d] in libcudart.so.13
 =========         Host Frame:  [0x16495] in libcudart.so.13
 =========         Host Frame: cudaHostAlloc [0x5e049] in libcudart.so.13
-=========         Host Frame: loki_gpu_rt_host_alloc_v1 in runtime.cu:324 [0x26bf4a] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvXs_NtNtCseGPWVL3MtD9_8loki_gpu3ffi6nativeNtB4_12NativeDriverNtNtB8_7runtime12DeviceDriver10host_alloc in ffi.rs:547 [0x2542ae] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvMsc_NtCseGPWVL3MtD9_8loki_gpu7runtimeNtB5_10GpuRuntime13build_context in runtime.rs:1073 [0x24f2cc] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvMsc_NtCseGPWVL3MtD9_8loki_gpu7runtimeNtB5_10GpuRuntime10initialize in runtime.rs:944 [0x24cbf9] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvMsg_NtCseGPWVL3MtD9_8loki_gpu7runtimeNtB7_7LokiGpu10initialize in runtime.rs:2441 [0x253034] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvCsacDOvVv9rkJ_17ntt_process_entrys_42trait_entry_point_uses_the_process_runtime in ntt_process_entry.rs:18 [0x1d9e6c] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNCNvCsacDOvVv9rkJ_17ntt_process_entry42trait_entry_point_uses_the_process_runtime0B3_ in ntt_process_entry.rs:16 [0x1fa126] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvYNCNvCsacDOvVv9rkJ_17ntt_process_entry42trait_entry_point_uses_the_process_runtime0INtNtNtCskADBYZwJmSU_4core3ops8function6FnOnceuE9call_onceB6_ in function.rs:250 [0x1ea835] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RINvCslTQyRuerOM8_4test28___rust_begin_short_backtraceINtNtCskADBYZwJmSU_4core6result6ResultuNtNtCsgFX3jaOk65H_5alloc6string6StringEFEBQ_EB2_ in lib.rs:733 [0x204f1a] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNCNvCslTQyRuerOM8_4test8run_test0B3_ in lib.rs:677 [0x212584] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RINvNtNtCs8ZKwes1zzDd_3std3sys9backtrace28___rust_begin_short_backtraceNCNvCslTQyRuerOM8_4test8run_tests_0uEB1b_ in backtrace.rs:166 [0x20b943] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNSNvYNCINvNtNtCs8ZKwes1zzDd_3std6thread9lifecycle15spawn_uncheckedNCNvCslTQyRuerOM8_4test8run_tests_0uEs_0INtNtNtCskADBYZwJmSU_4core3ops8function6FnOnceuE9call_once6vtableB17_ in function.rs:250 [0x2156e1] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvNvMs0_NtNtNtCs8ZKwes1zzDd_3std3sys6thread4unixNtB7_6Thread3new12thread_start in unix.rs:123 [0x2d83d8] in ntt_process_entry-a01fd26ccc1c1af8
+=========         Host Frame: loki_gpu_rt_host_alloc_v1 in runtime.cu:324 [0x2663da] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvXs_NtNtCs1LQi8QVkjce_8loki_gpu3ffi6nativeNtB4_12NativeDriverNtNtB8_7runtime12DeviceDriver10host_alloc in ffi.rs:575 [0x25f7fe] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvMsc_NtCs1LQi8QVkjce_8loki_gpu7runtimeNtB5_10GpuRuntime13build_context in runtime.rs:1165 [0x25b6dc] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvMsc_NtCs1LQi8QVkjce_8loki_gpu7runtimeNtB5_10GpuRuntime10initialize in runtime.rs:1007 [0x258cad] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvMsg_NtCs1LQi8QVkjce_8loki_gpu7runtimeNtB7_7LokiGpu10initialize in runtime.rs:2540 [0x256994] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvCs1QgWBjVgQsh_17ntt_process_entrys_42trait_entry_point_uses_the_process_runtime in ntt_process_entry.rs:18 [0x2042dc] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNCNvCs1QgWBjVgQsh_17ntt_process_entry42trait_entry_point_uses_the_process_runtime0B3_ in ntt_process_entry.rs:16 [0x1df126] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvYNCNvCs1QgWBjVgQsh_17ntt_process_entry42trait_entry_point_uses_the_process_runtime0INtNtNtCskADBYZwJmSU_4core3ops8function6FnOnceuE9call_onceB6_ in function.rs:250 [0x1e70b5] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RINvCslTQyRuerOM8_4test28___rust_begin_short_backtraceINtNtCskADBYZwJmSU_4core6result6ResultuNtNtCsgFX3jaOk65H_5alloc6string6StringEFEBQ_EB2_ in lib.rs:733 [0x2052ca] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNCNvCslTQyRuerOM8_4test8run_test0B3_ in lib.rs:677 [0x212934] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RINvNtNtCs8ZKwes1zzDd_3std3sys9backtrace28___rust_begin_short_backtraceNCNvCslTQyRuerOM8_4test8run_tests_0uEB1b_ in backtrace.rs:166 [0x20bcf3] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNSNvYNCINvNtNtCs8ZKwes1zzDd_3std6thread9lifecycle15spawn_uncheckedNCNvCslTQyRuerOM8_4test8run_tests_0uEs_0INtNtNtCskADBYZwJmSU_4core3ops8function6FnOnceuE9call_once6vtableB17_ in function.rs:250 [0x215a91] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvNvMs0_NtNtNtCs8ZKwes1zzDd_3std3sys6thread4unixNtB7_6Thread3new12thread_start in unix.rs:123 [0x2d7648] in ntt_process_entry-0694065cfea82fd4
 =========         Host Frame:  [0xa3df9] in libc.so.6
 =========         Host Frame:  [0x1375cb] in libc.so.6
 ========= 
@@ -77,19 +52,19 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 =========         Host Frame:  [0x4d07d] in libcudart.so.13
 =========         Host Frame:  [0x16495] in libcudart.so.13
 =========         Host Frame: cudaHostAlloc [0x5e049] in libcudart.so.13
-=========         Host Frame: loki_gpu_rt_host_alloc_v1 in runtime.cu:324 [0x26bf4a] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvXs_NtNtCseGPWVL3MtD9_8loki_gpu3ffi6nativeNtB4_12NativeDriverNtNtB8_7runtime12DeviceDriver10host_alloc in ffi.rs:547 [0x2542ae] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvMsc_NtCseGPWVL3MtD9_8loki_gpu7runtimeNtB5_10GpuRuntime13build_context in runtime.rs:1073 [0x24f2cc] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvMsc_NtCseGPWVL3MtD9_8loki_gpu7runtimeNtB5_10GpuRuntime10initialize in runtime.rs:944 [0x24cbf9] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvMsg_NtCseGPWVL3MtD9_8loki_gpu7runtimeNtB7_7LokiGpu10initialize in runtime.rs:2441 [0x253034] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvCsacDOvVv9rkJ_17ntt_process_entrys_42trait_entry_point_uses_the_process_runtime in ntt_process_entry.rs:18 [0x1d9e6c] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNCNvCsacDOvVv9rkJ_17ntt_process_entry42trait_entry_point_uses_the_process_runtime0B3_ in ntt_process_entry.rs:16 [0x1fa126] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvYNCNvCsacDOvVv9rkJ_17ntt_process_entry42trait_entry_point_uses_the_process_runtime0INtNtNtCskADBYZwJmSU_4core3ops8function6FnOnceuE9call_onceB6_ in function.rs:250 [0x1ea835] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RINvCslTQyRuerOM8_4test28___rust_begin_short_backtraceINtNtCskADBYZwJmSU_4core6result6ResultuNtNtCsgFX3jaOk65H_5alloc6string6StringEFEBQ_EB2_ in lib.rs:733 [0x204f1a] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNCNvCslTQyRuerOM8_4test8run_test0B3_ in lib.rs:677 [0x212584] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RINvNtNtCs8ZKwes1zzDd_3std3sys9backtrace28___rust_begin_short_backtraceNCNvCslTQyRuerOM8_4test8run_tests_0uEB1b_ in backtrace.rs:166 [0x20b943] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNSNvYNCINvNtNtCs8ZKwes1zzDd_3std6thread9lifecycle15spawn_uncheckedNCNvCslTQyRuerOM8_4test8run_tests_0uEs_0INtNtNtCskADBYZwJmSU_4core3ops8function6FnOnceuE9call_once6vtableB17_ in function.rs:250 [0x2156e1] in ntt_process_entry-a01fd26ccc1c1af8
-=========         Host Frame: _RNvNvMs0_NtNtNtCs8ZKwes1zzDd_3std3sys6thread4unixNtB7_6Thread3new12thread_start in unix.rs:123 [0x2d83d8] in ntt_process_entry-a01fd26ccc1c1af8
+=========         Host Frame: loki_gpu_rt_host_alloc_v1 in runtime.cu:324 [0x2663da] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvXs_NtNtCs1LQi8QVkjce_8loki_gpu3ffi6nativeNtB4_12NativeDriverNtNtB8_7runtime12DeviceDriver10host_alloc in ffi.rs:575 [0x25f7fe] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvMsc_NtCs1LQi8QVkjce_8loki_gpu7runtimeNtB5_10GpuRuntime13build_context in runtime.rs:1165 [0x25b6dc] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvMsc_NtCs1LQi8QVkjce_8loki_gpu7runtimeNtB5_10GpuRuntime10initialize in runtime.rs:1007 [0x258cad] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvMsg_NtCs1LQi8QVkjce_8loki_gpu7runtimeNtB7_7LokiGpu10initialize in runtime.rs:2540 [0x256994] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvCs1QgWBjVgQsh_17ntt_process_entrys_42trait_entry_point_uses_the_process_runtime in ntt_process_entry.rs:18 [0x2042dc] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNCNvCs1QgWBjVgQsh_17ntt_process_entry42trait_entry_point_uses_the_process_runtime0B3_ in ntt_process_entry.rs:16 [0x1df126] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvYNCNvCs1QgWBjVgQsh_17ntt_process_entry42trait_entry_point_uses_the_process_runtime0INtNtNtCskADBYZwJmSU_4core3ops8function6FnOnceuE9call_onceB6_ in function.rs:250 [0x1e70b5] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RINvCslTQyRuerOM8_4test28___rust_begin_short_backtraceINtNtCskADBYZwJmSU_4core6result6ResultuNtNtCsgFX3jaOk65H_5alloc6string6StringEFEBQ_EB2_ in lib.rs:733 [0x2052ca] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNCNvCslTQyRuerOM8_4test8run_test0B3_ in lib.rs:677 [0x212934] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RINvNtNtCs8ZKwes1zzDd_3std3sys9backtrace28___rust_begin_short_backtraceNCNvCslTQyRuerOM8_4test8run_tests_0uEB1b_ in backtrace.rs:166 [0x20bcf3] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNSNvYNCINvNtNtCs8ZKwes1zzDd_3std6thread9lifecycle15spawn_uncheckedNCNvCslTQyRuerOM8_4test8run_tests_0uEs_0INtNtNtCskADBYZwJmSU_4core3ops8function6FnOnceuE9call_once6vtableB17_ in function.rs:250 [0x215a91] in ntt_process_entry-0694065cfea82fd4
+=========         Host Frame: _RNvNvMs0_NtNtNtCs8ZKwes1zzDd_3std3sys6thread4unixNtB7_6Thread3new12thread_start in unix.rs:123 [0x2d7648] in ntt_process_entry-0694065cfea82fd4
 =========         Host Frame:  [0xa3df9] in libc.so.6
 =========         Host Frame:  [0x1375cb] in libc.so.6
 ========= 
@@ -97,7 +72,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ========= ERROR SUMMARY: 2 errors
 exit=99
 
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool racecheck --error-exitcode 99 target/debug/deps/resident_ntt-577daf231d4232e9 native:: --test-threads=1
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool racecheck --error-exitcode 99 target/debug/deps/resident_ntt-8badc46ca331d908 native:: --test-threads=1
 ========= COMPUTE-SANITIZER
 
 running 3 tests
@@ -105,12 +80,12 @@ test native::measure_transform_costs_on_synthetic_inputs ... ignored
 test native::repeated_transforms_have_bounded_resident_state ... ok
 test native::resident_round_chain_matches_stock_with_boundary_readback_only ... ok
 
-test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 15 filtered out; finished in 76.36s
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 20 filtered out; finished in 71.78s
 
 ========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)
 exit=0
 
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool racecheck --error-exitcode 99 target/debug/deps/ntt_differential-86fe44898b882254 --skip k19_k20 --test-threads=1
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool racecheck --error-exitcode 99 target/debug/deps/ntt_differential-7d83b5ecc973b40d --skip k19_k20 --test-threads=1
 ========= COMPUTE-SANITIZER
 
 running 17 tests
@@ -132,23 +107,23 @@ test stock_domain_roots_are_the_pinned_roots ... ok
 test wire_field_check_identifies_bls12_381_only ... ok
 test wrong_root_round_trip_is_only_a_negative_control ... ok
 
-test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 218.29s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 228.09s
 
 ========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)
 exit=0
 
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool racecheck --error-exitcode 99 target/debug/deps/ntt_process_entry-a01fd26ccc1c1af8 --test-threads=1
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool racecheck --error-exitcode 99 target/debug/deps/ntt_process_entry-0694065cfea82fd4 --test-threads=1
 ========= COMPUTE-SANITIZER
 
 running 1 test
 test trait_entry_point_uses_the_process_runtime ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
 
 ========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)
 exit=0
 
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool synccheck --error-exitcode 99 target/debug/deps/resident_ntt-577daf231d4232e9 native:: --test-threads=1
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool synccheck --error-exitcode 99 target/debug/deps/resident_ntt-8badc46ca331d908 native:: --test-threads=1
 ========= COMPUTE-SANITIZER
 
 running 3 tests
@@ -156,12 +131,12 @@ test native::measure_transform_costs_on_synthetic_inputs ... ignored
 test native::repeated_transforms_have_bounded_resident_state ... ok
 test native::resident_round_chain_matches_stock_with_boundary_readback_only ... ok
 
-test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 15 filtered out; finished in 1.21s
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 20 filtered out; finished in 1.51s
 
 ========= ERROR SUMMARY: 0 errors
 exit=0
 
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool synccheck --error-exitcode 99 target/debug/deps/ntt_differential-86fe44898b882254 --skip k19_k20 --test-threads=1
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool synccheck --error-exitcode 99 target/debug/deps/ntt_differential-7d83b5ecc973b40d --skip k19_k20 --test-threads=1
 ========= COMPUTE-SANITIZER
 
 running 17 tests
@@ -183,23 +158,23 @@ test stock_domain_roots_are_the_pinned_roots ... ok
 test wire_field_check_identifies_bls12_381_only ... ok
 test wrong_root_round_trip_is_only_a_negative_control ... ok
 
-test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 11.78s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 11.32s
 
 ========= ERROR SUMMARY: 0 errors
 exit=0
 
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool synccheck --error-exitcode 99 target/debug/deps/ntt_process_entry-a01fd26ccc1c1af8 --test-threads=1
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool synccheck --error-exitcode 99 target/debug/deps/ntt_process_entry-0694065cfea82fd4 --test-threads=1
 ========= COMPUTE-SANITIZER
 
 running 1 test
 test trait_entry_point_uses_the_process_runtime ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
 
 ========= ERROR SUMMARY: 0 errors
 exit=0
 
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool initcheck --error-exitcode 99 target/debug/deps/resident_ntt-577daf231d4232e9 native:: --test-threads=1
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool initcheck --error-exitcode 99 target/debug/deps/resident_ntt-8badc46ca331d908 native:: --test-threads=1
 ========= COMPUTE-SANITIZER
 
 running 3 tests
@@ -207,12 +182,12 @@ test native::measure_transform_costs_on_synthetic_inputs ... ignored
 test native::repeated_transforms_have_bounded_resident_state ... ok
 test native::resident_round_chain_matches_stock_with_boundary_readback_only ... ok
 
-test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 15 filtered out; finished in 3.49s
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 20 filtered out; finished in 3.73s
 
 ========= ERROR SUMMARY: 0 errors
 exit=0
 
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool initcheck --error-exitcode 99 target/debug/deps/ntt_differential-86fe44898b882254 --skip k19_k20 --test-threads=1
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool initcheck --error-exitcode 99 target/debug/deps/ntt_differential-7d83b5ecc973b40d --skip k19_k20 --test-threads=1
 ========= COMPUTE-SANITIZER
 
 running 17 tests
@@ -234,19 +209,11 @@ test stock_domain_roots_are_the_pinned_roots ... ok
 test wire_field_check_identifies_bls12_381_only ... ok
 test wrong_root_round_trip_is_only_a_negative_control ... ok
 
-test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 35.86s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 37.19s
 
 ========= ERROR SUMMARY: 0 errors
 exit=0
 
-$ flock heavy.lock flock gpu.lock compute-sanitizer --tool initcheck --error-exitcode 99 target/debug/deps/ntt_process_entry-a01fd26ccc1c1af8 --test-threads=1
-========= COMPUTE-SANITIZER
-
-running 1 test
-test trait_entry_point_uses_the_process_runtime ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
-
-========= ERROR SUMMARY: 0 errors
-exit=0
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool initcheck --error-exitcode 99 target/debug/deps/ntt_process_entry-0694065cfea82fd4 --test-threads=1
+exit=1
 
