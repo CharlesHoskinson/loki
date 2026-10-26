@@ -8,10 +8,14 @@ publish = false
 
 [features]
 default = []
+# Real Loki feature forwarding. An accelerator feature here makes the gate
+# require positive dispatch and zero fallback/error counters (src/lib.rs);
+# compiling with it is not a GPU pass by itself.
 cuda = ["loki/cuda"]
-cuda-srs-registry = ["cuda", "loki/cuda-srs-registry"]
 cuda-ntt = ["loki/cuda-ntt"]
+cuda-srs-registry = ["cuda", "loki/cuda-srs-registry"]
 cuda-argument-commit = ["cuda", "loki/cuda-argument-commit"]
+loki-sppark = ["loki/loki-sppark"]
 loki-profile = ["loki/loki-profile"]
 loki-multiopen = ["loki/loki-multiopen"]
 # P1 seam: new Apache-2.0 backend (forwards loki-gpu/cuda). Compiling this

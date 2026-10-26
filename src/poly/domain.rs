@@ -433,12 +433,15 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     fn gpu_fft(a: &mut Vec<F>, omega: F, inverse: bool) -> bool {
         // The optional backend is deliberately restricted to this concrete field.
         // Any performs a checked downcast without assuming a generic F's layout.
+        use crate::telemetry::{record, Op, Route};
         if a.len() < (1 << 10) || a.len() > (1 << 28) {
+            record(Op::Ntt, Route::Cpu);
             #[cfg(feature = "loki-profile")]
             crate::profile::record_backend("ntt.cpu_size", a.len());
             return false;
         }
         if std::env::var_os("LOKI_NTT_CPU").is_some() {
+            record(Op::Ntt, Route::Cpu);
             #[cfg(feature = "loki-profile")]
             crate::profile::record_backend("ntt.cpu_forced", a.len());
             return false;
@@ -463,14 +466,19 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
                 values.len(),
             );
             return match result {
-                Ok(()) => true,
+                Ok(()) => {
+                    record(Op::Ntt, Route::Accelerated);
+                    true
+                }
                 Err(error) => {
+                    record(Op::Ntt, Route::Fallback);
                     static LOGGED: std::sync::Once = std::sync::Once::new();
                     LOGGED.call_once(|| tracing::warn!(%error, "GPU NTT failed; using CPU FFT"));
                     false
                 }
             };
         }
+        record(Op::Ntt, Route::Cpu);
         #[cfg(feature = "loki-profile")]
         crate::profile::record_backend("ntt.cpu_type", a.len());
         false

@@ -1,0 +1,8 @@
+/deps/
+/target-*/
+/campaign/runs/
+/campaign/dw/
+/campaign/builds/
+/campaign/*.log
+/campaign/*.conf
+/campaign/sigkill.*/

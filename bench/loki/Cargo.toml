@@ -1,0 +1,60 @@
+# L0/G0 driver: the same adapter source as ../stock, with midnight-proofs
+# replaced by the immutable staged Loki snapshot (bench/stage.sh). Separate
+# workspace, lockfile and target directory from stock.
+[package]
+name = "loki-bench-loki"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "bench-driver"
+path = "../adapter/driver.rs"
+
+[features]
+default = ["loki"]
+# Sherlock CHAIN family: optional relation dependencies plus the common
+# `circuit-params` interface feature (disclosed in every row).
+circuits = [
+    "dep:mori-backend", "dep:mori-core", "dep:mori-recursion",
+    "dep:midnight-circuits", "dep:midnight-zk-stdlib", "dep:midnight-transient-crypto",
+    "dep:midnight-serialize", "dep:ff", "dep:group", "dep:hex", "dep:blake2b_simd", "dep:rand", "dep:rand_chacha",
+    "midnight-proofs/circuit-params",
+]
+# Loki-only reporting hooks (the stock build has no such API).
+loki = []
+# G0: legacy sppark MSM (validated SRS registry) + NTT, with dispatch counters.
+g0 = ["loki", "midnight-proofs/cuda-srs-registry", "midnight-proofs/cuda-ntt"]
+# Diagnostic phase profile (never in headline binaries).
+profile = ["loki", "midnight-proofs/loki-profile"]
+
+[dependencies]
+midnight-proofs = { version = "=0.8.3" }
+midnight-curves = "=0.3.1"
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+libc = "=0.2.190"
+mori-backend = { path = "../deps/moriarty/crates/mori-backend", optional = true }
+mori-core = { path = "../deps/moriarty/crates/mori-core", optional = true }
+mori-recursion = { path = "../deps/moriarty/crates/mori-recursion", optional = true, features = ["sherlock-recursion"] }
+midnight-circuits = { version = "=7.2.4", default-features = false, optional = true }
+midnight-zk-stdlib = { version = "=2.3.5", default-features = false, optional = true }
+midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14", optional = true }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14", optional = true }
+ff = { version = "=0.13.1", optional = true }
+group = { version = "=0.13.0", optional = true }
+hex = { version = "=0.4.3", optional = true }
+blake2b_simd = { version = "=1.0.5", optional = true }
+rand = { version = "=0.8.8", optional = true }
+rand_chacha = { version = "=0.3.1", optional = true }
+
+# Copied verbatim from the pinned Moriarty workspace (f2ea193): the ledger
+# revision needs these to resolve. They are not Loki patches.
+[patch.crates-io]
+midnight-transient-crypto-old = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "a01a1ea0270d2e8a1f9a58f0e3cf5ceb029283e1", package = "midnight-transient-crypto" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+# The only Loki replacement: the staged snapshot, never the live checkout.
+midnight-proofs = { path = "../deps/loki" }

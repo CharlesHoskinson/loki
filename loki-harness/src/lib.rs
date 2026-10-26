@@ -66,12 +66,141 @@ impl Difference {
     }
 }
 
+/// Whether this build enables any Loki accelerator feature.
+const ACCELERATED: bool = cfg!(any(
+    feature = "cuda",
+    feature = "cuda-ntt",
+    feature = "loki-sppark",
+    feature = "loki-gpu-backend"
+));
+
+/// Selected Loki backend and its dispatch counters over one Loki proof.
+#[derive(Debug, Serialize)]
+pub struct BackendReport {
+    /// `stock-cpu` for a build without accelerator features, otherwise
+    /// Loki's compile-time backend identity.
+    pub selected: String,
+    /// MSM attempted/succeeded/fallback/error counters (accelerated builds).
+    pub msm: Option<OpCounters>,
+    /// NTT attempted/succeeded/fallback/error counters (accelerated builds).
+    pub ntt: Option<OpCounters>,
+}
+
+/// Mirror of Loki's per-operation telemetry counters.
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+pub struct OpCounters {
+    pub calls: u64,
+    pub cpu: u64,
+    pub attempted: u64,
+    pub succeeded: u64,
+    pub error: u64,
+    pub fallback: u64,
+}
+
+#[cfg(any(
+    feature = "cuda",
+    feature = "cuda-ntt",
+    feature = "loki-sppark",
+    feature = "loki-gpu-backend"
+))]
+mod telemetry {
+    use super::{BackendReport, OpCounters};
+    pub use loki::telemetry::Snapshot;
+
+    fn mirror(c: loki::telemetry::OpCounters) -> OpCounters {
+        OpCounters {
+            calls: c.calls,
+            cpu: c.cpu,
+            attempted: c.attempted,
+            succeeded: c.succeeded,
+            error: c.error,
+            fallback: c.fallback,
+        }
+    }
+
+    pub fn snapshot() -> Snapshot {
+        loki::telemetry::snapshot()
+    }
+
+    pub fn report(before: &Snapshot) -> BackendReport {
+        let d = loki::telemetry::snapshot().since(before);
+        BackendReport {
+            selected: d.backend.clone(),
+            msm: Some(mirror(d.msm)),
+            ntt: Some(mirror(d.ntt)),
+        }
+    }
+}
+
+#[cfg(not(any(
+    feature = "cuda",
+    feature = "cuda-ntt",
+    feature = "loki-sppark",
+    feature = "loki-gpu-backend"
+)))]
+mod telemetry {
+    use super::BackendReport;
+    pub struct Snapshot;
+    pub fn snapshot() -> Snapshot {
+        Snapshot
+    }
+    pub fn report(_: &Snapshot) -> BackendReport {
+        BackendReport {
+            selected: "stock-cpu".into(),
+            msm: None,
+            ntt: None,
+        }
+    }
+}
+
+/// GPU gates: an accelerated build must publish accelerator results and must
+/// not fall back. MSM eligibility starts at `LOKI_GPU_MSM_MIN` (default 2^14),
+/// so MSM success is only required from k14.
+fn require_dispatch(k: u32, report: &BackendReport) -> Result<()> {
+    if !ACCELERATED {
+        return Ok(());
+    }
+    let (msm, ntt) = (
+        report.msm.unwrap_or_default(),
+        report.ntt.unwrap_or_default(),
+    );
+    ensure(
+        msm.fallback + ntt.fallback + msm.error + ntt.error == 0,
+        &format!("accelerator fallback/error in a GPU-required gate: {report:?}"),
+    )?;
+    let wants_msm = cfg!(any(
+        feature = "cuda",
+        feature = "loki-sppark",
+        feature = "loki-gpu-backend"
+    ));
+    let wants_ntt = cfg!(any(
+        feature = "cuda-ntt",
+        feature = "loki-sppark",
+        feature = "loki-gpu-backend"
+    ));
+    if wants_msm && k >= 14 {
+        ensure(
+            msm.succeeded > 0,
+            &format!("no accelerated MSM completed: {report:?}"),
+        )?;
+    }
+    if wants_ntt {
+        ensure(
+            ntt.succeeded > 0,
+            &format!("no accelerated NTT completed: {report:?}"),
+        )?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 pub struct Comparison {
     pub k: u32,
     pub lookups: bool,
     pub cross_verified: bool,
     pub vk_equal: bool,
+    /// Backend identity and dispatch counters over the Loki keygen+proof only.
+    pub loki_backend: BackendReport,
     pub loki: Metrics,
     pub stock: Metrics,
     pub determinism: Difference,
@@ -101,7 +230,10 @@ fn compare<const LOOKUPS: bool>(k: u32) -> Result<Comparison> {
         backend::fork::roundtrip_params(&stock_params)? == params,
         "Loki SRS bytes differ",
     )?;
+    let before = telemetry::snapshot();
     let loki = backend::fork::prove::<LOOKUPS>(k, &stock_params)?;
+    let loki_backend = telemetry::report(&before);
+    require_dispatch(k, &loki_backend)?;
     let stock = backend::reference::prove::<LOOKUPS>(k, &params)?;
     ensure(
         loki.vk == stock.vk,
@@ -157,6 +289,7 @@ fn compare<const LOOKUPS: bool>(k: u32) -> Result<Comparison> {
         lookups: LOOKUPS,
         cross_verified: true,
         vk_equal: true,
+        loki_backend,
         loki: loki.metrics,
         stock: stock.metrics,
         determinism: difference,

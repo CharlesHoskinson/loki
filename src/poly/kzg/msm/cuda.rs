@@ -60,11 +60,13 @@ fn dispatch<C: CurveAffine>(
     #[cfg(feature = "loki-profile")]
     let size = coeffs.len().min(bases.len());
     if coeffs.len().min(bases.len()) < min {
+        crate::telemetry::record(crate::telemetry::Op::Msm, crate::telemetry::Route::Cpu);
         #[cfg(feature = "loki-profile")]
         crate::profile::record_backend("msm.cpu_threshold", size);
         return None;
     }
     if TypeId::of::<C>() != TypeId::of::<G1Affine>() {
+        crate::telemetry::record(crate::telemetry::Op::Msm, crate::telemetry::Route::Cpu);
         #[cfg(feature = "loki-profile")]
         crate::profile::record_backend("msm.cpu_type", size);
         return None;
@@ -75,6 +77,10 @@ fn dispatch<C: CurveAffine>(
     let bases = unsafe { &*(bases as *const [C::Curve] as *const [G1Projective]) };
     match gpu(coeffs, bases) {
         Ok(point) => {
+            crate::telemetry::record(
+                crate::telemetry::Op::Msm,
+                crate::telemetry::Route::Accelerated,
+            );
             #[cfg(feature = "loki-profile")]
             crate::profile::record_backend(
                 if size == 0 {
@@ -88,6 +94,7 @@ fn dispatch<C: CurveAffine>(
             Some(unsafe { std::mem::transmute_copy(&point) })
         }
         Err(error) => {
+            crate::telemetry::record(crate::telemetry::Op::Msm, crate::telemetry::Route::Fallback);
             #[cfg(feature = "loki-profile")]
             {
                 crate::profile::record_backend("msm.cpu_fallback", size);
@@ -98,6 +105,17 @@ fn dispatch<C: CurveAffine>(
             None
         }
     }
+}
+
+/// Test access to the dispatch decision with an injected accelerator.
+#[cfg(all(test, feature = "cuda"))]
+pub(crate) fn dispatch_for_test<C: CurveAffine>(
+    coeffs: &[C::Scalar],
+    bases: &[C::Curve],
+    min: usize,
+    gpu: impl FnOnce(&[Fq], &[G1Projective]) -> Result<G1Projective, String>,
+) -> Option<C::Curve> {
+    dispatch::<C>(coeffs, bases, min, gpu)
 }
 
 #[cfg(all(feature = "cuda", not(target_endian = "little")))]

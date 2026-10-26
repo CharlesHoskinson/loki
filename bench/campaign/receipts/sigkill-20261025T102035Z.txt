@@ -1,0 +1,10 @@
+command: campaign/sigkill-receipt.sh /home/charles/repos/loki-wt/p7-chain/bench/target-circuits-loki-cpu/release/bench-driver
+bench_commit: fc4ddb29a40e0a247fa7132ff829db7045a5e99e
+controller_sha256: 3b7b76a0b3c480b68d592be25c55ec8078dd44255ec7614ff24d485e3294baf3
+driver_sha256: 39b4e5c968a804c79043e4969cff09ee7957506069fd2120d949c5a5056dc6cf
+script_sha256: e8481d854a963dbc3aa8f9dd191d12da89315be87a7c36dcc7d85c39510b105c
+build_receipts: /home/charles/repos/loki-wt/p7-chain/bench/campaign/builds/20261025T101633Z
+--- output
+launcher=112668 driver=112684 driver_cmd=/home/charles/repos/loki-wt/p7-chain/bench/target-circuits-loki-cpu/release/benc verifier=112687
+PASS driver and verifier died after controller SIGKILL
+exit: 0
