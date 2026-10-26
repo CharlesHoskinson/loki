@@ -83,11 +83,58 @@ corrected helpers (below) and landed in 3839e6b.
 | Dispatcher: curve admission, CPU validator, Cancelled, TOCTOU, coset re-offer | Loki-side; fixed on `loki/p4-ntt` 7804fa6 (source ACK by astra-gpu). | `tests/backend_cpu_equivalence.rs` (18) |
 | quint-q3 BUG-1/BUG-2 | Fixed by L1/L2; reproductions adopted. | `tests/quint_findings.rs` (`bug_*`, 3) |
 
+## RECEIPT-NATIVE on the merged source (loki-gpu main 0cdd230, Loki main 645ce3e)
+
+Binding: the run used loki-gpu branch p4-ntt at d23a119. Its `crates/` tree
+`dd65e330…` and `Cargo.lock` blob `4b094ada…` are byte-identical in d23a119,
+in loki-gpu main 0cdd230 (the merge) and in `loki-gpu/` of Loki main 645ce3e.
+In Loki, 645ce3e is the 1c8615f merge plus the root `Cargo.lock` line
+(2ca40de) and two script commits. The Loki-side receipt ran on a detached
+1c8615f worktree carrying that lock line. Its `src/`, `tests/`, `examples/`,
+`loki-gpu/` and `Cargo.toml` trees equal 645ce3e. Its untracked additions are
+the receipt example and its `[[example]]` entry. Locks: `flock -w 3600`
+heavy.lock, then gpu.lock, then `timeout -k 30 600` per device job; builds ran
+outside the locks. RTX 5090, synthetic inputs only.
+
+| Gate | Command | Result | Log |
+|---|---|---|---|
+| Differential | `flock heavy flock gpu cargo test -p loki-gpu --features cuda --test ntt_differential -- --test-threads=1` | 18/18 (74 s; includes k19/k20 base+extended) | [device-tests](verification/device-tests.txt) |
+| Trait entry | `... --test ntt_process_entry` | 1/1 | same |
+| Resident | `... --test resident_ntt` | 22/22 + 1 ignored (measurement) | same |
+| Lifecycle and Quint ports with cuda | `... --test lifecycle_regressions / quint_findings` | 7 / 5 | same |
+| P2 suites with cuda | `... --test ffi_abi / runtime_contract / p2_fix_regressions / review_regressions` | 13 (+1 ignored) / 39 / 10 / 4 | same |
+| No device | `cargo test -p loki-gpu` | all pass (resident_ntt fake 20, doctests 6 incl. compile_fail) | same |
+| memcheck `--leak-check full` | `resident_ntt native::` / `ntt_differential --skip k19_k20` / `ntt_process_entry` | 0 errors, 0 leaks / 0 errors, 0 leaks (rerun) / expected 64 MiB process-static leak (exit 99, see note) | [compute-sanitizer](verification/compute-sanitizer.txt), [rerun](verification/compute-sanitizer-rerun.txt) |
+| racecheck | same three | 0 hazards on all three | same |
+| synccheck | same three | 0 errors on all three | same |
+| initcheck | same three | 0 errors / 0 errors / 0 errors (rerun) | same |
+| Loki feature-on proof | `flock heavy flock gpu cargo run --release --features loki-gpu-backend --example p4-gpu-receipt -- 16 3 target/p4-gpu-fixture` | 3 proofs verified in process; dispatcher `transform_accelerated 65, transform_fallback 0, transform_cpu 0, accelerator_poisoned 0`; runtime 65 launches, 130 pinned transfers, 0 quarantine; prove ≈ 0.90 s per proof at k16 | [loki-feature-on](verification/loki-feature-on-receipt.txt) |
+| Stock verifier on the GPU-dispatched proof | `LOKI_CPU_FIXTURE=target/p4-gpu-fixture cargo test --release --manifest-path tests-stock/Cargo.toml` | 1/1 (unmodified stock verifier accepts the proof; corrupted byte rejected) | same |
+| Loki feature-on tests | `flock heavy flock gpu cargo test --release --features loki-gpu-backend --test backend_cpu_equivalence --test backend_default_stock` | 18 / 9 | same |
+
+Two entries of the first sanitizer pass (memcheck on `ntt_differential`,
+initcheck on `ntt_process_entry`) exited 1 without running. That is the
+`flock -w 3600` wait timing out under queue contention, not a sanitizer
+verdict. They were rerun with `-w 7200` ([rerun](verification/compute-sanitizer-rerun.txt)).
+
+Loki embedding finding: with `loki-gpu-backend` on, Loki never initializes
+the device, and `LokiGpu::capabilities()` deliberately does not either. A
+first run without initialization therefore offered no transform to the GPU
+(`transform_cpu 65`, `transform_accelerated 0`): the proofs were correct but
+ran on the CPU. The receipt example calls
+`loki_gpu::runtime::GpuRuntime::process().initialize()` before proving, which
+is the intended opt-in. Embedders (the P7 driver) must do the same. A
+documented Loki-level hook is an open item (risk 10).
+
+Proof bytes differ between the three runs with a fixed seed, with and
+without the GPU. This reproduces on Loki main's CPU path and is tracked
+separately; it is not P4.
+
 ## Gates (f716257, first round)
 
-PENDING: native gates on the final corrected source wait for W12 RELEASE;
-the receipts below are from the first round, before the review fixes, and
-do not cover the corrected source.
+Superseded by the merged-source receipts above. The first-round logs are in
+history at 01bb197 under `design/p4/verification/`; the files at that path
+now hold the merged-source run.
 
 | Gate | Command | Result | Log |
 |---|---|---|---|
@@ -136,7 +183,20 @@ the input; H2D/kernel/D2H = GPU-event deltas around a resident upload,
 | coeff_to_extended | 20 | 23 | 134.9 | 133.2 | 23.9 | 32.9 | 11.9 | 1.97 | 2.58 |
 | extended_to_coeff | 20 | 23 | 137.1 | 134.8 | 39.4 | 67.5 | 23.2 | 2.27 | 2.46 |
 
-Full rows (including k20/ext21) in [measurements](verification/measurements.txt).
+Merged-source rerun (d23a119 = 0cdd230 crates tree; the host was busy with
+other jobs' CPU builds, so host-side columns are noisier). Selected rows:
+
+| op | k | ext k | first | warm | to_repr | from_repr | H2D | kernel | D2H |
+|---|---|---|---|---|---|---|---|---|---|
+| coeff_to_lagrange | 16 | 19 | 9.9 | 5.0 | 1.8 | 1.8 | 0.87 | 0.08 | 0.10 |
+| coeff_to_extended | 16 | 19 | 11.0 | 9.7 | 0.7 | 1.2 | 0.87 | 0.15 | 0.26 |
+| coeff_to_extended | 19 | 22 | 84.4 | 79.4 | 6.2 | 20.0 | 10.5 | 0.98 | 1.42 |
+| coeff_to_lagrange | 20 | 23 | 85.6 | 83.8 | 23.8 | 36.0 | 20.6 | 0.90 | 1.78 |
+| coeff_to_extended | 20 | 23 | 152.1 | 148.5 | 22.8 | 29.0 | 12.9 | 2.73 | 3.43 |
+| extended_to_coeff | 20 | 23 | 154.6 | 147.3 | 52.8 | 71.6 | 23.4 | 5.67 | 2.85 |
+
+Full rows (including k20/ext21) in [measurements](verification/measurements.txt);
+the first-round rows are in history at 01bb197.
 Peak scratch: 32 MiB at ext k 23. Reading: kernels are 1–2 % of a host call.
 The call is dominated by host-side work: canonical conversion plus the P2
 staging path (H2D event time includes chunked staging at ~2.7 GB/s effective;
@@ -184,3 +244,12 @@ CUDA- and curve-neutral.
    `malloc` memory. Proposed fix: keep pageable host handles across a reset
    (they are host memory) and free the retired context's pageable slots after
    a successful reset; needs a native rerun.
+10. Loki with `loki-gpu-backend` uses the GPU only after the embedder calls
+    `GpuRuntime::process().initialize()`; without that call every transform
+    silently stays on the CPU (counters show `transform_cpu`, no fallback).
+    This is by design (capabilities never touch the device), but Loki has
+    no documented hook and no warning. GPU-required gates must assert
+    `transform_accelerated > 0`, as the merged-source receipt does.
+11. The root `Cargo.lock` of Loki missed loki-gpu's new `midnight-curves`
+    dependency at the first merge (1c8615f), so `--locked` failed. Fixed by
+    2ca40de; the MERGE-CPU tier now checks with `--locked` (1942ca7).
