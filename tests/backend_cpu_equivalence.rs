@@ -660,7 +660,7 @@ fn failed_coset_offer_is_settled_once_on_cpu() {
     let none = BackendCapabilities { host_transform: false, ..advertised() };
     assert_eq!(dispatcher.coset_transform(Some((&ok, &none)), &coeffs, coset_spec(&domain, TransformDirection::Forward)).unwrap(), None);
     assert_eq!(ok.calls(), 1);
-||||||| parent of 85586f3 (Gate MSM cancellation in the CPU-only backend test and correct the fallback docs)
+}
 
 /// quint-q2 B1 (astra-gpu decision): `try_msm` returns an accelerator
 /// `Cancelled` without CPU recomputation or CPU/fallback accounting,
