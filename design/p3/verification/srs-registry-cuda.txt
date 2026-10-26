@@ -1,0 +1,31 @@
+# loki-gpu tree ~/repos/loki-wt/p3-train/loki-gpu at 5f0df8b
+$ env LOKI_GPU_REQUIRE_DEVICE=1 flock ~/.cache/doctorwatson/heavy.lock flock ~/.cache/doctorwatson/gpu.lock timeout 580 cargo test -p loki-gpu --locked --offline --features cuda --test srs_registry -- --nocapture --test-threads=1
+warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.93s
+     Running tests/srs_registry.rs (target/debug/deps/srs_registry-bc4cd3418a83cb3c)
+
+running 18 tests
+test concurrent_acquires_share_and_account_exactly ... ok
+test corrupted_off_curve_and_non_subgroup_inputs_are_rejected_before_upload ... ok
+test equal_content_at_distinct_addresses_hits ... ok
+test eviction_is_lru_not_fifo ... ok
+test failed_eviction_release_is_quarantined ... ok
+test failed_upload_publishes_nothing ... ok
+test forged_lease_metadata_and_public_paths_are_rejected ... ok
+test k19_k20_coefficient_versus_lagrange ... ok
+test leased_entries_are_never_evicted ... ok
+test leases_across_context_loss ... ok
+test malformed_requests_are_rejected_before_any_work ... ok
+test n_and_n_minus_one_prefixes ... ok
+test native_registry_on_device ... P3 native: SrsStats { acquires: 7, hits: 1, misses: 6, uploads: 4, uploaded_bytes: 2097152, evictions: 2, evicted_bytes: 1048576, rejected_invalid: 1, rejected_capacity: 1, stale_purged: 0, compared_points: 327679, resident_entries: 2, resident_bytes: 1048576, pending_bytes: 0, retiring_bytes: 0, high_water_bytes: 1048576, snapshot_host_bytes: 1048576, active_leases: 0 }
+ok
+test oversized_entries_are_refused_before_upload ... ok
+test rewarm_then_same_address_mutation_misses ... ok
+test srs_msm_validates_then_reports_unsupported ... ok
+test stray_generation_upload_release_failure_is_quarantined ... ok
+test synthetic_cold_warm_figures ... P3 synthetic (fake driver, debug): cold k20 32.67012ms, warm k20-1 1.957957ms; SrsStats { acquires: 8, hits: 6, misses: 2, uploads: 2, uploaded_bytes: 12582912, evictions: 0, evicted_bytes: 0, rejected_invalid: 0, rejected_capacity: 0, stale_purged: 0, compared_points: 3670015, resident_entries: 2, resident_bytes: 12582912, pending_bytes: 0, retiring_bytes: 0, high_water_bytes: 12582912, snapshot_host_bytes: 12582912, active_leases: 0 }
+ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.93s
+
+exit=0 wall=2787s
