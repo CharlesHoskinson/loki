@@ -1,10 +1,13 @@
 warning: loki-gpu@0.1.0: CUDA compiler selected: ~/.local/opt/cuda-13.4.3/bin/nvcc
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+   Compiling loki-gpu v0.1.0 (~/repos/loki-gpu-wt/p4-ntt/crates/loki-gpu)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.00s
   Executable unittests src/lib.rs (target/debug/deps/loki_gpu-f551ea5a6a291667)
-  Executable tests/ffi_abi.rs (target/debug/deps/ffi_abi-a07d0359ef377a29)
-  Executable tests/ntt_differential.rs (target/debug/deps/ntt_differential-86fe44898b882254)
-  Executable tests/ntt_process_entry.rs (target/debug/deps/ntt_process_entry-a01fd26ccc1c1af8)
-  Executable tests/p2_fix_regressions.rs (target/debug/deps/p2_fix_regressions-c716a57ea6057b0e)
-  Executable tests/resident_ntt.rs (target/debug/deps/resident_ntt-577daf231d4232e9)
-  Executable tests/review_regressions.rs (target/debug/deps/review_regressions-8472b58b0e36b136)
-  Executable tests/runtime_contract.rs (target/debug/deps/runtime_contract-78fda065237f07ac)
+  Executable tests/ffi_abi.rs (target/debug/deps/ffi_abi-e8304ceec063aed7)
+  Executable tests/lifecycle_regressions.rs (target/debug/deps/lifecycle_regressions-a76bd77d91cf5bf5)
+  Executable tests/ntt_differential.rs (target/debug/deps/ntt_differential-7d83b5ecc973b40d)
+  Executable tests/ntt_process_entry.rs (target/debug/deps/ntt_process_entry-0694065cfea82fd4)
+  Executable tests/p2_fix_regressions.rs (target/debug/deps/p2_fix_regressions-79a6dac1aea6023e)
+  Executable tests/quint_findings.rs (target/debug/deps/quint_findings-0cd906a665a9b76f)
+  Executable tests/resident_ntt.rs (target/debug/deps/resident_ntt-8badc46ca331d908)
+  Executable tests/review_regressions.rs (target/debug/deps/review_regressions-0305d237bacde85c)
+  Executable tests/runtime_contract.rs (target/debug/deps/runtime_contract-5b41b2014d19b6fe)

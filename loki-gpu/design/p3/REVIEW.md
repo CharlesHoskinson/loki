@@ -113,10 +113,24 @@ MERGE-CPU (`docs/MERGE-GATES.md`): `CARGO_BUILD_JOBS=4 scripts/verify-main.sh --
 Loki `loki/p3-srs` rebased onto `1c8615f` with loki-gpu `p3-srs` subtree-pulled into `loki-gpu/`
 (see the READY-MERGE message for the exact sha and log).
 
-**RECEIPT-NATIVE (post-merge):** rerun the native rows on the merged sha, plus the W13
-`gpu_srs_*` set (nine tests, including the new `gpu_srs_kernel_prefix_differential` and the
-L2-updated budget / invalid-suffix tests) and `gpu_srs_registry_k19_k20_on_device`. Every job
-is under 10 minutes; they are scripted in this order and have not been started.
+**RECEIPT-NATIVE (post-merge), MEASURED on Loki `5f0df8b` (train 20261025T225424-588931;
+loki-gpu `9be8eec`):** `LOKI_TREE=<checkout of 5f0df8b> ~/factory-ops/scratchpad/native.sh`, every
+job under `flock heavy.lock` then `flock gpu.lock` with `timeout 580`. 20 of 20 exits are 0.
+
+| Gate | Result | Log |
+|---|---|---|
+| `LOKI_GPU_REQUIRE_DEVICE=1 cargo test -p loki-gpu --features cuda --test srs_registry` | 18 passed | `verification/srs-registry-cuda.txt` |
+| compute-sanitizer memcheck (leak-check full) on `native_registry_on_device` | 0 bytes leaked, 0 errors | `verification/compute-sanitizer.txt` |
+| compute-sanitizer racecheck / synccheck / initcheck | 0 hazards / 0 errors / 0 errors | same |
+| W13 `gpu_srs_*` (cuda-srs-registry, loki-profile, loki-cpu-budget), 9 tests | all pass, incl. `budget_rejects_oversize` and `invalid_unused_suffix_fallback` with L2 non-sticky asserts | `verification/loki-native.txt` |
+| `gpu_srs_kernel_prefix_differential` (lean-w1 1) | 22 MSMs on one resident handle of 32,773 points equal the CPU MSM over every prefix n ∈ {1, 2, 2^14−1, 2^14, 2^15−1, 2^15, \|S\|} × {random, boolean, repeated}; 1 upload | same |
+| `gpu_srs_registry_k19_k20_on_device` (`loki-gpu-srs-registry`) | pass; resident bytes equal the codec encoding for every lease | same |
+| `loki-sppark`: adapter vs legacy vs CPU, `gpu_proof`, `gpu_differential`, `gpu_large_boundaries` | all pass (`gpu_differential` 229.6 s, `gpu_large_boundaries` 501.3 s) | same |
+| `tests/gpu-compat` stock 0.8.3 verifier | accepted the CUDA proof (416 B); rejected the mutated public input | same |
+
+The first attempt's outer `timeout 14400` expired while job 12 was queued for heavy.lock
+(held ~3 h by another package's receipt); jobs 12-19 were resumed in the same tree and
+appended to the same log. No job failed or was retried.
 
 ## Synthetic figures (MEASURED)
 
@@ -128,8 +142,24 @@ Native toy run (`native_registry_on_device`, 1 MiB budget): acquires 7, hits 1, 
 uploads 4, uploaded 2,097,152 B, evictions 2 (1,048,576 B), rejected invalid 1 / capacity 1,
 high-water 1,048,576 B = budget, no stale purge.
 
-Real 96-byte G1 figures (`gpu_srs_registry_k19_k20_on_device`: expected uploads 5, hits 3,
-rejected 1, resident (3·2^20 + 2·2^19)·96 B) come with the post-merge RECEIPT-NATIVE.
+Real BLS12-381 G1, 96-byte wire (`gpu_srs_registry_k19_k20_on_device`, release, Loki
+`5f0df8b`; synthetic points). Cold misses are dominated by whole-request curve and subgroup
+validation plus encoding and upload; hits pay only the exact compare:
+
+| Acquire | Wall |
+|---|---|
+| cold coefficient k20 (2^20 points) | 10,192.6 ms |
+| cold Lagrange k20 | 10,297.2 ms |
+| cold Lagrange k19 | 5,253.2 ms |
+| warm coefficient k19 prefix of the k20 entry (hit) | 7.5 ms |
+| warm coefficient k20 n−1 (hit) | 12.7 ms |
+| Lagrange k19 = prefix of Lagrange k20 (miss: exact domain) | 4,934.4 ms |
+| warm Lagrange k20, 12,345 points (hit) | 0.36 ms |
+| coefficient k20, one point mutated (miss) | 9,892.3 ms |
+
+Stats: acquires 9, hits 3, misses 6, uploads 5, uploaded = resident = high-water
+402,653,184 B (= (3·2^20 + 2·2^19)·96), rejected invalid 1, evictions 0, snapshot host bytes
+603,979,776 (144 B per point), runtime live bytes 402,653,184 of a 30,281,826,304 B hard budget.
 
 ## Review findings and dispositions
 

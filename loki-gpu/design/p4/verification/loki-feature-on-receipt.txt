@@ -1,0 +1,145 @@
+# P4 Loki-side RECEIPT-NATIVE (loki-gpu-backend on, RTX 5090, synthetic k16 circuit)
+
+## Run 2: with explicit process-runtime initialize (the receipt)
+loki-proofs HEAD: 1c8615f46339a2158007239ecf84e2cd141e915f (code-identical to main 645ce3e; Cargo.lock blob 1f6572e9fa8d54898680184de1dc8e2c3808ca7b)
+ M Cargo.lock
+ M Cargo.toml
+?? examples/p4-gpu-receipt.rs
+$ flock heavy flock gpu cargo run --release --features loki-gpu-backend --example p4-gpu-receipt -- 16 3 target/p4-gpu-fixture (explicit process-runtime initialize)
+exit=0
+p4-receipt initialize: DeviceGeneration { device_ordinal: 0, context_epoch: 1, generation: 1 }
+k=16 threads=4 setup_ms=2121.982
+run=0 prove_ms=908.418 bytes=1376 hash=4ca95a446a3934b8619d6fa811d23fdc12472db8e0e16a41d38babbe1493a2f36f6122dcf89fe84b161b3fd17b44cf1653fb5ae881defc6ec9962f6097e945c2 equal_first=true
+run=1 prove_ms=907.295 bytes=1376 hash=9bf7450893dd25e1f3f2950f48a554dc1ded203e1b1ed9f329be734b0c2c46ac807e74b1f547d19f06b9a046dedf1254f098488825181dba8000c6b01ac07860 equal_first=false
+run=2 prove_ms=897.382 bytes=1376 hash=0b013524ed9206aeaf6ee9b0549a6cfea3f8bce8f916ff1af47a8fc8aa45032d57a7c88f6862706696a18d7defc202a83d0c5e03804c7570c4122f87d8aa3807 equal_first=false
+p4-receipt counters: DispatchCounters { msm_cpu: 49, msm_accelerated: 0, msm_fallback: 0, transform_cpu: 0, transform_accelerated: 65, transform_fallback: 0, accelerator_poisoned: 0 }
+p4-receipt telemetry: RuntimeTelemetry { init_ns: 275763171, pinned_slots: 2, pageable_slots: 0, pinned_bytes: 67108864, pinned_probe_failures: 0, h2d_pinned_bytes: 155189248, h2d_pageable_bytes: 0, d2h_pinned_bytes: 350224384, d2h_pageable_bytes: 0, transfers: 130, launches: 65, live_high_water: 27262976, quarantined_bytes: 0, quarantined_allocations: 0, poison_events: 0, event_wait_ns: 46732056, gpu_event_ms: 80.92502419650555, transform_launches: 65, transform_kernel_ms: 17.614400073885918, transform_wall_ns: 40337011, scratch_high_water: 4196608 }
+p4-receipt: PASS
+$ LOKI_CPU_FIXTURE=target/p4-gpu-fixture cargo test --release --manifest-path tests-stock/Cargo.toml
+exit=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+## Feature-on tests (same tree)
+$ flock heavy flock gpu cargo test --release --features loki-gpu-backend --test backend_cpu_equivalence --test backend_default_stock
+exit=0
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.65s
+
+## Run 1: without initialize (finding: no transform offered, all CPU)
+$ flock heavy flock gpu cargo run --release --features loki-gpu-backend --example p4-gpu-receipt -- 16 3 target/p4-gpu-fixture
+exit=101
+warning: loki-gpu@0.1.0: ~/repos/loki-wt/p4-receipt/loki-gpu/crates/loki-gpu/cuda/runtime.cu: In function 'int32_t _GLOBAL__N__08257eb6_10_runtime_cu_24ab6359::fill_info(int32_t, loki_gpu_device_info_v1*, loki_gpu_status_v1*)':
+warning: loki-gpu@0.1.0: ~/repos/loki-wt/p4-receipt/loki-gpu/crates/loki-gpu/cuda/runtime.cu:161:13: warning: 'char* __builtin_strncpy(char*, const char*, long unsigned int)' output may be truncated copying 63 bytes from a string of length 255 [-Wstringop-truncation]
+k=16 threads=4 setup_ms=2200.686
+run=0 prove_ms=1015.392 bytes=1376 hash=7c33e10b2395b4d78dff2a35ba20faa53326c28b37f54eef8cb5609d75f724d222f6b5d3952f56eb688c0a15de49f5eed64e2da7b06fdecdc1514a5cde43da0a equal_first=true
+run=1 prove_ms=1033.394 bytes=1376 hash=5aacb48760601571ec32890444735c47e04289684d9decfcf82c82c6b7f656bd1eed5953740fcaedf93b4dbe3f95cd19f6802efbd3548244fe544460e1936161 equal_first=false
+run=2 prove_ms=1008.299 bytes=1376 hash=b8b51967e9537dbb1d52e489b95155c0047cf3cae57c35e8541c1e62e584784c452c0882c013167a5836da87e3bdcefb8899fa3df4f03a02f82c87f5ad07a211 equal_first=false
+p4-receipt counters: DispatchCounters { msm_cpu: 49, msm_accelerated: 0, msm_fallback: 0, transform_cpu: 65, transform_accelerated: 0, transform_fallback: 0, accelerator_poisoned: 0 }
+thread 'main' (408876) panicked at examples/p4-gpu-receipt.rs:92:5:
+p4-receipt counters: DispatchCounters { msm_cpu: 49, msm_accelerated: 0, msm_fallback: 0, transform_cpu: 65, transform_accelerated: 0, transform_fallback: 0, accelerator_poisoned: 0 }
+thread 'main' (408876) panicked at examples/p4-gpu-receipt.rs:92:5:
+no GPU transform was published
+
+## examples/p4-gpu-receipt.rs (untracked; registered via one [[example]] entry)
+```rust
+//! P4 RECEIPT-NATIVE (untracked, not committed): cpu-bench plus dispatcher counter asserts.
+//! Public synthetic fixture only; the deterministic unsafe SRS is for tests.
+#[path = "../tests/support/cpu_circuit.rs"]
+mod cpu_circuit;
+
+use blake2b_simd::State;
+use cpu_circuit::CpuCircuit;
+use midnight_curves::{Bls12, Fq};
+use midnight_proofs::{
+    plonk::{create_proof, keygen_pk, keygen_vk_with_k, prepare},
+    poly::{
+        commitment::Guard,
+        kzg::{params::ParamsKZG, KZGCommitmentScheme},
+    },
+    transcript::{CircuitTranscript, Transcript},
+    utils::SerdeFormat,
+};
+use rand_chacha::ChaCha20Rng;
+use rand_core::SeedableRng;
+use std::{fs, path::PathBuf, time::Instant};
+
+fn main() {
+    // Embedder opt-in: Loki never initializes the device; capabilities stay empty until this succeeds.
+    let generation = loki_gpu::runtime::GpuRuntime::process().initialize().expect("loki-gpu process runtime initialize");
+    println!("p4-receipt initialize: {generation:?}");
+    let mut args = std::env::args().skip(1);
+    let k: u32 = args.next().unwrap_or_else(|| "16".into()).parse().unwrap();
+    let repeats: usize = args.next().unwrap_or_else(|| "3".into()).parse().unwrap();
+    let output = args.next().map(PathBuf::from);
+    let circuit = CpuCircuit {
+        rows: (1 << k) - 16,
+    };
+    let start = Instant::now();
+    let params = ParamsKZG::<Bls12>::unsafe_setup(k, ChaCha20Rng::from_seed([1; 32]));
+    let vk = keygen_vk_with_k::<_, KZGCommitmentScheme<Bls12>, _>(&params, &circuit, k).unwrap();
+    let pk = keygen_pk(vk, &circuit).unwrap();
+    println!(
+        "k={k} threads={} setup_ms={:.3}",
+        rayon::current_num_threads(),
+        start.elapsed().as_secs_f64() * 1000.0
+    );
+    let mut first = None;
+    for run in 0..repeats {
+        let mut transcript = CircuitTranscript::<State>::init();
+        let start = Instant::now();
+        create_proof::<Fq, KZGCommitmentScheme<Bls12>, _, _>(
+            &params,
+            &pk,
+            &[circuit.clone()],
+            #[cfg(feature = "committed-instances")]
+            0,
+            &[&[]],
+            &mut transcript,
+            ChaCha20Rng::from_seed([2; 32]),
+        )
+        .unwrap();
+        let proof = transcript.finalize();
+        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+        let mut transcript = CircuitTranscript::<State>::init_from_bytes(&proof);
+        prepare::<Fq, KZGCommitmentScheme<Bls12>, _>(
+            pk.get_vk(),
+            #[cfg(feature = "committed-instances")]
+            &[&[]],
+            &[&[]],
+            &mut transcript,
+        )
+        .unwrap()
+        .verify(&params.verifier_params())
+        .unwrap();
+        println!(
+            "run={run} prove_ms={elapsed:.3} bytes={} hash={} equal_first={}",
+            proof.len(),
+            blake2b_simd::blake2b(&proof).to_hex(),
+            first.as_ref().map_or(true, |p| p == &proof)
+        );
+        if first.is_none() {
+            first = Some(proof);
+        }
+    }
+    if let Some(output) = output {
+        fs::create_dir_all(&output).unwrap();
+        fs::write(output.join("proof.bin"), first.unwrap()).unwrap();
+        let mut vk = Vec::new();
+        pk.get_vk().write(&mut vk, SerdeFormat::Processed).unwrap();
+        fs::write(output.join("vk.bin"), vk).unwrap();
+        let mut verifier_params = Vec::new();
+        params
+            .verifier_params()
+            .write(&mut verifier_params, SerdeFormat::Processed)
+            .unwrap();
+        fs::write(output.join("params.bin"), verifier_params).unwrap();
+    }
+    let c = midnight_proofs::backend::dispatch::global().counters();
+    println!("p4-receipt counters: {c:?}");
+    assert!(c.transform_accelerated > 0, "no GPU transform was published");
+    assert_eq!(c.transform_fallback, 0, "a GPU transform fell back to CPU");
+    assert_eq!(c.accelerator_poisoned, 0, "the accelerator was poisoned");
+    println!("p4-receipt telemetry: {:?}", loki_gpu::runtime::GpuRuntime::process().telemetry());
+    println!("p4-receipt: PASS");
+}
+```

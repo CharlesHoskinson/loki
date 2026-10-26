@@ -1,0 +1,38 @@
+source commit: d23a1195605d936ff7b69712c8f5e8179c0d2733; crates tree: dd65e330bab64ccc67dd71a79e347df4fc523d90; Cargo.lock blob: 4b094ada36150ddb4834fce4627e1421ba086aab; rerun of the two entries whose flock -w 3600 wait timed out (exit=1, not run)
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool memcheck --leak-check full --error-exitcode 99 target/debug/deps/ntt_differential-7d83b5ecc973b40d --skip k19_k20 --test-threads=1
+========= COMPUTE-SANITIZER
+
+running 17 tests
+test bit_reversed_boundary_orders ... ok
+test canonical_montgomery_boundaries_round_trip_exactly ... ok
+test domain_transforms_helper_builds_the_hand_written_specs ... ok
+test field_boundary_values_are_fully_reduced ... ok
+test inverse_coset_prefixes_match_truncated_stock ... ok
+test inverse_normalization_is_applied_exactly_once ... ok
+test log_zero_transform_is_identity_with_single_scale ... ok
+test multi_wrap_rotations_of_natural_order_outputs ... ok
+test naive_dft_matches_stock_for_every_conversion ... ok
+test pinned_root_and_zeta_match_stock ... ok
+test rejected_requests_never_launch ... ok
+test rejected_shapes_and_roots ... ok
+test small_domains_every_conversion_every_pattern ... ok
+test spec_root_is_always_the_forward_root ... ok
+test stock_domain_roots_are_the_pinned_roots ... ok
+test wire_field_check_identifies_bls12_381_only ... ok
+test wrong_root_round_trip_is_only_a_negative_control ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 53.67s
+
+========= LEAK SUMMARY: 0 bytes leaked in 0 allocations
+========= ERROR SUMMARY: 0 errors
+exit=0
+$ flock heavy.lock flock gpu.lock compute-sanitizer --tool initcheck --error-exitcode 99 target/debug/deps/ntt_process_entry-0694065cfea82fd4 --test-threads=1
+========= COMPUTE-SANITIZER
+
+running 1 test
+test trait_entry_point_uses_the_process_runtime ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+========= ERROR SUMMARY: 0 errors
+exit=0
